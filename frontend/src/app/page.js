@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import TenderDetails from '@/components/TenderDetails';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -29,6 +30,7 @@ export default function Home() {
   const [excluded, setExcluded] = useState([]);
   const [showExclusions, setShowExclusions] = useState(false);
   const [productSearch, setProductSearch] = useState('');
+  const [selectedBid, setSelectedBid] = useState(null);
 
   // Excluded products are remembered per browser
   const updateExcluded = (next) => {
@@ -327,14 +329,12 @@ export default function Home() {
                         </span>
                       </td>
                       <td className="py-4 px-6 text-right">
-                        <a
-                          href={bid.detail_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={() => setSelectedBid(bid)}
                           className="inline-flex items-center gap-1 text-xs font-semibold text-blue-400 hover:text-blue-300 transition"
                         >
-                          Open Tender <span className="text-[10px]">↗</span>
-                        </a>
+                          View Details <span className="text-[10px]">→</span>
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -345,6 +345,8 @@ export default function Home() {
         </div>
 
       </div>
+
+      {selectedBid && <TenderDetails bid={selectedBid} onClose={() => setSelectedBid(null)} />}
     </div>
   );
 }

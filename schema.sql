@@ -11,12 +11,16 @@ CREATE TABLE IF NOT EXISTS philgeps_opportunities (
     status VARCHAR(50) DEFAULT 'NEW',
     items_text TEXT,
     matched_molecules TEXT[] NOT NULL DEFAULT '{}',
+    details JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Migration: item list from the tender's detail page and which of our products it mentions (molecules.json)
 ALTER TABLE philgeps_opportunities ADD COLUMN IF NOT EXISTS items_text TEXT;
 ALTER TABLE philgeps_opportunities ADD COLUMN IF NOT EXISTS matched_molecules TEXT[] NOT NULL DEFAULT '{}';
+
+-- Migration: notice details shown in the dashboard's tender panel (procurement mode, contact person, ...)
+ALTER TABLE philgeps_opportunities ADD COLUMN IF NOT EXISTS details JSONB;
 
 -- Migration for tables created before detail_link was UNIQUE (the scraper upserts on ref_no)
 DO $$

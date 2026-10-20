@@ -15,8 +15,8 @@ const DETAIL_CONCURRENCY = 4; // detail pages opened in parallel
 // node scraper.js --dry-run: first results page only, no database reads or writes, prints matches
 const DRY_RUN = process.argv.includes('--dry-run');
 
-// Read the item list (Description + Line Items) and ABC from a tender's Bid Notice Abstract page.
-// Returns null for closed/error pages so the tender is retried on the next run.
+// Read the item list (Description + Line Items), ABC and notice details from a tender's
+// Bid Notice Abstract page. Returns null for closed/error pages so the tender is retried on the next run.
 async function fetchDetails(page, url) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     return page.evaluate(() => {
@@ -26,9 +26,35 @@ async function fetchDetails(page, url) {
         const end = text.search(/\n\s*Created by/);
         const items = start >= 0 ? text.slice(start, end > start ? end : undefined) : '';
         const abc = /Approved Budget for the Contract:\s*PHP\s*([\d,]+(?:\.\d+)?)/.exec(text);
+
+        // Header rows are "Label:<tab>value" (or "Label<tab>value" for the boxed fields)
+        const field = (label) => {
+            const m = new RegExp(`${label}:?\\t([^\\n]*)`).exec(text);
+            return m ? m[1].replace('Printable Version', '').trim() || null : null;
+        };
+        const lines = (s) => s.split('\n').map((l) => l.trim()).filter(Boolean);
+        const afterTitle = lines(text.slice(text.indexOf('Bid Notice Abstract') + 'Bid Notice Abstract'.length));
+        // Contact block: name, designation, address, phones, email; ends at the Status box
+        const contact = /Contact Person:\t([\s\S]*?)\n\s*Status/.exec(text);
+        const contactLines = contact ? lines(contact[1]) : [];
+        const status = /\tStatus\t\s*\n+\s*([^\n]+)/.exec(text);
+
         return {
             items_text: items.replace(/[\t ]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim(),
-            abc_amount: abc ? Number(abc[1].replace(/,/g, '')) : null
+            abc_amount: abc ? Number(abc[1].replace(/,/g, '')) : null,
+            details: {
+                notice_type: afterTitle[0] || null,
+                solicitation_no: field('Solicitation Number'),
+                procurement_mode: field('Procurement Mode'),
+                classification: field('Classification'),
+                area_of_delivery: field('Area of Delivery'),
+                delivery_period: field('Delivery Period'),
+                client_agency: field('Client Agency'),
+                contact_name: contactLines[0] || null,
+                contact_info: contactLines.slice(1),
+                status: status ? status[1].trim() : null,
+                last_updated: field('Last Updated / Time')
+            }
         };
     });
 }
@@ -39,10 +65,11 @@ async function loadStoredDetails(refs) {
     for (let i = 0; i < refs.length; i += 200) {
         const { data, error } = await supabase
             .from('philgeps_opportunities')
-            .select('ref_no, items_text, abc_amount')
+            .select('ref_no, items_text, abc_amount, details')
             .in('ref_no', refs.slice(i, i + 200));
         if (error) throw new Error(`Supabase Database Error: ${error.message}`);
-        for (const row of data) if (row.items_text != null) stored.set(row.ref_no, row);
+        // Rows saved before details were captured get their page read once more
+        for (const row of data) if (row.items_text != null && row.details != null) stored.set(row.ref_no, row);
     }
     return stored;
 }
@@ -127,7 +154,8 @@ async function scrapeAndStore() {
                 category: CATEGORY_NAME,
                 detail_link: href,
                 items_text: null, // filled from the detail page
-                abc_amount: null
+                abc_amount: null,
+                details: null
             });
         }
         console.log(`Page ${pageNo}: ${rows.length} rows (total ${byRef.size})`);
@@ -160,7 +188,7 @@ async function scrapeAndStore() {
     // STEP 5: Flag tenders that mention our products (re-matched every run so molecules.json edits apply to old rows)
     for (const o of opportunities) {
         const known = stored.get(o.ref_no);
-        if (known) Object.assign(o, { items_text: known.items_text, abc_amount: known.abc_amount });
+        if (known) Object.assign(o, { items_text: known.items_text, abc_amount: known.abc_amount, details: known.details });
         o.matched_molecules = matchMolecules(`${o.title}\n${o.items_text || ''}`);
     }
     const matched = opportunities.filter((o) => o.matched_molecules.length > 0);
@@ -168,6 +196,7 @@ async function scrapeAndStore() {
 
     if (DRY_RUN) {
         for (const o of matched) console.log(`  ${o.ref_no} ${o.procuring_entity}: ${o.matched_molecules.join(', ')}`);
+        if (matched[0]) console.log('Sample details:', JSON.stringify(matched[0].details, null, 2));
         return;
     }
 
