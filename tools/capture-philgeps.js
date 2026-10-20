@@ -8,7 +8,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const puppeteer = require('puppeteer');
-const { login } = require('../philgeps-session');
+const { login, logout } = require('../philgeps-session');
 
 const OUT_DIR = path.resolve(__dirname, '..', 'captures');
 const NOTICE_URL = (ref) => `https://notices.philgeps.gov.ph/GEPS/Tender/SplashBidNoticeAbstractUI.aspx?menuIndex=3&refID=${ref}`;
@@ -50,12 +50,23 @@ async function clickText(page, pattern) {
     fs.mkdirSync(OUT_DIR, { recursive: true });
 
     const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
+    let loggedIn = false;
+
+    // Ctrl+C: still log out, since PhilGEPS allows only one session per account
+    process.once('SIGINT', async () => {
+        console.log('Stopping...');
+        if (loggedIn) await logout(page);
+        await browser.close();
+        process.exit(130);
+    });
+
     try {
-        const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
         console.log('Logging in to PhilGEPS...');
         await login(page);
+        loggedIn = true;
         await capture(page, 'after-login');
 
         if (await clickText(page, /^My Opportunities$/)) await capture(page, 'my-opportunities');
@@ -69,6 +80,7 @@ async function clickText(page, pattern) {
         if (await clickText(page, /^Order$/)) await capture(page, `after-order-click-${openRef}`);
         else console.warn('No "Order" link found on the open notice');
     } finally {
+        if (loggedIn) await logout(page);
         await browser.close();
     }
     console.log(`Done. Files are in ${OUT_DIR}`);

@@ -91,6 +91,28 @@ async function login(page) {
     step('Logged in');
 }
 
+// PhilGEPS allows one session per account ("The user id you have provided is currently in use"),
+// so every run must log out, or the team is locked out of the account until the session expires.
+// Safe to call when not logged in; never throws.
+async function logout(page) {
+    try {
+        const clicked = await page.evaluate(() => {
+            const link = Array.from(document.querySelectorAll('a')).find((a) => /^Log-?out$/i.test(a.innerText.trim()));
+            if (!link) return false;
+            link.click();
+            return true;
+        });
+        if (!clicked) {
+            console.warn('  No Log-out link on the current page; the PhilGEPS session may stay open until it expires');
+            return;
+        }
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        console.log('  Logged out of PhilGEPS');
+    } catch (err) {
+        console.warn(`  PhilGEPS log-out failed (${err.message}); the session may stay open until it expires`);
+    }
+}
+
 // Give up after 10 s: a page stuck mid-navigation can make screenshots hang for minutes
 async function saveDebug(page) {
     const save = (async () => {
@@ -103,4 +125,4 @@ async function saveDebug(page) {
     await Promise.race([save.catch(() => {}), timeout]);
 }
 
-module.exports = { login };
+module.exports = { login, logout };
