@@ -7,6 +7,26 @@ const LOGIN_URL = 'https://notices.philgeps.gov.ph/GEPS/log-in.aspx';
 // Screenshot + HTML of the page when log-in fails (gitignored, may show account details)
 const DEBUG_DIR = path.resolve(__dirname, 'captures');
 
+// The post-log-in page stalls while it waits on slow assets, so only let PhilGEPS documents,
+// scripts and styles through. Returns the requests still in flight, for diagnosing stalls.
+async function skipHeavyRequests(page) {
+    const pending = new Map();
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+        if (request.isInterceptResolutionHandled()) return;
+        const { hostname } = new URL(request.url());
+        const isPhilgeps = hostname === 'philgeps.gov.ph' || hostname.endsWith('.philgeps.gov.ph');
+        if (!isPhilgeps || ['image', 'font', 'media'].includes(request.resourceType())) {
+            request.abort();
+            return;
+        }
+        pending.set(request, Date.now());
+        request.continue();
+    });
+    for (const event of ['requestfinished', 'requestfailed']) page.on(event, (request) => pending.delete(request));
+    return pending;
+}
+
 // Log the page in with the company PhilGEPS account from .env.
 // The password is only typed into the form; never log it.
 async function login(page) {
@@ -16,6 +36,7 @@ async function login(page) {
     }
     const started = Date.now();
     const step = (message) => console.log(`  [${((Date.now() - started) / 1000).toFixed(1)} s] ${message}`);
+    const pending = await skipHeavyRequests(page);
 
     try {
         // The log-in page sets its own session cookie, so no home page visit is needed (~0.3 s)
@@ -41,6 +62,11 @@ async function login(page) {
             { timeout: 15000, polling: 250 }
         );
     } catch (err) {
+        // Show what the page was still waiting for (URL path only; no form data)
+        for (const [request, since] of pending) {
+            const { hostname, pathname } = new URL(request.url());
+            console.log(`  still waiting ${((Date.now() - since) / 1000).toFixed(0)} s: ${request.resourceType()} ${hostname}${pathname}`);
+        }
         await saveDebug(page);
         throw new Error(`PhilGEPS log-in stalled after ${((Date.now() - started) / 1000).toFixed(1)} s at ${page.url()}: ${err.message}`);
     }
