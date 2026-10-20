@@ -12,6 +12,7 @@ export default function Home() {
   const [bids, setBids] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [onlyMatches, setOnlyMatches] = useState(true);
   const [scraping, setScraping] = useState(false);
   const [scrapeError, setScrapeError] = useState('');
 
@@ -74,10 +75,17 @@ export default function Home() {
     };
   }, []);
 
-  // Match against both the tender title and the procuring entity (hospital)
+  // Tenders whose item list mentions one of our products (set by the scraper from molecules.json)
+  const isMatch = (bid) => (bid.matched_molecules || []).length > 0;
+  const matchCount = bids.filter(isMatch).length;
+
+  // Search the tender title, procuring entity (hospital) and matched products
   const query = search.toLowerCase();
   const filteredBids = bids.filter((bid) =>
-    `${bid.title || ''} ${bid.procuring_entity || ''}`.toLowerCase().includes(query)
+    (!onlyMatches || isMatch(bid)) &&
+    `${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`
+      .toLowerCase()
+      .includes(query)
   );
 
   return (
@@ -112,8 +120,8 @@ export default function Home() {
             <div className="text-3xl font-bold text-white mt-2">{bids.length}</div>
           </div>
           <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
-            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Target Category</span>
-            <div className="text-xl font-bold text-emerald-400 mt-2 truncate">Drugs & Medicines</div>
+            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Match Our Products</span>
+            <div className="text-3xl font-bold text-emerald-400 mt-2">{matchCount}</div>
           </div>
           <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Pipeline Connection</span>
@@ -125,14 +133,23 @@ export default function Home() {
         </section>
 
         {/* Search Input Bar */}
-        <div className="relative">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <input
             type="text"
-            placeholder="Search by tender title or hospital name..."
+            placeholder="Search by tender title, hospital name or molecule..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-900/80 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition shadow-inner"
+            className="flex-1 bg-slate-900/80 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition shadow-inner"
           />
+          <label className="inline-flex items-center gap-2 text-sm text-slate-300 bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={onlyMatches}
+              onChange={(e) => setOnlyMatches(e.target.checked)}
+              className="h-4 w-4 accent-emerald-500"
+            />
+            Our products only
+          </label>
         </div>
 
         {/* Data Grid Table */}
@@ -143,7 +160,7 @@ export default function Home() {
                 <tr className="bg-slate-950/40 border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
                   <th className="py-4 px-5 w-16 text-center">#</th>
                   <th className="py-4 px-6">Opportunity Title / Procuring Entity</th>
-                  <th className="py-4 px-6 w-48">Category</th>
+                  <th className="py-4 px-6 w-56">Our Products</th>
                   <th className="py-4 px-6 w-32 text-center">Status</th>
                   <th className="py-4 px-6 w-36 text-right">Action</th>
                 </tr>
@@ -170,8 +187,27 @@ export default function Home() {
                         {bid.procuring_entity && (
                           <div className="text-xs font-normal text-slate-500 mt-1 truncate">{bid.procuring_entity}</div>
                         )}
+                        {(bid.abc_amount || bid.closing_date) && (
+                          <div className="text-xs font-normal text-slate-500 mt-0.5">
+                            {bid.abc_amount && `ABC ₱${Number(bid.abc_amount).toLocaleString('en-PH')}`}
+                            {bid.abc_amount && bid.closing_date && ' · '}
+                            {bid.closing_date && `Closes ${bid.closing_date.slice(0, 16).replace('T', ' ')}`}
+                          </div>
+                        )}
                       </td>
-                      <td className="py-4 px-6 text-slate-400 text-xs">{bid.category}</td>
+                      <td className="py-4 px-6">
+                        {isMatch(bid) ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {bid.matched_molecules.map((name) => (
+                              <span key={name} className="px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-600 text-xs">No match</span>
+                        )}
+                      </td>
                       <td className="py-4 px-6 text-center">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           {bid.status || 'NEW'}

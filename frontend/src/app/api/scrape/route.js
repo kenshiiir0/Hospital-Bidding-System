@@ -19,7 +19,7 @@ export async function POST() {
       execFile(
         process.execPath,
         ['scraper.js'],
-        { cwd: REPO_ROOT, timeout: 300000 }, // full run pages through ~30 result pages
+        { cwd: REPO_ROOT, timeout: 900000 }, // first run also opens every tender's detail page; later runs only new ones
         (error, stdout, stderr) => {
           if (error) reject(new Error(stderr.trim() || error.message));
           else resolve(stdout);
