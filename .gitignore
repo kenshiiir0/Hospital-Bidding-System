@@ -1,0 +1,9 @@
+# Secrets (SUPABASE_KEY is the server-only secret key)
+.env
+.env.*
+
+# Dependencies
+node_modules/
+
+# Local Claude tool data (SQLite caches)
+.claude/data/

@@ -1,0 +1,31 @@
+{
+  "name": "hospital-bidding-system",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "scrape": "node scraper.js",
+    "cron": "node cron.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kenshiiir0/Hospital-Bidding-System.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/kenshiiir0/Hospital-Bidding-System/issues"
+  },
+  "homepage": "https://github.com/kenshiiir0/Hospital-Bidding-System#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "dotenv": "^18.0.8",
+    "node-cron": "^4.6.0",
+    "pg": "^8.23.1",
+    "puppeteer": "^25.14.0"
+  }
+}
