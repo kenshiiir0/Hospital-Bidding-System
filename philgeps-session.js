@@ -96,13 +96,17 @@ async function login(page) {
 // Safe to call when not logged in; never throws.
 async function logout(page) {
     try {
-        const clicked = await page.evaluate(() => {
+        const result = await page.evaluate(() => {
             const link = Array.from(document.querySelectorAll('a')).find((a) => /^Log-?out$/i.test(a.innerText.trim()));
-            if (!link) return false;
-            link.click();
-            return true;
+            if (link) {
+                link.click();
+                return 'clicked';
+            }
+            // Back on the log-in form (rejected log-in): there is no session of ours to close
+            return document.querySelector('#userName') ? 'not-logged-in' : 'no-link';
         });
-        if (!clicked) {
+        if (result === 'not-logged-in') return;
+        if (result === 'no-link') {
             console.warn('  No Log-out link on the current page; the PhilGEPS session may stay open until it expires');
             return;
         }

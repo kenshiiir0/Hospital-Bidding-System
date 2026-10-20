@@ -51,22 +51,31 @@ async function clickText(page, pattern) {
 
     const browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
-    let loggedIn = false;
 
-    // Ctrl+C: still log out, since PhilGEPS allows only one session per account
-    process.once('SIGINT', async () => {
-        console.log('Stopping...');
-        if (loggedIn) await logout(page);
-        await browser.close();
-        process.exit(130);
-    });
+    // PhilGEPS allows one session per account, so a run must never leave one open. Log out after
+    // any log-in attempt (even one that looked failed: PhilGEPS may have accepted it), on Ctrl+C,
+    // and when the run takes longer than MAX_SESSION_MS.
+    const MAX_SESSION_MS = 5 * 60 * 1000;
+    let loginAttempted = false;
+    let shuttingDown = false;
+    const shutdown = async (reason, exitCode) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.log(reason);
+        if (loginAttempted) await logout(page);
+        await browser.close().catch(() => {});
+        process.exit(exitCode);
+    };
+    process.once('SIGINT', () => shutdown('Stopping...', 130));
+    process.once('SIGTERM', () => shutdown('Stopping...', 143));
+    setTimeout(() => shutdown(`Run exceeded ${MAX_SESSION_MS / 60000} minutes; logging out.`, 1), MAX_SESSION_MS).unref();
 
     try {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
         console.log('Logging in to PhilGEPS...');
+        loginAttempted = true;
         await login(page);
-        loggedIn = true;
         await capture(page, 'after-login');
 
         if (await clickText(page, /^My Opportunities$/)) await capture(page, 'my-opportunities');
@@ -80,8 +89,11 @@ async function clickText(page, pattern) {
         if (await clickText(page, /^Order$/)) await capture(page, `after-order-click-${openRef}`);
         else console.warn('No "Order" link found on the open notice');
     } finally {
-        if (loggedIn) await logout(page);
-        await browser.close();
+        if (!shuttingDown) {
+            shuttingDown = true;
+            if (loginAttempted) await logout(page);
+            await browser.close();
+        }
     }
     console.log(`Done. Files are in ${OUT_DIR}`);
 })().catch((err) => {
