@@ -38,6 +38,15 @@ async function login(page) {
     const step = (message) => console.log(`  [${((Date.now() - started) / 1000).toFixed(1)} s] ${message}`);
     const pending = await skipHeavyRequests(page);
 
+    // PhilGEPS reports log-in problems in a JavaScript alert ("UserID and Password should not be
+    // blank.", wrong password, ...). An unanswered alert freezes a headless page, so read and close it.
+    const popups = [];
+    page.on('dialog', async (dialog) => {
+        popups.push(dialog.message());
+        await dialog.dismiss().catch(() => {});
+    });
+    const rejected = () => new Error(`PhilGEPS rejected the log-in: "${popups.join('" / "')}"`);
+
     try {
         // The log-in page sets its own session cookie, so no home page visit is needed (~0.3 s)
         step('Opening log-in page...');
@@ -62,6 +71,7 @@ async function login(page) {
             { timeout: 15000, polling: 250 }
         );
     } catch (err) {
+        if (popups.length) throw rejected();
         // Show what the page was still waiting for (URL path only; no form data)
         for (const [request, since] of pending) {
             const { hostname, pathname } = new URL(request.url());
@@ -73,6 +83,7 @@ async function login(page) {
 
     const loggedIn = await page.evaluate(() => /Log-?out/i.test(document.body?.innerText || ''));
     if (!loggedIn) {
+        if (popups.length) throw rejected();
         await saveDebug(page);
         const message = await page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 300));
         throw new Error(`PhilGEPS log-in failed (${page.url()}): ${message}`);
@@ -80,15 +91,16 @@ async function login(page) {
     step('Logged in');
 }
 
+// Give up after 10 s: a page stuck mid-navigation can make screenshots hang for minutes
 async function saveDebug(page) {
-    try {
+    const save = (async () => {
         fs.mkdirSync(DEBUG_DIR, { recursive: true });
         await page.screenshot({ path: path.join(DEBUG_DIR, 'login-debug.png'), fullPage: true });
         fs.writeFileSync(path.join(DEBUG_DIR, 'login-debug.html'), await page.content());
         console.log(`  Saved the page PhilGEPS showed to ${path.join(DEBUG_DIR, 'login-debug.png')}`);
-    } catch {
-        // Page already gone: the error message is all we have
-    }
+    })();
+    const timeout = new Promise((resolve) => setTimeout(resolve, 10000).unref());
+    await Promise.race([save.catch(() => {}), timeout]);
 }
 
 module.exports = { login };
