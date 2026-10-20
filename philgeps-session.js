@@ -1,7 +1,6 @@
 require('dotenv').config({ quiet: true });
 
 // Supplier log-in (the /GEPS/ side; public pages live under /GEPSNONPILOT/)
-const HOME_URL = 'https://notices.philgeps.gov.ph/';
 const LOGIN_URL = 'https://notices.philgeps.gov.ph/GEPS/log-in.aspx';
 
 // Log the page in with the company PhilGEPS account from .env.
@@ -11,29 +10,36 @@ async function login(page) {
     if (!PHILGEPS_USERNAME || !PHILGEPS_PASSWORD) {
         throw new Error('Set PHILGEPS_USERNAME and PHILGEPS_PASSWORD in .env to fetch bid documents');
     }
+    const started = Date.now();
 
-    await page.goto(HOME_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }); // establishes the session cookie
-    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 90000 });
-    await page.waitForSelector('#userName', { timeout: 90000 });
+    // The log-in page sets its own session cookie, so no home page visit is needed (~0.3 s)
+    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForSelector('#userName', { timeout: 30000 });
     await page.type('#userName', PHILGEPS_USERNAME);
     await page.type('#password', PHILGEPS_PASSWORD);
 
-    // The button posts the form to logInAction.aspx, which redirects to a landing page that keeps
-    // loading for a long time, so wait for the logged-in header (or a log-in error) instead of network idle.
-    await page.click('#btnLogin');
+    // The button posts the form to logInAction.aspx. Wait only for the resulting document,
+    // not for the landing page's images and scripts to finish loading.
+    await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+        page.click('#btnLogin')
+    ]);
+
+    // logInAction.aspx may hop through one more redirect. Stop as soon as the page shows either
+    // the logged-in header ("Log-out") or the log-in form again (wrong password, locked account, ...).
     await page
         .waitForFunction(
-            () => document.body && /Log-?out|invalid|incorrect|locked|error|try again/i.test(document.body.innerText) && !location.pathname.endsWith('/log-in.aspx'),
-            { timeout: 90000, polling: 1000 }
+            () => /Log-?out/i.test(document.body?.innerText || '') || document.querySelector('#userName'),
+            { timeout: 15000, polling: 250 }
         )
         .catch(() => {});
 
-    // Logged-in pages carry a "Log-out" link in the header
-    const loggedIn = await page.evaluate(() => /Log-?out/i.test(document.body.innerText));
+    const loggedIn = await page.evaluate(() => /Log-?out/i.test(document.body?.innerText || ''));
     if (!loggedIn) {
-        const message = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').slice(0, 200));
+        const message = await page.evaluate(() => (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 300));
         throw new Error(`PhilGEPS log-in failed (${page.url()}): ${message}`);
     }
+    console.log(`Logged in to PhilGEPS in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 }
 
 module.exports = { login };
