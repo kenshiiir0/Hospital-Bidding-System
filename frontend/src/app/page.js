@@ -8,12 +8,40 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+const EXCLUDED_KEY = 'excludedProducts';
+
+function readStoredExcluded() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(EXCLUDED_KEY) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function Home() {
   const [bids, setBids] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [scraping, setScraping] = useState(false);
   const [scrapeError, setScrapeError] = useState('');
+  const [products, setProducts] = useState([]);
+  const [excluded, setExcluded] = useState([]);
+  const [showExclusions, setShowExclusions] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+
+  // Excluded products are remembered per browser
+  const updateExcluded = (next) => {
+    setExcluded(next);
+    try {
+      localStorage.setItem(EXCLUDED_KEY, JSON.stringify(next));
+    } catch {
+      // Storage blocked (private window): the filter still works for this visit
+    }
+  };
+
+  const toggleExcluded = (name) =>
+    updateExcluded(excluded.includes(name) ? excluded.filter((n) => n !== name) : [...excluded, name]);
 
   // Fetch opportunities live from Supabase
   const fetchBids = async () => {
@@ -53,6 +81,15 @@ export default function Home() {
   useEffect(() => {
     loadBids();
 
+    // All our products (molecules.json) for the exclusion filter, plus the saved exclusions
+    fetch('/api/products')
+      .then((res) => res.json())
+      .then((names) => {
+        setProducts(names);
+        setExcluded(readStoredExcluded());
+      })
+      .catch((err) => console.error('Error loading products:', err.message));
+
     // Listen for new inserts in philgeps_opportunities in real-time
     const channel = supabase
       .channel('philgeps_changes')
@@ -78,12 +115,25 @@ export default function Home() {
     };
   }, []);
 
+  // Drop every tender that requests an excluded product
+  const visibleBids = bids.filter(
+    (bid) => !(bid.matched_molecules || []).some((name) => excluded.includes(name))
+  );
+
   // Distinct products of ours requested across the listed tenders
-  const productCount = new Set(bids.flatMap((bid) => bid.matched_molecules || [])).size;
+  const productCount = new Set(visibleBids.flatMap((bid) => bid.matched_molecules || [])).size;
+
+  // How many loaded tenders request each product, shown next to it in the filter
+  const tendersPerProduct = {};
+  for (const bid of bids) {
+    for (const name of bid.matched_molecules || []) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
+  }
+  const productQuery = productSearch.toLowerCase();
+  const listedProducts = products.filter((name) => name.toLowerCase().includes(productQuery));
 
   // Search the tender title, procuring entity (hospital) and matched products
   const query = search.toLowerCase();
-  const filteredBids = bids.filter((bid) =>
+  const filteredBids = visibleBids.filter((bid) =>
     `${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`
       .toLowerCase()
       .includes(query)
@@ -118,7 +168,7 @@ export default function Home() {
         <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Matching Opportunities</span>
-            <div className="text-3xl font-bold text-white mt-2">{bids.length}</div>
+            <div className="text-3xl font-bold text-white mt-2">{visibleBids.length}</div>
           </div>
           <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Our Products Requested</span>
@@ -134,15 +184,90 @@ export default function Home() {
         </section>
 
         {/* Search Input Bar */}
-        <div className="relative">
+        <div className="flex flex-col sm:flex-row gap-3">
           <input
             type="text"
             placeholder="Search by tender title, hospital name or molecule..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-900/80 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition shadow-inner"
+            className="flex-1 bg-slate-900/80 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition shadow-inner"
           />
+          <button
+            onClick={() => setShowExclusions(!showExclusions)}
+            aria-expanded={showExclusions}
+            className={`rounded-xl px-4 py-3.5 text-sm font-medium border transition ${
+              excluded.length
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+                : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            Exclude Products{excluded.length ? ` (${excluded.length})` : ''} {showExclusions ? '▴' : '▾'}
+          </button>
         </div>
+
+        {/* Product Exclusion Filter */}
+        {showExclusions && (
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                className="flex-1 bg-slate-950/60 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition"
+              />
+              <button
+                onClick={() => updateExcluded([])}
+                disabled={!excluded.length}
+                className="text-sm text-slate-400 hover:text-white disabled:text-slate-600 disabled:cursor-not-allowed px-3 py-2.5 transition"
+              >
+                Clear exclusions
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">
+              Checked products are excluded: any tender that requests one of them is removed from the list.
+            </p>
+            {listedProducts.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4 text-center">No products match &quot;{productSearch}&quot;.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1 max-h-72 overflow-y-auto pr-1">
+                {listedProducts.map((name) => (
+                  <label
+                    key={name}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800/60 cursor-pointer select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={excluded.includes(name)}
+                      onChange={() => toggleExcluded(name)}
+                      className="h-4 w-4 accent-amber-500"
+                    />
+                    <span className="flex-1 truncate">{name}</span>
+                    <span className="text-xs text-slate-500 tabular-nums">{tendersPerProduct[name] || 0}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {excluded.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500">
+              Excluding ({bids.length - visibleBids.length} tenders hidden):
+            </span>
+            {excluded.map((name) => (
+              <button
+                key={name}
+                onClick={() => toggleExcluded(name)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                title={`Stop excluding ${name}`}
+              >
+                {name} <span aria-hidden>×</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Data Grid Table */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-sm">
