@@ -12,7 +12,6 @@ export default function Home() {
   const [bids, setBids] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [onlyMatches, setOnlyMatches] = useState(true);
   const [scraping, setScraping] = useState(false);
   const [scrapeError, setScrapeError] = useState('');
 
@@ -22,11 +21,13 @@ export default function Home() {
     await loadBids();
   };
 
-  // Initial load uses this directly: loading already starts true
+  // Initial load uses this directly: loading already starts true.
+  // Only tenders that mention our products (matched by the scraper from molecules.json).
   const loadBids = async () => {
     const { data, error } = await supabase
       .from('philgeps_opportunities')
       .select('*')
+      .not('matched_molecules', 'eq', '{}')
       .order('id', { ascending: false });
 
     if (error) console.error('Error fetching bids:', error.message);
@@ -59,6 +60,8 @@ export default function Home() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'philgeps_opportunities' },
         (payload) => {
+          // Ignore tenders that don't mention our products
+          if (!(payload.new.matched_molecules || []).length) return;
           console.log('New hospital tender added:', payload.new);
           // Skip rows already loaded (e.g. by fetchBids after a manual scrape)
           setBids((prevBids) =>
@@ -75,14 +78,12 @@ export default function Home() {
     };
   }, []);
 
-  // Tenders whose item list mentions one of our products (set by the scraper from molecules.json)
-  const isMatch = (bid) => (bid.matched_molecules || []).length > 0;
-  const matchCount = bids.filter(isMatch).length;
+  // Distinct products of ours requested across the listed tenders
+  const productCount = new Set(bids.flatMap((bid) => bid.matched_molecules || [])).size;
 
   // Search the tender title, procuring entity (hospital) and matched products
   const query = search.toLowerCase();
   const filteredBids = bids.filter((bid) =>
-    (!onlyMatches || isMatch(bid)) &&
     `${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`
       .toLowerCase()
       .includes(query)
@@ -116,12 +117,12 @@ export default function Home() {
         {/* Metrics Row */}
         <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
-            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Total Opportunities</span>
+            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Matching Opportunities</span>
             <div className="text-3xl font-bold text-white mt-2">{bids.length}</div>
           </div>
           <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
-            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Match Our Products</span>
-            <div className="text-3xl font-bold text-emerald-400 mt-2">{matchCount}</div>
+            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Our Products Requested</span>
+            <div className="text-3xl font-bold text-emerald-400 mt-2">{productCount}</div>
           </div>
           <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Pipeline Connection</span>
@@ -133,23 +134,14 @@ export default function Home() {
         </section>
 
         {/* Search Input Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative">
           <input
             type="text"
             placeholder="Search by tender title, hospital name or molecule..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 bg-slate-900/80 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition shadow-inner"
+            className="w-full bg-slate-900/80 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition shadow-inner"
           />
-          <label className="inline-flex items-center gap-2 text-sm text-slate-300 bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3.5 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={onlyMatches}
-              onChange={(e) => setOnlyMatches(e.target.checked)}
-              className="h-4 w-4 accent-emerald-500"
-            />
-            Our products only
-          </label>
         </div>
 
         {/* Data Grid Table */}
@@ -196,17 +188,13 @@ export default function Home() {
                         )}
                       </td>
                       <td className="py-4 px-6">
-                        {isMatch(bid) ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {bid.matched_molecules.map((name) => (
-                              <span key={name} className="px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                                {name}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs">No match</span>
-                        )}
+                        <div className="flex flex-wrap gap-1.5">
+                          {(bid.matched_molecules || []).map((name) => (
+                            <span key={name} className="px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                              {name}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td className="py-4 px-6 text-center">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
