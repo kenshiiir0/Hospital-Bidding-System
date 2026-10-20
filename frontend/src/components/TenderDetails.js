@@ -4,6 +4,10 @@ import { useEffect } from 'react';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Scraped values end up in hrefs: only link to PhilGEPS over https and to plain e-mail addresses
+const PHILGEPS_LINK = /^https:\/\/notices\.philgeps\.gov\.ph\//;
+const EMAIL = /^[^\s@<>"'()]+@[^\s@<>"'()]+\.[a-z]{2,}$/i;
+
 // Wrap mentions of our matched products in <mark> so they stand out in the item list
 function highlight(text, names) {
   if (!names.length) return text;
@@ -118,7 +122,7 @@ export default function TenderDetails({ bid, onClose }) {
               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-sm space-y-0.5">
                 <div className="font-semibold text-slate-100">{d.contact_name}</div>
                 {(d.contact_info || []).map((line, i) =>
-                  line.includes('@') ? (
+                  EMAIL.test(line) ? (
                     <a key={i} href={`mailto:${line}`} className="block text-blue-400 hover:text-blue-300 break-all">
                       {line}
                     </a>
@@ -132,14 +136,16 @@ export default function TenderDetails({ bid, onClose }) {
             )}
           </section>
 
-          <a
-            href={bid.detail_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition"
-          >
-            View original notice and documents on PhilGEPS <span className="text-[10px]">↗</span>
-          </a>
+          {PHILGEPS_LINK.test(bid.detail_link || '') && (
+            <a
+              href={bid.detail_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition"
+            >
+              View original notice and documents on PhilGEPS <span className="text-[10px]">↗</span>
+            </a>
+          )}
         </div>
       </aside>
     </div>

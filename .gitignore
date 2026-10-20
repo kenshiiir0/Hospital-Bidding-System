@@ -7,3 +7,6 @@ node_modules/
 
 # Local Claude tool data (SQLite caches)
 .claude/data/
+
+# Logged-in PhilGEPS page captures (contain account details)
+captures/

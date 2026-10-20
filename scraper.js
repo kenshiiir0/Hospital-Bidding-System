@@ -99,10 +99,8 @@ function toTimestamp(dmyTime) {
 
 async function scrapeAndStore() {
     console.log('Launching browser worker...');
-    const browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox']
-    });
+    // Keep Chrome's sandbox on: the scraper loads third-party pages
+    const browser = await puppeteer.launch({ headless: true });
 
     try {
     const page = await browser.newPage();

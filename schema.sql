@@ -43,3 +43,10 @@ BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE philgeps_opportunities;
     END IF;
 END $$;
+
+-- Security: the dashboard uses the public (publishable) key, so that key may only read.
+-- Writes come from scraper.js with the secret key, which bypasses these rules.
+ALTER TABLE philgeps_opportunities ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON philgeps_opportunities;
+CREATE POLICY "dashboard can read" ON philgeps_opportunities FOR SELECT TO anon, authenticated USING (true);
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON philgeps_opportunities FROM anon, authenticated;

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
+import { rejectNonLocal } from '@/lib/localRequest';
 
 // scraper.js lives in the repo root (one level above frontend/) with its own
 // node_modules and .env, so run it as a child process instead of bundling Puppeteer.
@@ -8,7 +9,10 @@ const REPO_ROOT = path.resolve(process.cwd(), '..');
 // Prevent overlapping Chrome sessions if the button is clicked repeatedly
 let isRunning = false;
 
-export async function POST() {
+export async function POST(request) {
+  const forbidden = rejectNonLocal(request);
+  if (forbidden) return forbidden;
+
   if (isRunning) {
     return Response.json({ ok: false, error: 'A scrape is already running.' }, { status: 409 });
   }
