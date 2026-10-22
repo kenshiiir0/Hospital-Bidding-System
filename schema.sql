@@ -44,9 +44,43 @@ BEGIN
     END IF;
 END $$;
 
--- Security: the dashboard uses the public (publishable) key, so that key may only read.
+-- Security: the dashboard uses the public (publishable) key, so that key may only read, and only for a
+-- signed-in team member: an account whose app_metadata has team = true. Only the secret key can set
+-- app_metadata (tools/add-user.js does), so an account someone signs up for themselves reads nothing.
 -- Writes come from scraper.js with the secret key, which bypasses these rules.
 ALTER TABLE philgeps_opportunities ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "dashboard can read" ON philgeps_opportunities;
-CREATE POLICY "dashboard can read" ON philgeps_opportunities FOR SELECT TO anon, authenticated USING (true);
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON philgeps_opportunities FROM anon, authenticated;
+CREATE POLICY "dashboard can read" ON philgeps_opportunities FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON philgeps_opportunities FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON philgeps_opportunities FROM authenticated;
+
+-- History page: one row per thing that happened in the system (for now, each scraper run).
+-- details holds the event's numbers and the reference numbers of the tenders it added.
+CREATE TABLE IF NOT EXISTS activity_log (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    event VARCHAR(50) NOT NULL,      -- 'scrape'
+    status VARCHAR(20) NOT NULL,     -- 'success' | 'failed'
+    trigger VARCHAR(20),             -- 'dashboard' | 'schedule' | 'manual'
+    summary TEXT,
+    details JSONB
+);
+
+ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON activity_log;
+CREATE POLICY "dashboard can read" ON activity_log FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON activity_log FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON activity_log FROM authenticated;
+
+-- Broadcast new history entries to the dashboard via Supabase Realtime
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime' AND tablename = 'activity_log'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE activity_log;
+    END IF;
+END $$;

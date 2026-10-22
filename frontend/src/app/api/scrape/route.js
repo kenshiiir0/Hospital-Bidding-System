@@ -1,40 +1,25 @@
-import { execFile } from 'node:child_process';
-import path from 'node:path';
 import { rejectNonLocal } from '@/lib/localRequest';
+import { requireUser } from '@/lib/auth';
+import { currentJob, requestSync } from '@/lib/fetchJobs';
 
-// scraper.js lives in the repo root (one level above frontend/) with its own
-// node_modules and .env, so run it as a child process instead of bundling Puppeteer.
-const REPO_ROOT = path.resolve(process.cwd(), '..');
+// The current or last PhilGEPS fetch (automatic or Sync), read by the dashboard's progress bar and ring
+export async function GET(request) {
+  const forbidden = rejectNonLocal(request);
+  if (forbidden) return forbidden;
+  return Response.json(currentJob());
+}
 
-// Prevent overlapping Chrome sessions if the button is clicked repeatedly
-let isRunning = false;
-
+// Sync: log in and fetch the screened tenders' documents. Starts nothing when PhilGEPS is down;
+// waits for an automatic fetch that is still running.
 export async function POST(request) {
   const forbidden = rejectNonLocal(request);
   if (forbidden) return forbidden;
+  const { response } = await requireUser(request);
+  if (response) return response;
 
-  if (isRunning) {
-    return Response.json({ ok: false, error: 'A scrape is already running.' }, { status: 409 });
+  const result = await requestSync();
+  if (result.unavailable) {
+    return Response.json({ ok: false, unavailable: true, error: result.error }, { status: 503 });
   }
-
-  isRunning = true;
-  try {
-    const output = await new Promise((resolve, reject) => {
-      execFile(
-        process.execPath,
-        ['scraper.js'],
-        { cwd: REPO_ROOT, timeout: 900000 }, // first run also opens every tender's detail page; later runs only new ones
-        (error, stdout, stderr) => {
-          if (error) reject(new Error(stderr.trim() || error.message));
-          else resolve(stdout);
-        }
-      );
-    });
-    return Response.json({ ok: true, output });
-  } catch (err) {
-    console.error('Scrape failed:', err.message);
-    return Response.json({ ok: false, error: err.message }, { status: 500 });
-  } finally {
-    isRunning = false;
-  }
+  return Response.json({ ok: true, ...result }, { status: 202 });
 }

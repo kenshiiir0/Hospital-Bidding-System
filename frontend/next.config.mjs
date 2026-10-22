@@ -3,6 +3,8 @@ const nextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  // The PhilGEPS fetch progress ring sits bottom-left
+  devIndicators: { position: "bottom-right" },
   // Basic hardening: no framing (clickjacking of the scrape button), no MIME sniffing,
   // no referrer sent to PhilGEPS or other sites, no device APIs
   async headers() {

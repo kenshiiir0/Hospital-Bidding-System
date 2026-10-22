@@ -22,4 +22,18 @@ function matchMolecules(text) {
         .map(({ name }) => name);
 }
 
-module.exports = { matchMolecules };
+// Lines of an item list that mention our products, e.g.
+// { line: "7 1000 bottle Cetirizine 5mg/5ml, 60ml SYRUP 113.98 113,980.00", products: ["Cetirizine"] }
+function matchItemLines(text) {
+    if (!text) return [];
+    return text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .flatMap((line) => {
+            const products = matchMolecules(line);
+            return products.length ? [{ line, products }] : [];
+        });
+}
+
+module.exports = { matchMolecules, matchItemLines };
