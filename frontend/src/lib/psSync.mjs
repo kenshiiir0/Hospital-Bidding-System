@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
+import { analyzePending } from './psDocs.mjs';
 
 // PS-PhilGEPS (philgeps.gov.ph) Sync without a browser, so it runs on the deployed dashboard's server.
 // PhilGEPS's lists, notices and document lists are plain HTML; they are fetched with the log-in session
@@ -287,7 +288,12 @@ export async function claimSync(by) {
 
 // ---------- the Sync ----------
 
+// Time from the Sync's start until it stops reading documents (the host stops a request at 300 s); tenders
+// not read by then are read by the 5-minute keep-alive (/api/ps-keepalive)
+const READ_UNTIL_MS = 260 * 1000;
+
 export async function runSync() {
+  const syncStarted = Date.now();
   const supabase = admin();
   // For the History page (activityLog.mjs)
   const { data: started } = await supabase.from('ps_sync_status').select('started_by, started_at').eq('id', 'latest').maybeSingle();
@@ -339,25 +345,39 @@ export async function runSync() {
       }
       done++;
       if (done % 10 === 0) await saveCookies();
-      await progress(28 + (67 * done) / Math.max(refs.length, 1), `Notices and documents (${done} of ${refs.length})`);
+      await progress(28 + (55 * done) / Math.max(refs.length, 1), `Notices and documents (${done} of ${refs.length})`);
     });
 
-    await progress(97, 'Saving');
+    await progress(84, 'Saving');
     const syncedAt = new Date().toISOString();
     const { error } = await supabase.from('ps_philgeps_snapshot').upsert({ id: 'latest', synced_at: syncedAt, lists, notices, updated_at: syncedAt });
     if (error) throw new PsSyncError('DB', `Saving the result: ${error.message}`);
     await saveCookies();
 
-    const matching = Object.values(notices).filter((n) => n.matched?.length).length;
+    // Our products are often only in the documents (a notice titled "Drugs and Medicines" lists its items in
+    // the bid documents): read the new and changed documents now (psDocs.mjs)
+    await progress(85, 'Reading the documents for our products');
+    const reading = await analyzePending({
+      maxMs: Math.max(0, READ_UNTIL_MS - (Date.now() - syncStarted)),
+      refs,
+      onProgress: (n, total) => progress(85 + (12 * n) / Math.max(total, 1), `Reading the documents for our products (${n} of ${total})`),
+    }).catch(() => null);
+    const { data: analyses } = await supabase.from('ps_tender_analysis').select('ref, result').in('ref', refs);
+    const inDocuments = new Set((analyses || []).filter((a) => a.result?.items?.length).map((a) => a.ref));
+
+    const ours = refs.filter((ref) => notices[ref]?.matched?.length || inDocuments.has(ref));
+    const matching = ours.length;
+    const onlyInDocuments = ours.filter((ref) => !notices[ref]?.matched?.length).length;
     const files = Object.values(notices).reduce((sum, n) => sum + (n.documents?.length || 0), 0);
-    const stage = `Done: ${lists.bidMatch.rows.length} bid matches (${matching} with our products), ${files} documents, ${lists.opportunities.rows.length} opportunities, ${lists.awards.rows.length} award notices`;
+    const leftToRead = reading?.left ? ` (${reading.left} tenders' documents still being read)` : '';
+    const stage = `Done: ${lists.bidMatch.rows.length} bid matches (${matching} with our products, ${onlyInDocuments} found only in the documents), ${files} documents${leftToRead}, ${lists.opportunities.rows.length} opportunities, ${lists.awards.rows.length} award notices`;
     await setStatus(supabase, { status: 'success', percent: 100, stage, finished_at: new Date().toISOString() });
     await logActivity({
       event: 'ps-sync',
       status: 'success',
       by: started?.started_by,
       summary: stage,
-      details: { duration_ms: tookMs(), bid_matches: lists.bidMatch.rows.length, matching, files, opportunities: lists.opportunities.rows.length, awards: lists.awards.rows.length },
+      details: { duration_ms: tookMs(), bid_matches: lists.bidMatch.rows.length, matching, only_in_documents: onlyInDocuments, files, opportunities: lists.opportunities.rows.length, awards: lists.awards.rows.length },
     });
     return stage;
   } catch (e) {

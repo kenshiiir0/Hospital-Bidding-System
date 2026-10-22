@@ -142,6 +142,7 @@ function ActivityEntry({ entry, onOpen }) {
           <div className="flex flex-wrap gap-2 mt-3 text-xs">
             <Chip>{details.bid_matches} bid matches</Chip>
             <Chip tone="green">{details.matching} with our products</Chip>
+            {details.only_in_documents > 0 && <Chip tone="green">{details.only_in_documents} found only in the documents</Chip>}
             <Chip tone="blue">{details.files} documents</Chip>
             <Chip>{details.opportunities} opportunities</Chip>
             <Chip>{details.awards} award notices</Chip>

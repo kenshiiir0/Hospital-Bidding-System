@@ -219,8 +219,8 @@ async function readTender(supabase, matchProducts, notice) {
 }
 
 // Reads the tenders whose documents are new or changed, a few at a time, until maxMs has passed.
-// Returns { read, failed, left }.
-export async function analyzePending({ maxMs = 200000, refs: only } = {}) {
+// onProgress(done, total) after each tender. Returns { read, failed, left }.
+export async function analyzePending({ maxMs = 200000, refs: only, onProgress } = {}) {
   const started = Date.now();
   const supabase = admin();
   const matchProducts = await loadMatcher();
@@ -259,6 +259,7 @@ export async function analyzePending({ maxMs = 200000, refs: only } = {}) {
         model: RULES_VERSION,
         analyzed_at: new Date().toISOString(),
       });
+      await onProgress?.(readCount + failed, queue.length);
     }
   };
   await Promise.all(Array.from({ length: TENDERS_AT_ONCE }, worker));
