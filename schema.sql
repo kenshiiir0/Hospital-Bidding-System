@@ -151,3 +151,29 @@ CREATE POLICY "dashboard can read" ON ps_sync_status FOR SELECT TO authenticated
 REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ps_sync_status FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ps_sync_status FROM authenticated;
 INSERT INTO ps_sync_status (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;
+
+-- What was read in each PS-PhilGEPS tender's bid documents (frontend/src/lib/psDocs.mjs, free text
+-- rules, run by the keep-alive call): result = { bid_data_sheet: { prebid_conference, bid_opening,
+-- bid_submission_deadline, delivery_period, bid_validity, bid_security } (passages as written),
+-- items: [{ our_products[], item_no, quantity, unit, unit_price, total, description, line, context,
+-- source }] }. documents_key changes with the documents or the rules version, which makes it read again;
+-- a failed reading has no key and is tried again. Team read only; written with the secret key.
+CREATE TABLE IF NOT EXISTS ps_tender_analysis (
+    ref TEXT PRIMARY KEY,
+    status VARCHAR(20) NOT NULL,          -- done | failed | skipped
+    result JSONB,
+    documents_read JSONB,                 -- [{ name, kind: text | scanned, pages }]
+    documents_key TEXT,
+    error TEXT,
+    model TEXT,                           -- rules version that read it
+    analyzed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE ps_tender_analysis DROP COLUMN IF EXISTS attempts;
+ALTER TABLE ps_tender_analysis DROP COLUMN IF EXISTS input_tokens;
+ALTER TABLE ps_tender_analysis DROP COLUMN IF EXISTS output_tokens;
+ALTER TABLE ps_tender_analysis ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON ps_tender_analysis;
+CREATE POLICY "dashboard can read" ON ps_tender_analysis FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ps_tender_analysis FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ps_tender_analysis FROM authenticated;

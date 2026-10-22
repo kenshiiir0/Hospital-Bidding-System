@@ -4,8 +4,8 @@ import { useEffect } from 'react';
 
 // Side panel for one PS-PhilGEPS list row: the title (long notice title or award line item) as the
 // heading, then every column PhilGEPS shows, plus optional extra sections (our products, documents).
-// titleColumn / subtitleColumn: column names used for the heading.
-export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, link, children, onClose }) {
+// titleColumn / subtitleColumn: column names used for the heading; wide: room for tables.
+export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, link, wide = false, children, onClose }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -20,7 +20,7 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={valueOf(titleColumn)}>
       <button className="absolute inset-0 bg-black/20" aria-label="Close" onClick={onClose} />
-      <div className="relative w-full max-w-xl h-full overflow-y-auto bg-white p-6 shadow-[0_4px_16px_rgba(0,0,0,.08)] space-y-6">
+      <div className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-xl'} h-full overflow-y-auto bg-white p-6 shadow-[0_4px_16px_rgba(0,0,0,.08)] space-y-6`}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold text-black leading-snug">{valueOf(titleColumn)}</h2>
