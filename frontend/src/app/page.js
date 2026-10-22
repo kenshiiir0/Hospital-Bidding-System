@@ -663,7 +663,7 @@ export default function Home() {
               <table className="w-full text-sm">
                 <thead className="bg-[#1EA0DA]/5 text-left text-xs text-black/62">
                   <tr>
-                    {['#', 'Reference Number', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Our products', 'Documents'].map((h) => (
+                    {['#', 'Reference Number', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Our products', 'Remarks'].map((h) => (
                       <th key={h} className="px-3 py-2.5 font-semibold whitespace-nowrap">{h}</th>
                     ))}
                     <th className="px-3 py-2.5" aria-label="Details" />

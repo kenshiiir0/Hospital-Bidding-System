@@ -74,7 +74,7 @@ export default function BidMatchPage() {
         columns={LIST_COLUMNS}
         extraColumns={[
           { label: 'Our products', render: (row) => <Products names={noticeOf(row)?.matched} /> },
-          { label: 'Documents', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
+          { label: 'Remarks', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
         ]}
         onDetails={setSelected}
       />
