@@ -45,7 +45,14 @@ function admin() {
 // The session's cookies as name → value; PhilGEPS's Set-Cookie headers update them as pages are read
 class Session {
   constructor(cookies) {
+    this.load(cookies);
+  }
+  load(cookies) {
     this.jar = new Map(cookies.map((c) => [c.name, c]));
+  }
+  // To tell whether the saved copy was changed by someone else
+  fingerprint() {
+    return this.header();
   }
   header() {
     return [...this.jar.values()].map((c) => `${c.name}=${c.value}`).join('; ');
@@ -261,22 +268,46 @@ export async function runSync() {
     const session = new Session(saved.cookies);
     const matchMolecules = await loadMatcher();
 
+    // The saved session is shared (keep-alive, other computers). Keep the saved copy up to date while
+    // reading, and if PhilGEPS shows the log-in page, first check whether someone saved a newer copy
+    // (then carry on with it) before calling the session ended.
+    let savedPrint = new Session(saved.cookies).fingerprint();
+    const saveCookies = async () => {
+      if (session.fingerprint() === savedPrint) return;
+      await supabase.from('ps_philgeps_session').update({ cookies: session.cookies() }).eq('id', 'current');
+      savedPrint = session.fingerprint();
+    };
+    const withSession = async (fn) => {
+      try {
+        return await fn();
+      } catch (e) {
+        if (e.code !== 'NOT_CONNECTED') throw e;
+        const { data: now } = await supabase.from('ps_philgeps_session').select('cookies').eq('id', 'current').maybeSingle();
+        if (!now?.cookies?.length || new Session(now.cookies).fingerprint() === session.fingerprint()) throw e;
+        session.load(now.cookies);
+        savedPrint = session.fingerprint();
+        return fn();
+      }
+    };
+
     const lists = {};
     for (const [i, list] of LISTS.entries()) {
-      lists[list.key] = await readList(session, list, (n) => progress(3 + i * 8 + Math.min(n, 7), `Reading ${list.label} (page ${n})`));
+      lists[list.key] = await withSession(() => readList(session, list, (n) => progress(3 + i * 8 + Math.min(n, 7), `Reading ${list.label} (page ${n})`)));
     }
+    await saveCookies();
 
     const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))];
     const notices = {};
     let done = 0;
     await inBatches(refs, NOTICES_AT_ONCE, async (ref) => {
       try {
-        notices[ref] = await readNotice(session, supabase, ref, matchMolecules);
+        notices[ref] = await withSession(() => readNotice(session, supabase, ref, matchMolecules));
       } catch (e) {
         if (e.code === 'NOT_CONNECTED' || e.code === 'SITE_DOWN') throw e;
         notices[ref] = { error: e.message };
       }
       done++;
+      if (done % 10 === 0) await saveCookies();
       await progress(28 + (67 * done) / Math.max(refs.length, 1), `Notices and documents (${done} of ${refs.length})`);
     });
 
@@ -284,8 +315,7 @@ export async function runSync() {
     const syncedAt = new Date().toISOString();
     const { error } = await supabase.from('ps_philgeps_snapshot').upsert({ id: 'latest', synced_at: syncedAt, lists, notices, updated_at: syncedAt });
     if (error) throw new PsSyncError('DB', `Saving the result: ${error.message}`);
-    // Keep the newest cookies PhilGEPS handed out
-    await supabase.from('ps_philgeps_session').update({ cookies: session.cookies() }).eq('id', 'current');
+    await saveCookies();
 
     const matching = Object.values(notices).filter((n) => n.matched?.length).length;
     const files = Object.values(notices).reduce((sum, n) => sum + (n.documents?.length || 0), 0);
@@ -310,6 +340,9 @@ export async function runSync() {
 // A session PhilGEPS already ended is forgotten (every dashboard then shows "not connected").
 export async function keepAlive() {
   const supabase = admin();
+  // A running Sync keeps the session busy itself; using the same session at the same time can end it
+  const { data: status } = await supabase.from('ps_sync_status').select('status, started_at').eq('id', 'latest').single();
+  if (status?.status === 'running' && Date.now() - new Date(status.started_at).getTime() < STALE_RUN_MS) return { skipped: 'sync running' };
   const { data: saved } = await supabase.from('ps_philgeps_session').select('cookies').eq('id', 'current').maybeSingle();
   if (!saved?.cookies?.length) return { connected: false };
   const session = new Session(saved.cookies);
