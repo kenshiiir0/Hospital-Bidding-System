@@ -5,8 +5,9 @@ import HospitalLinks from '@/components/HospitalLinks';
 
 // Side panel for one PS-PhilGEPS list row: the title (long notice title or award line item) as the
 // heading, then every column PhilGEPS shows, plus optional extra sections (our products, documents).
-// titleColumn / subtitleColumn: column names used for the heading; wide: room for tables.
-export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, link, wide = false, children, onClose }) {
+// titleColumn / subtitleColumn: column names used for the heading; wide: room for tables; lead: a section
+// shown first, above PhilGEPS's columns (the bidding dates).
+export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, link, wide = false, lead, children, onClose }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -33,6 +34,8 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
             ✕
           </button>
         </div>
+
+        {lead}
 
         <dl className="grid grid-cols-[minmax(0,10rem)_1fr] gap-x-4 gap-y-2 text-sm">
           {fields.map(({ h, v }) => (

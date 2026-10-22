@@ -23,6 +23,8 @@ export default function PsPhilgepsLayout({ children }) {
   // null = not checked yet, false = this dashboard can't open a log-in window (deployed copy)
   const [connect, setConnect] = useState(null);
   const [requestError, setRequestError] = useState('');
+  // One search box for the three pages (kept when switching between them)
+  const [search, setSearch] = useState('');
   // Sync pressed while not connected: start it as soon as the log-in is saved
   const [syncAfterConnect, setSyncAfterConnect] = useState(false);
 
@@ -123,7 +125,7 @@ export default function PsPhilgepsLayout({ children }) {
   }, [connectFailed]);
 
   return (
-    <PsContext.Provider value={{ data }}>
+    <PsContext.Provider value={{ data, search }}>
       <div className="min-h-screen bg-white text-black antialiased">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
           <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
@@ -156,6 +158,21 @@ export default function PsPhilgepsLayout({ children }) {
           {requestError && <Notice tone="error">{requestError}</Notice>}
           <ConnectNotice connect={connect} connected={connected} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
           <SyncNotice sync={sync} />
+          <div className="flex items-center gap-2">
+            <input
+              type="search"
+              placeholder="Search reference no., title, hospital or molecule…"
+              aria-label="Search PS-PhilGEPS"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="rounded-full px-3 py-2 text-sm text-black/62 hover:text-black">
+                Clear
+              </button>
+            )}
+          </div>
           {children}
         </div>
       </div>

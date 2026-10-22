@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { usePsPhilgeps } from '@/lib/psContext';
+import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel, { PanelSection } from '@/components/PsDetailsPanel';
@@ -9,7 +9,7 @@ import PsDetailsPanel, { PanelSection } from '@/components/PsDetailsPanel';
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
 export default function BidMatchPage() {
-  const { data } = usePsPhilgeps() || {};
+  const { data, search = '' } = usePsPhilgeps() || {};
   const [onlyOurs, setOnlyOurs] = useState(true);
   const [selected, setSelected] = useState(null);
   const list = data?.lists?.bidMatch;
@@ -17,7 +17,10 @@ export default function BidMatchPage() {
   const noticeOf = (row) => notices[refOf(row)];
   const readingOf = (row) => data?.analysis?.[refOf(row)];
   const ours = (list?.rows || []).filter((row) => noticeOf(row)?.matched?.length);
-  const rows = onlyOurs ? ours : list?.rows;
+  // Search also finds our product names (matched on the notice page or named in its documents)
+  const rows = (onlyOurs ? ours : list?.rows || []).filter((row) =>
+    matchesSearch(search, row, [...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)].join(' '))
+  );
 
   return (
     <section className="space-y-4">
@@ -27,6 +30,7 @@ export default function BidMatchPage() {
           {list && (
             <span className="text-sm font-normal text-black/62">
               · {ours.length} of {list.rows.length} mention our products
+              {search && ` · ${rows.length} match the search`}
             </span>
           )}
         </h2>
@@ -53,9 +57,7 @@ export default function BidMatchPage() {
         empty="No Bid Match data yet. Press Sync PS-PhilGEPS above."
         columns={LIST_COLUMNS}
         extraColumns={[
-          { label: 'Pre-bid / Opening', render: (row) => <KeyDates schedule={noticeOf(row)?.schedule} /> },
           { label: 'Our products', render: (row) => <Products names={noticeOf(row)?.matched} /> },
-          { label: 'Molecule tracker', render: (row) => <TrackerCount reading={readingOf(row)} /> },
           { label: 'Documents', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
         ]}
         onDetails={setSelected}
@@ -69,10 +71,12 @@ export default function BidMatchPage() {
           link={selected.links.find((l) => /viewBidNotice/.test(l.href))?.href}
           wide
           onClose={() => setSelected(null)}
+          lead={
+            <PanelSection title="Bidding dates">
+              <ScheduleList schedule={noticeOf(selected)?.schedule} />
+            </PanelSection>
+          }
         >
-          <PanelSection title="Schedule">
-            <ScheduleList schedule={noticeOf(selected)?.schedule} />
-          </PanelSection>
           <PanelSection title="Our products">
             <Products names={noticeOf(selected)?.matched} />
           </PanelSection>
@@ -89,18 +93,8 @@ export default function BidMatchPage() {
 // The list shows the hospital; the long notice title, mode and classification are in View details
 const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Closing Date', 'Status'];
 
-// Key dates read from the notice page by the Sync (psSync.mjs readSchedule); a missing one is usually
-// only in the bid documents
-function KeyDates({ schedule }) {
-  if (!schedule) return <span className="text-black/46">—</span>;
-  return (
-    <div className="text-xs space-y-0.5">
-      <div><span className="text-black/46">Pre-bid </span>{schedule.prebid || '—'}</div>
-      <div><span className="text-black/46">Opening </span>{schedule.bidOpening || '—'}</div>
-    </div>
-  );
-}
-
+// Bidding dates read from the notice page by the Sync (psSync.mjs readSchedule); a missing one is
+// usually only in the bid documents (see "Bid data sheet")
 function ScheduleList({ schedule }) {
   if (!schedule) return <span className="text-sm text-black/46">Not read yet (Sync again).</span>;
   const items = [
@@ -123,14 +117,6 @@ function ScheduleList({ schedule }) {
 }
 
 // What was read in the tender's PDFs (lib/psDocs.mjs: free text rules; scanned PDFs can't be read)
-function TrackerCount({ reading }) {
-  if (!reading) return <span className="text-xs text-black/46">Not read yet</span>;
-  if (reading.status === 'failed') return <span className="text-xs text-[#B3312C]">Not read</span>;
-  if (reading.status === 'skipped') return <span className="text-xs text-black/46">{/scanned/i.test(reading.error || '') ? 'Scanned only' : '—'}</span>;
-  const n = reading.result?.items?.length || 0;
-  return n ? <span className="text-xs text-[#3F6F2C]">{n} line{n > 1 ? 's' : ''}</span> : <span className="text-xs text-black/46">None in documents</span>;
-}
-
 const BDS_FIELDS = [
   ['Pre-bid conference', 'prebid_conference'],
   ['Bid opening', 'bid_opening'],
