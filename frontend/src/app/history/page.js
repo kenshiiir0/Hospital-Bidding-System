@@ -55,10 +55,9 @@ function TenderLine({ tender, note, onOpen }) {
       >
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-mono text-xs text-black/62">{tender.ref_no}</span>
-          <span className="text-sm text-black line-clamp-1">{tender.title}</span>
+          <span className="text-sm text-black line-clamp-1">{tender.procuring_entity || tender.title}</span>
           {note && <span className="text-xs text-[#12769F]">{note}</span>}
         </div>
-        {tender.procuring_entity && <div className="text-xs text-black/46 truncate">{tender.procuring_entity}</div>}
         {tender.matched_molecules?.length > 0 && (
           <div className="mt-1.5">
             <ProductChips names={tender.matched_molecules} />
@@ -365,7 +364,7 @@ export default function History() {
                     <tr className="bg-[#1EA0DA]/5 border-b border-[#E2E8F0] text-black/62 text-xs uppercase tracking-wider">
                       <th className="py-4 px-4 w-44">First Screened</th>
                       <th className="py-4 px-4 w-28">Reference No.</th>
-                      <th className="py-4 px-6">Opportunity Title / Procuring Entity</th>
+                      <th className="py-4 px-6">Hospital / Procuring Entity</th>
                       <th className="py-4 px-6 w-56">Result</th>
                       <th className="py-4 px-4 w-32">Published</th>
                     </tr>
@@ -401,8 +400,7 @@ export default function History() {
                             <td className="py-3 px-4 text-xs text-black/62 whitespace-nowrap">{formatInstant(t.created_at) || '—'}</td>
                             <td className="py-3 px-4 font-mono text-xs text-black whitespace-nowrap">{t.ref_no}</td>
                             <td className="py-3 px-6 text-black max-w-xl">
-                              <div className="line-clamp-2">{t.title}</div>
-                              {t.procuring_entity && <div className="text-xs text-black/46 mt-1 truncate">{t.procuring_entity}</div>}
+                              <div className="line-clamp-2">{t.procuring_entity || t.title}</div>
                             </td>
                             <td className="py-3 px-6">
                               {molecules.length ? (

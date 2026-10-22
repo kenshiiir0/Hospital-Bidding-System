@@ -68,13 +68,11 @@ function readStoredExcluded() {
 
 // Pieces of a list row, shared by the wide-screen table and the narrow-screen cards
 
+// The list shows the hospital (procuring entity); the full tender title is in the details panel
 function BidSummary({ bid }) {
   return (
     <>
-      <div className="line-clamp-2 break-words">{bid.title}</div>
-      {bid.procuring_entity && (
-        <div className="text-xs font-normal text-black/62 mt-1 truncate">{bid.procuring_entity}</div>
-      )}
+      <div className="line-clamp-2 break-words">{bid.procuring_entity || bid.title}</div>
       {bid.abc_amount && (
         <div className="text-xs font-normal text-black/46 mt-0.5">
           ABC ₱{Number(bid.abc_amount).toLocaleString('en-PH')}
@@ -698,7 +696,7 @@ export default function Home() {
                     <tr className="bg-[#1EA0DA]/5 border-b border-[#E2E8F0] text-black/62 text-xs font-semibold uppercase tracking-wider">
                       <th className="py-3.5 pl-4 pr-2 w-12 text-center">#</th>
                       <th className="py-3.5 px-3 w-28">Reference No.</th>
-                      <th className="py-3.5 px-4">Opportunity Title / Procuring Entity</th>
+                      <th className="py-3.5 px-4">Hospital / Procuring Entity</th>
                       <th className="py-3.5 px-4 w-[22%]">Our Products</th>
                       <th className="py-3.5 px-3 w-40">Published / Closing</th>
                       <th className="py-3.5 px-3 w-24 text-center">Status</th>

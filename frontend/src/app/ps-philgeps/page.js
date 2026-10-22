@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import { usePsPhilgeps } from '@/lib/psContext';
 import PsListTable from '@/components/PsListTable';
+import PsDetailsPanel, { PanelSection } from '@/components/PsDetailsPanel';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
 export default function BidMatchPage() {
   const { data } = usePsPhilgeps() || {};
   const [onlyOurs, setOnlyOurs] = useState(true);
+  const [selected, setSelected] = useState(null);
   const list = data?.lists?.bidMatch;
   const notices = data?.notices || {};
   const noticeOf = (row) => notices[refOf(row)];
@@ -47,13 +49,42 @@ export default function BidMatchPage() {
         list={list}
         rows={rows}
         empty="No Bid Match data yet. Press Sync PS-PhilGEPS above."
+        columns={LIST_COLUMNS}
         extraColumns={[
           { label: 'Our products', render: (row) => <Products names={noticeOf(row)?.matched} /> },
-          { label: 'Documents', render: (row) => <Documents ref_={refOf(row)} notice={noticeOf(row)} /> },
+          { label: 'Documents', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
         ]}
+        onDetails={setSelected}
       />
+      {selected && (
+        <PsDetailsPanel
+          list={list}
+          row={selected}
+          titleColumn="Notice Title"
+          subtitleColumn="Agency name"
+          link={selected.links.find((l) => /viewBidNotice/.test(l.href))?.href}
+          onClose={() => setSelected(null)}
+        >
+          <PanelSection title="Our products">
+            <Products names={noticeOf(selected)?.matched} />
+          </PanelSection>
+          <PanelSection title="Documents">
+            <Documents ref_={refOf(selected)} notice={noticeOf(selected)} />
+          </PanelSection>
+        </PsDetailsPanel>
+      )}
     </section>
   );
+}
+
+// The list shows the hospital; the long notice title, mode and classification are in View details
+const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Closing Date', 'Status'];
+
+function DocumentCount({ notice }) {
+  if (!notice) return <span className="text-black/46">—</span>;
+  if (notice.error) return <span className="text-xs text-[#B3312C]">Not read</span>;
+  const n = notice.documents?.length || 0;
+  return n ? <span className="text-xs text-[#3F6F2C]">📎 {n} file{n > 1 ? 's' : ''}</span> : <span className="text-xs text-black/46">None found</span>;
 }
 
 // Same rule as ps-philgeps-sync.js: the row's link to its notice page, else a numeric first cell

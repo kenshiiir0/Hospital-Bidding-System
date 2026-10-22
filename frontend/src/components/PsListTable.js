@@ -1,11 +1,15 @@
 'use client';
 
-// A PS-PhilGEPS list as read by ps-philgeps-sync.js ({ headers, rows: [{ cells, links }] }), with the
-// site's own columns. The "Actions" column (PhilGEPS's Select menu) is left out; links in a cell open
-// PhilGEPS in a new tab. extraColumns: [{ label, render(row) }] added after the site's columns.
-export default function PsListTable({ list, rows = list?.rows || [], extraColumns = [], empty }) {
+// A PS-PhilGEPS list as read by ps-philgeps-sync.js ({ headers, rows: [{ cells, links }] }).
+// columns: the site's column names to show, in order (default: all but "Actions", PhilGEPS's Select
+// menu); the rest, like the long notice title, are in the details panel (onDetails). Links in a cell
+// open PhilGEPS in a new tab. extraColumns: [{ label, render(row) }] added after the site's columns.
+export default function PsListTable({ list, rows = list?.rows || [], columns, extraColumns = [], onDetails, empty }) {
   if (!list) return <EmptyState>{empty}</EmptyState>;
-  const shown = list.headers.map((h, i) => ({ h, i })).filter(({ h }) => !/^actions?$/i.test(h));
+  const indexOf = (name) => list.headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+  const shown = (columns || list.headers.filter((h) => !/^actions?$/i.test(h)))
+    .map((h) => ({ h, i: indexOf(h) }))
+    .filter(({ i }) => i >= 0);
   if (!rows.length) return <EmptyState>Nothing to show.</EmptyState>;
 
   return (
@@ -19,6 +23,7 @@ export default function PsListTable({ list, rows = list?.rows || [], extraColumn
             {extraColumns.map((c) => (
               <th key={c.label} className="px-3 py-2.5 font-semibold">{c.label}</th>
             ))}
+            {onDetails && <th className="px-3 py-2.5" aria-label="Details" />}
           </tr>
         </thead>
         <tbody>
@@ -32,6 +37,16 @@ export default function PsListTable({ list, rows = list?.rows || [], extraColumn
               {extraColumns.map((c) => (
                 <td key={c.label} className="px-3 py-2.5">{c.render(row)}</td>
               ))}
+              {onDetails && (
+                <td className="px-3 py-2.5 text-right">
+                  <button
+                    onClick={() => onDetails(row)}
+                    className="whitespace-nowrap rounded-full border border-[#1EA0DA]/25 px-3 py-1 text-xs font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 transition"
+                  >
+                    View details
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
