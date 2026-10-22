@@ -111,3 +111,35 @@ ON CONFLICT (id) DO NOTHING;
 DROP POLICY IF EXISTS "team can read ps documents" ON storage.objects;
 CREATE POLICY "team can read ps documents" ON storage.objects FOR SELECT TO authenticated
     USING (bucket_id = 'ps-documents' AND coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+
+-- PS-PhilGEPS log-in session (cookies) shared by the deployed dashboard's Sync and every computer.
+-- Saved by `node ps-philgeps-session.js --connect` (a person ticks the captcha) and refreshed by each
+-- Sync. Private: no policies, so only the secret key (server side) can read or write it.
+CREATE TABLE IF NOT EXISTS ps_philgeps_session (
+    id TEXT PRIMARY KEY,
+    cookies JSONB NOT NULL,
+    saved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE ps_philgeps_session ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON ps_philgeps_session FROM anon, authenticated;
+
+-- PS-PhilGEPS Sync status shown to the whole team (row 'latest'): status idle | running | success | failed,
+-- connected_at = when the saved session was made (null = not connected, a person must Connect).
+CREATE TABLE IF NOT EXISTS ps_sync_status (
+    id TEXT PRIMARY KEY,
+    status VARCHAR(20) NOT NULL DEFAULT 'idle',
+    percent INT NOT NULL DEFAULT 0,
+    stage TEXT,
+    error TEXT,
+    started_by TEXT,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    connected_at TIMESTAMPTZ
+);
+ALTER TABLE ps_sync_status ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON ps_sync_status;
+CREATE POLICY "dashboard can read" ON ps_sync_status FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ps_sync_status FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ps_sync_status FROM authenticated;
+INSERT INTO ps_sync_status (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;

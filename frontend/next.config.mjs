@@ -1,3 +1,9 @@
+import { existsSync } from "node:fs";
+
+// On a team computer the server-only settings (SUPABASE_KEY for the PS-PhilGEPS Sync, ...) live in the
+// repo root's .env, next to the scraper. A deployed copy has no such file and uses its host's settings.
+if (existsSync("../.env")) process.loadEnvFile("../.env");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   /* config options here */

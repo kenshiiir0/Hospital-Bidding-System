@@ -58,6 +58,20 @@ async function saveCookies(page) {
     fs.writeFileSync(COOKIES_FILE, JSON.stringify({ savedAt: new Date().toISOString(), cookies: ours }, null, 1));
 }
 
+// Copies the saved session to Supabase (table ps_philgeps_session, private: secret key only) so the
+// deployed dashboard's Sync can use it, and marks PS-PhilGEPS as connected for every dashboard
+async function shareSession() {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false }
+    });
+    const { cookies, savedAt } = JSON.parse(fs.readFileSync(COOKIES_FILE, 'utf8'));
+    const { error } = await supabase.from('ps_philgeps_session').upsert({ id: 'current', cookies, saved_at: savedAt });
+    if (error) throw new PsPhilgepsSessionError('CONNECT_FAILED', `Logged in, but the session could not be saved to Supabase: ${error.message}`);
+    await supabase.from('ps_sync_status').update({ connected_at: savedAt }).eq('id', 'latest');
+    sessionLog('Session shared with Supabase');
+}
+
 function forgetSession() {
     fs.rmSync(COOKIES_FILE, { force: true });
 }
@@ -274,6 +288,7 @@ async function connect({ live = false } = {}) {
             throw new PsPhilgepsSessionError('CONNECT_FAILED', 'Logged in, but the Bid Match page sent us back to the log-in form.');
         }
         await saveCookies(page);
+        await shareSession();
         sessionLog(`Connected (landed on ${page.url()})`);
         return true;
     } finally {
@@ -296,18 +311,18 @@ async function checkSession() {
     }
 }
 
-module.exports = { openSession, connect, checkSession, hasCredentials, PsPhilgepsSessionError, HOST };
+module.exports = { openSession, connect, checkSession, shareSession, hasCredentials, PsPhilgepsSessionError, HOST };
 
 if (require.main === module) {
     const mode = process.argv[2];
     const live = process.argv.includes('--live');
-    const run = mode === '--connect' ? () => connect({ live }) : mode === '--check' ? checkSession : null;
+    const run = mode === '--connect' ? () => connect({ live }) : mode === '--check' ? checkSession : mode === '--share' ? shareSession : null;
     if (!run) {
-        console.log('Usage: node ps-philgeps-session.js --connect [--live] | --check');
+        console.log('Usage: node ps-philgeps-session.js --connect [--live] | --check | --share');
         process.exit(2);
     }
     run()
-        .then(() => console.log(mode === '--connect' ? 'Connected to PS-PhilGEPS.' : 'Still connected to PS-PhilGEPS.'))
+        .then(() => console.log(mode === '--connect' ? 'Connected to PS-PhilGEPS.' : mode === '--share' ? 'Session shared with Supabase.' : 'Still connected to PS-PhilGEPS.'))
         .catch((e) => {
             sessionLog(`${mode} failed: ${e.code || 'ERROR'}: ${e.message.split('\n')[0]}`);
             console.error(`${e.code || 'ERROR'}: ${e.message}`);
