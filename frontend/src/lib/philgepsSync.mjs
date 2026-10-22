@@ -24,6 +24,8 @@ const MEMBERS_URL = `${HOST}/GEPS/Tender/PendingTaskUI.aspx?EPSSubMenuID=45`;
 const NOTICE_URL = (ref) => `${HOST}/GEPS/Tender/BidNoticeAbstractUI.aspx?refID=${ref}&DirectFrom=OpenOpp&Type=category&BusCatID=99`;
 const ORDERED_URL = (ref) => `${HOST}/GEPS/Tender/ViewOrderAssocCompUI.aspx?directFrom=MyOpportunitiesUI&EPSSubMenuID=32&refID=${ref}`;
 const BASKET_URL = `${HOST}/GEPS/Tender/OrderBasketUI.aspx?ClickFrom=OpenOpp&OrginFrom=PendTask`;
+// An order's page, as the "Ordered By" list's order number opens it (the list's own link only works in a browser)
+const ORDER_URL = (orderNo, ref) => `${HOST}/GEPS/Tender/OrderConfirmationUI.aspx?DirectFrom=MyOpportunities&OrderID=${orderNo}&refID=${ref}`;
 const BUCKET = 'philgeps-documents';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
 // Time a round may start new tenders in; the host stops a request at 300 s and the log-out needs a moment
@@ -31,6 +33,7 @@ export const ROUND_MS = 200 * 1000;
 // A Sync whose progress hasn't moved for this long was cut off (host time limit) and may be started again
 export const STALE_RUN_MS = 6 * 60 * 1000;
 const RECHECK_MS = 24 * 60 * 60 * 1000;
+const LOGIN_TRIES = 4;
 
 const TYPES = { '.pdf': 'application/pdf', '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.zip': 'application/zip', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
 const storageName = (name) => name.replace(/[^A-Za-z0-9._()-]/g, '_');
@@ -74,18 +77,23 @@ export class Session {
 
 // One request with the session's cookies. Redirects are followed by hand so every Set-Cookie on the way is
 // kept (ASP.NET sets the log-in cookie on a redirect). Returns { res, url } (url = the final address).
-async function request(session, url, { method = 'GET', form, timeout = 45000 } = {}) {
+// follow: false returns the first answer as it is (no redirects followed).
+async function request(session, url, { method = 'GET', form, timeout = 45000, follow = true, referer } = {}) {
   let current = url;
-  let options = { method, body: form ? new URLSearchParams(form).toString() : undefined };
+  let options = { method, body: form ? new URLSearchParams(form).toString() : undefined, referer };
   for (let hop = 0; hop < 8; hop++) {
     const res = await fetch(current, {
       method: options.method,
       body: options.body,
       redirect: 'manual',
+      // What a browser sends: PhilGEPS holds back form posts that don't say where they come from
       headers: {
         cookie: session.header(),
         'user-agent': USER_AGENT,
-        ...(options.body && { 'content-type': 'application/x-www-form-urlencoded' }),
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'en-US,en;q=0.9',
+        'upgrade-insecure-requests': '1',
+        ...(options.body && { 'content-type': 'application/x-www-form-urlencoded', origin: HOST, referer: options.referer || url }),
       },
       signal: AbortSignal.timeout(timeout),
     }).catch((e) => {
@@ -93,6 +101,7 @@ async function request(session, url, { method = 'GET', form, timeout = 45000 } =
     });
     session.update(res);
     const location = res.headers.get('location');
+    if (!follow) return { res, url: current };
     if (res.status >= 300 && res.status < 400 && location) {
       current = new URL(location, current).href;
       options = { method: 'GET' };
@@ -104,7 +113,7 @@ async function request(session, url, { method = 'GET', form, timeout = 45000 } =
   throw new PhilgepsSyncError('SITE_DOWN', 'PhilGEPS kept redirecting.');
 }
 
-async function getPage(session, url) {
+export async function getPage(session, url) {
   const { res, url: finalUrl } = await request(session, url);
   const html = await res.text();
   if (/log-in\.aspx/i.test(finalUrl)) throw new PhilgepsSyncError('SESSION_ENDED', 'PhilGEPS ended the session (sent back to the log-in page).');
@@ -124,29 +133,32 @@ export function alertsOf(html) {
 // and the address it posts to, resolved against the page's own address
 export function formFields(html, pageUrl = `${HOST}/GEPS/Tender/`) {
   const root = parse(html);
-  const form = root.querySelector('form');
+  // PhilGEPS's HTML is too messy for the parser to always see the <form> (a browser repairs it). An ASP.NET page
+  // has exactly one form, so without it the whole page's fields and the form tag's own action are used.
+  const scope = root.querySelector('form') || root;
   const fields = {};
-  for (const input of form?.querySelectorAll('input') || []) {
+  for (const input of scope.querySelectorAll('input')) {
     const name = input.getAttribute('name');
     const type = (input.getAttribute('type') || 'text').toLowerCase();
     if (!name || ['submit', 'button', 'image', 'reset', 'file'].includes(type)) continue;
     if ((type === 'checkbox' || type === 'radio') && !input.hasAttribute('checked')) continue;
     fields[name] = input.getAttribute('value') ?? (type === 'checkbox' ? 'on' : '');
   }
-  for (const select of form?.querySelectorAll('select') || []) {
+  for (const select of scope.querySelectorAll('select')) {
     const name = select.getAttribute('name');
     const option = select.querySelector('option[selected]') || select.querySelector('option');
     if (name && option) fields[name] = option.getAttribute('value') ?? clean(option.text);
   }
-  return { fields, action: new URL(form?.getAttribute('action') || pageUrl, pageUrl).href };
+  const rawAction = /<form[^>]*action="([^"]*)"/i.exec(html)?.[1]?.replace(/&amp;/g, '&');
+  return { fields, action: new URL(rawAction || pageUrl, pageUrl).href };
 }
 
 // Posts the page's form back: a link's __doPostBack(target, argument), or a submit button (name = value)
-async function postBack(session, page, { target, argument = '', button }) {
+export async function postBack(session, page, { target, argument = '', button }) {
   const { fields, action } = formFields(page.html, page.url);
   const form = { ...fields, __EVENTTARGET: target || '', __EVENTARGUMENT: argument };
   if (button) form[button.name] = button.value;
-  return request(session, action, { method: 'POST', form });
+  return request(session, action, { method: 'POST', form, referer: page.url });
 }
 
 // Postback links: [{ target, argument, text, el }]
@@ -198,23 +210,48 @@ export function itemLinksOf(html, ref) {
 
 // Logs in with the company account (PHILGEPS_USERNAME / PHILGEPS_PASSWORD). onSubmitted(session) runs right
 // after the form is sent (before anything is checked), to save the cookies.
-async function login(session, onSubmitted) {
+export async function login(session, onSubmitted) {
   const { PHILGEPS_USERNAME, PHILGEPS_PASSWORD } = process.env;
   if (!PHILGEPS_USERNAME || !PHILGEPS_PASSWORD) throw new PhilgepsSyncError('NOT_CONFIGURED', 'PHILGEPS_USERNAME / PHILGEPS_PASSWORD are not set on this server.');
-  const { res: pageRes } = await request(session, LOGIN_PAGE);
-  const { fields } = formFields(await pageRes.text(), LOGIN_PAGE);
-  let answer;
-  try {
-    answer = await request(session, LOGIN_ACTION, { method: 'POST', form: { ...fields, userName: PHILGEPS_USERNAME, password: PHILGEPS_PASSWORD } });
-  } finally {
-    await onSubmitted(session);
+  // PhilGEPS sometimes answers a fresh visitor with its error page (it flickers; the cookies of a failed try
+  // make the next fail too), so each try starts with no cookies
+  let lastProblem = '';
+  for (let attempt = 1; attempt <= LOGIN_TRIES; attempt++) {
+    session.jar.clear();
+    let fields;
+    try {
+      const { res: pageRes } = await request(session, LOGIN_PAGE);
+      ({ fields } = formFields(await pageRes.text(), LOGIN_PAGE));
+    } catch (e) {
+      lastProblem = e.message;
+      await new Promise((r) => setTimeout(r, 3000));
+      continue;
+    }
+    // Only the log-in answer itself: a redirect away from the log-in page means accepted. The page it
+    // redirects to (Pending Task) counts every notice of the account and can take over a minute to build.
+    let answer;
+    try {
+      answer = await request(session, LOGIN_ACTION, { method: 'POST', form: { ...fields, userName: PHILGEPS_USERNAME, password: PHILGEPS_PASSWORD }, follow: false, timeout: 40000, referer: LOGIN_PAGE });
+    } catch (e) {
+      lastProblem = e.message;
+      continue;
+    } finally {
+      await onSubmitted(session);
+    }
+    const location = answer.res.headers.get('location') || '';
+    const html = await answer.res.text();
+    const said = alertsOf(html).join(' / ');
+    if (/in use/i.test(said)) throw new PhilgepsSyncError('ACCOUNT_BUSY', 'The PhilGEPS account is logged in on another device or browser. Log out there, then Sync again.');
+    if (/ErrorPage/i.test(location)) {
+      lastProblem = 'PhilGEPS answered with its error page';
+      await new Promise((r) => setTimeout(r, 3000));
+      continue;
+    }
+    const accepted = location ? !/log-in\.aspx/i.test(location) : /Log-?\s?out/i.test(html);
+    if (accepted) return;
+    throw new PhilgepsSyncError('LOGIN_REJECTED', `PhilGEPS did not accept the log-in${said ? `: "${said}"` : location ? ` (sent to ${location})` : '.'}`);
   }
-  const html = await answer.res.text();
-  const said = alertsOf(html).join(' / ');
-  if (/in use/i.test(said)) throw new PhilgepsSyncError('ACCOUNT_BUSY', 'The PhilGEPS account is logged in on another device or browser. Log out there, then Sync again.');
-  if (/log-in\.aspx/i.test(answer.url) || !/Log-?\s?out/i.test(html)) {
-    throw new PhilgepsSyncError('LOGIN_REJECTED', `PhilGEPS did not accept the log-in${said ? `: "${said}"` : '.'}`);
-  }
+  throw new PhilgepsSyncError('SITE_DOWN', `PhilGEPS did not let the log-in through after ${LOGIN_TRIES} tries (${lastProblem}). Try again in a few minutes.`);
 }
 
 // Is the session closed? (the members page answers with a redirect to the log-in page)
@@ -287,8 +324,7 @@ async function fromOrdered(session, supabase, ref, trail, step) {
   const files = [];
   let pickUp = false;
   for (const order of orders) {
-    const { res, url } = await postBack(session, list, { target: order.target, argument: order.argument });
-    const page = { html: await res.text(), url };
+    const page = await getPage(session, ORDER_URL(order.text, ref));
     const got = await downloadItems(session, supabase, page, ref, order.text, trail);
     files.push(...got.files);
     pickUp ||= got.pickUp;
@@ -359,7 +395,7 @@ function remarkFor({ status, files, ordered, orderNos, said }) {
   }
 }
 
-async function fetchTender(session, supabase, o, step) {
+export async function fetchTender(session, supabase, o, step) {
   const ref = o.ref_no;
   const trail = [];
   let files = [];
