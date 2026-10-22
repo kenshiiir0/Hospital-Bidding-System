@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { claimRelayRequest, publishJob } from './philgepsRelay';
 
 // Runs every PhilGEPS fetch of the dashboard server, one at a time:
 // - 'auto': the hourly public fetch, 6 AM to 5 PM. The 6 AM one also tries the log-in for documents and
@@ -20,6 +21,10 @@ const LAST_HOUR = 17;
 const AUTO_RETRY_MS = 15 * 60 * 1000;
 const SWEEP_MS = 5 * 60 * 1000;
 const SESSION_COOKIES = path.join(REPO_ROOT, '.philgeps', 'session-cookies.json');
+// Only a team computer (the repo with the scraper and its Chrome) runs fetches; a deployed copy has neither
+const CAN_RUN_FETCHES = existsSync(path.join(REPO_ROOT, 'scraper.js')) && existsSync(path.join(REPO_ROOT, 'node_modules', 'puppeteer'));
+// How often a team computer checks for a Sync asked for on another dashboard
+const RELAY_CHECK_MS = 5 * 1000;
 // When the last automatic fetch finished and the day of the last one that logged in for documents, so a
 // fetch missed while the PC slept or the dashboard was closed is made up as soon as it is back
 const AUTO_STATE_FILE = path.join(REPO_ROOT, '.philgeps', 'auto-fetch.json');
@@ -91,6 +96,7 @@ function run(mode) {
   }
   const kind = kindOf(mode);
   state.job = { kind, status: 'running', percent: 0, stage: 'Starting', error: null, warning: null, startedAt: Date.now(), finishedAt: null };
+  publishJob(currentJob());
   const job = state.job;
   const child = spawn(process.execPath, ['scraper.js', ...ARGS[mode], '--progress'], { cwd: REPO_ROOT });
   // A killed scraper can't log out of PhilGEPS itself; its watchdog (philgeps-session.js) does that
@@ -116,6 +122,7 @@ function run(mode) {
     for (const line of lines) {
       try {
         if (line.startsWith('PROGRESS ')) Object.assign(job, JSON.parse(line.slice('PROGRESS '.length)));
+        if (line.startsWith('PROGRESS ') || line.startsWith('TENDERS ')) publishJob(currentJob());
         if (line.startsWith('TENDERS ')) {
           const event = JSON.parse(line.slice('TENDERS '.length));
           if (event.queue) {
@@ -158,6 +165,7 @@ function run(mode) {
     if (job.tenders) for (const ref of Object.keys(job.tenders)) if (job.tenders[ref] === 'waiting' || job.tenders[ref] === 'working') job.tenders[ref] = 'not-reached';
     Object.assign(job, error ? { status: 'failed', error } : { status: 'success', percent: 100, stage: 'Done' });
     job.finishedAt = Date.now();
+    publishJob(currentJob());
     const next = state.queue.shift();
     if (next) run(next);
   };
@@ -213,12 +221,36 @@ function catchUp(reason) {
   autoFetch(hour);
 }
 
+// Sync asked for on another dashboard (e.g. the deployed one): this team computer picks it up and runs it.
+// Started with the scheduler, and also by the local dashboard's status checks (GET /api/scrape), so a
+// dashboard that was already running when this was added starts watching without a restart.
+export function startRelayWatcher() {
+  if (!CAN_RUN_FETCHES || globalThis.philgepsRelayStarted) return;
+  globalThis.philgepsRelayStarted = true;
+  setInterval(async () => {
+    try {
+      const request = await claimRelayRequest();
+      if (!request) return;
+      console.log(`PhilGEPS Sync requested by ${request.requested_by || 'another dashboard'}`);
+      const result = await requestSync();
+      if (result.unavailable) {
+        publishJob({ kind: 'sync', status: 'unavailable', error: result.error, startedAt: Date.now(), finishedAt: Date.now() });
+      }
+    } catch (err) {
+      console.warn('Could not check for Sync requests:', err.message);
+    }
+  }, RELAY_CHECK_MS);
+}
+
 // Every hour on the hour from 6 AM to 5 PM (this machine's clock), a catch-up for hours missed while the PC
 // slept or the dashboard was closed, plus the log-out sweep every 5 minutes.
 // Called once per server from instrumentation.js.
 export function startScheduler() {
   if (globalThis.philgepsSchedulerStarted) return;
   globalThis.philgepsSchedulerStarted = true;
+  if (!CAN_RUN_FETCHES) return;
+
+  startRelayWatcher();
 
   const scheduleNextHour = () => {
     const next = new Date();

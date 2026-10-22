@@ -152,6 +152,23 @@ REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ps_sync_status FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ps_sync_status FROM authenticated;
 INSERT INTO ps_sync_status (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;
 
+-- PhilGEPS Sync relayed from any dashboard to the team computer that can run it (Chrome + the PhilGEPS
+-- log-in): a dashboard sets requested_at, the team computer's dashboard takes it (handled_at), runs the
+-- Sync and mirrors its progress in job; worker_seen_at = that computer's last check (frontend/src/lib/
+-- philgepsRelay.js). Private: no policies, only the secret key (server side).
+CREATE TABLE IF NOT EXISTS philgeps_sync_relay (
+    id TEXT PRIMARY KEY,
+    job JSONB,
+    requested_at TIMESTAMPTZ,
+    requested_by TEXT,
+    handled_at TIMESTAMPTZ,
+    worker_seen_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE philgeps_sync_relay ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON philgeps_sync_relay FROM anon, authenticated;
+INSERT INTO philgeps_sync_relay (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;
+
 -- What was read in each PS-PhilGEPS tender's bid documents (frontend/src/lib/psDocs.mjs, free text
 -- rules, run by the keep-alive call): result = { bid_data_sheet: { prebid_conference, bid_opening,
 -- bid_submission_deadline, delivery_period, bid_validity, bid_security } (passages as written),

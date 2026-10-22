@@ -159,8 +159,6 @@ export default function Home() {
   const [fetchJob, setFetchJob] = useState(null);
   // Sync states that exist only in this page: checking PhilGEPS before starting, PhilGEPS down, request failed
   const [localSync, setLocalSync] = useState(null);
-  // true on a deployed copy: Sync needs the dashboard running on a team computer
-  const [syncUnavailable, setSyncUnavailable] = useState(false);
   // startedAt of finished fetches that were closed, hid themselves, or had finished before this page opened
   const [dismissed, setDismissed] = useState([]);
   const wakePoll = useRef(null);
@@ -238,6 +236,10 @@ export default function Home() {
       const result = await res.json();
       if (result.unavailable) {
         setLocalSync({ status: 'unavailable', error: result.error });
+      } else if (result.requested) {
+        // Asked from a dashboard without the scraper: the team computer starts it within a few seconds
+        setLocalSync({ status: 'queued', stage: 'Sent to the team computer; starting in a few seconds', requestedAt: Date.now() });
+        wakePoll.current?.();
       } else if (!result.ok) {
         setLocalSync({ status: 'failed', percent: 0, error: result.error || `Sync failed (${res.status})` });
       } else {
@@ -339,14 +341,14 @@ export default function Home() {
     (async () => {
       while (!stopped) {
         try {
-          const res = await fetch('/api/scrape');
+          const res = await authFetch('/api/scrape');
           if (stopped) break;
-          // A deployed copy can't run fetches (no Chrome or PhilGEPS log-in there): its API refuses
-          if (!res.ok) {
-            setSyncUnavailable(true);
-            break;
-          }
+          if (!res.ok) throw new Error(`status ${res.status}`);
           const job = await res.json();
+          // A Sync sent to the team computer has started there (its clock may differ a little)
+          if (job.kind === 'sync' && job.startedAt) {
+            setLocalSync((prev) => (prev?.requestedAt && job.startedAt >= prev.requestedAt - 60000 ? null : prev));
+          }
           // A fetch that had already finished when the page opened isn't news
           if (first && job.status !== 'running' && job.startedAt) setDismissed((list) => [...list, job.startedAt]);
           first = false;
@@ -494,13 +496,9 @@ export default function Home() {
             </button>
             <button
               onClick={triggerSync}
-              disabled={syncing || syncUnavailable}
-              title={
-                syncUnavailable
-                  ? 'Sync runs only in the dashboard on a team computer (127.0.0.1:3000), which has Chrome and the PhilGEPS log-in.'
-                  : 'Log in to PhilGEPS and download the documents of the screened tenders. Public data updates by itself every hour, 6 AM to 5 PM.'
-              }
-              className={`inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 ${syncUnavailable ? 'disabled:cursor-not-allowed' : 'disabled:cursor-wait'} text-white px-4 py-2 rounded-full text-sm font-medium transition`}
+              disabled={syncing}
+              title="Log in to PhilGEPS and download the documents of the screened tenders (runs on the team computer). Public data updates by itself every hour, 6 AM to 5 PM."
+              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2 rounded-full text-sm font-medium transition"
             >
               {syncView?.status === 'checking'
                 ? <>Checking PhilGEPS <WorkingDots /></>
