@@ -169,6 +169,17 @@ ALTER TABLE philgeps_sync_relay ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON philgeps_sync_relay FROM anon, authenticated;
 INSERT INTO philgeps_sync_relay (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;
 
+-- PhilGEPS (notices.philgeps.gov.ph) log-in session of the server-side Sync (frontend/src/lib/philgepsSync.mjs):
+-- saved the moment the log-in is sent, removed once the log-out is confirmed. A row left behind (round cut
+-- off) is logged out by the 5-minute clean-up (/api/ps-keepalive → sweepSession). Private: secret key only.
+CREATE TABLE IF NOT EXISTS philgeps_session (
+    id TEXT PRIMARY KEY,
+    cookies JSONB NOT NULL,
+    saved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE philgeps_session ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON philgeps_session FROM anon, authenticated;
+
 -- What was read in each PS-PhilGEPS tender's bid documents (frontend/src/lib/psDocs.mjs, free text
 -- rules, run by the keep-alive call): result = { bid_data_sheet: { prebid_conference, bid_opening,
 -- bid_submission_deadline, delivery_period, bid_validity, bid_security } (passages as written),

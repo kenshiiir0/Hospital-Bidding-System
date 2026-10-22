@@ -1,0 +1,573 @@
+import { createClient } from '@supabase/supabase-js';
+import { parse } from 'node-html-parser';
+
+// PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
+// server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
+// pages' own ASP.NET form posts:
+// - already ordered: My Opportunities' "Ordered By" page → order → each document link answers with the file,
+// - not ordered yet: notice → Order → Order Basket (every amount 0.00) → Continue → (5-day notice → Continue
+//   Order) → Order Confirmation (every amount 0.00) → Submit → each document link.
+// Files go to the Storage bucket philgeps-documents, results to philgeps_opportunities.details, progress to
+// philgeps_sync_relay.job (read by every dashboard). Never pays: anything above 0.00 stops at that tender.
+// Session safety: one Sync at a time (claimSync), the session's cookies are saved in philgeps_session the moment
+// the log-in is sent, every round logs out and confirms it, and sweepSession() (every 5 minutes) logs out a
+// session a cut-off round left behind. A round stops starting tenders after ROUND_MS (the host allows 300 s)
+// and the next round continues with the rest.
+// Plain .mjs (no Next imports) so it can also be run directly with node for testing.
+
+const HOST = 'https://notices.philgeps.gov.ph';
+const LOGIN_PAGE = `${HOST}/GEPS/log-in.aspx`;
+const LOGIN_ACTION = `${HOST}/GEPS/logInAction.aspx`;
+const LOGOUT_URL = `${HOST}/GEPS/LogoutRedirect.aspx`;
+// Members-only page: answers with a redirect to log-in.aspx once the session is closed
+const MEMBERS_URL = `${HOST}/GEPS/Tender/PendingTaskUI.aspx?EPSSubMenuID=45`;
+const NOTICE_URL = (ref) => `${HOST}/GEPS/Tender/BidNoticeAbstractUI.aspx?refID=${ref}&DirectFrom=OpenOpp&Type=category&BusCatID=99`;
+const ORDERED_URL = (ref) => `${HOST}/GEPS/Tender/ViewOrderAssocCompUI.aspx?directFrom=MyOpportunitiesUI&EPSSubMenuID=32&refID=${ref}`;
+const BASKET_URL = `${HOST}/GEPS/Tender/OrderBasketUI.aspx?ClickFrom=OpenOpp&OrginFrom=PendTask`;
+const BUCKET = 'philgeps-documents';
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
+// Time a round may start new tenders in; the host stops a request at 300 s and the log-out needs a moment
+export const ROUND_MS = 200 * 1000;
+// A Sync whose progress hasn't moved for this long was cut off (host time limit) and may be started again
+export const STALE_RUN_MS = 6 * 60 * 1000;
+const RECHECK_MS = 24 * 60 * 60 * 1000;
+
+const TYPES = { '.pdf': 'application/pdf', '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.zip': 'application/zip', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+const storageName = (name) => name.replace(/[^A-Za-z0-9._()-]/g, '_');
+
+export class PhilgepsSyncError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function admin() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url || !process.env.SUPABASE_KEY) throw new PhilgepsSyncError('NOT_CONFIGURED', 'SUPABASE_URL and SUPABASE_KEY (secret key) are not set on this server.');
+  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+// ---------- HTTP session ----------
+
+export class Session {
+  constructor(cookies = []) {
+    this.jar = new Map(cookies.map((c) => [c.name, c]));
+  }
+  header() {
+    return [...this.jar.values()].map((c) => `${c.name}=${c.value}`).join('; ');
+  }
+  update(res) {
+    for (const line of res.headers.getSetCookie?.() || []) {
+      const [pair, ...attrs] = line.split(';');
+      const eq = pair.indexOf('=');
+      const name = pair.slice(0, eq).trim();
+      const value = pair.slice(eq + 1).trim();
+      if (attrs.some((a) => /max-age=0|expires=thu, 01 jan 1970/i.test(a.trim()))) this.jar.delete(name);
+      else this.jar.set(name, { name, value, domain: 'notices.philgeps.gov.ph', path: '/' });
+    }
+  }
+  cookies() {
+    return [...this.jar.values()];
+  }
+}
+
+// One request with the session's cookies. Redirects are followed by hand so every Set-Cookie on the way is
+// kept (ASP.NET sets the log-in cookie on a redirect). Returns { res, url } (url = the final address).
+async function request(session, url, { method = 'GET', form, timeout = 45000 } = {}) {
+  let current = url;
+  let options = { method, body: form ? new URLSearchParams(form).toString() : undefined };
+  for (let hop = 0; hop < 8; hop++) {
+    const res = await fetch(current, {
+      method: options.method,
+      body: options.body,
+      redirect: 'manual',
+      headers: {
+        cookie: session.header(),
+        'user-agent': USER_AGENT,
+        ...(options.body && { 'content-type': 'application/x-www-form-urlencoded' }),
+      },
+      signal: AbortSignal.timeout(timeout),
+    }).catch((e) => {
+      throw new PhilgepsSyncError('SITE_DOWN', `PhilGEPS is not responding (${e.message}).`);
+    });
+    session.update(res);
+    const location = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && location) {
+      current = new URL(location, current).href;
+      options = { method: 'GET' };
+      continue;
+    }
+    if (/ErrorPage/i.test(current)) throw new PhilgepsSyncError('SITE_DOWN', 'PhilGEPS showed its error page.');
+    return { res, url: current };
+  }
+  throw new PhilgepsSyncError('SITE_DOWN', 'PhilGEPS kept redirecting.');
+}
+
+async function getPage(session, url) {
+  const { res, url: finalUrl } = await request(session, url);
+  const html = await res.text();
+  if (/log-in\.aspx/i.test(finalUrl)) throw new PhilgepsSyncError('SESSION_ENDED', 'PhilGEPS ended the session (sent back to the log-in page).');
+  return { html, url: finalUrl };
+}
+
+// ---------- reading ASP.NET pages ----------
+
+const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+
+// Every alert() message in the page's scripts, e.g. "You have already ordered this document…"
+export function alertsOf(html) {
+  return [...html.matchAll(/alert\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*\)/g)].map((m) => m[2].replace(/\\(['"])/g, '$1'));
+}
+
+// The fields a browser would send for the page's form (hidden fields, text fields, checked boxes, selects)
+// and the address it posts to, resolved against the page's own address
+export function formFields(html, pageUrl = `${HOST}/GEPS/Tender/`) {
+  const root = parse(html);
+  const form = root.querySelector('form');
+  const fields = {};
+  for (const input of form?.querySelectorAll('input') || []) {
+    const name = input.getAttribute('name');
+    const type = (input.getAttribute('type') || 'text').toLowerCase();
+    if (!name || ['submit', 'button', 'image', 'reset', 'file'].includes(type)) continue;
+    if ((type === 'checkbox' || type === 'radio') && !input.hasAttribute('checked')) continue;
+    fields[name] = input.getAttribute('value') ?? (type === 'checkbox' ? 'on' : '');
+  }
+  for (const select of form?.querySelectorAll('select') || []) {
+    const name = select.getAttribute('name');
+    const option = select.querySelector('option[selected]') || select.querySelector('option');
+    if (name && option) fields[name] = option.getAttribute('value') ?? clean(option.text);
+  }
+  return { fields, action: new URL(form?.getAttribute('action') || pageUrl, pageUrl).href };
+}
+
+// Posts the page's form back: a link's __doPostBack(target, argument), or a submit button (name = value)
+async function postBack(session, page, { target, argument = '', button }) {
+  const { fields, action } = formFields(page.html, page.url);
+  const form = { ...fields, __EVENTTARGET: target || '', __EVENTARGUMENT: argument };
+  if (button) form[button.name] = button.value;
+  return request(session, action, { method: 'POST', form });
+}
+
+// Postback links: [{ target, argument, text, el }]
+export function postbackLinks(html) {
+  const root = parse(html);
+  return root
+    .querySelectorAll('a')
+    .map((a) => {
+      const m = /__doPostBack\('([^']*)','([^']*)'\)/.exec(a.getAttribute('href') || '');
+      return m && { target: m[1], argument: m[2], text: clean(a.text), el: a };
+    })
+    .filter(Boolean);
+}
+
+const buttonOf = (html, name) => {
+  const input = parse(html).querySelector(`input[name="${name}"]`);
+  return input && { name, value: input.getAttribute('value') || '' };
+};
+
+// Free order: PhilGEPS's own totals (Handling Fees, Subtotal, Tax, Total) are all 0.00. Numbers inside titles
+// don't count; the Subtotal covers every item's price.
+export function allAmountsZero(html) {
+  const text = clean(parse(html).text);
+  const totals = [...text.matchAll(/\b(Handling Fees|Subtotal|Tax|Total)\s+(?:Php\s*)?([\d,]+\.\d{2})\b/gi)].map((m) => Number(m[2].replace(/,/g, '')));
+  return totals.length >= 2 && totals.every((a) => a === 0);
+}
+
+// The delivery method PhilGEPS shows for this tender on an order page ('Download', 'Pick-Up', ...)
+export function deliveryMethodOf(html, ref) {
+  const m = new RegExp(`${ref} .*?(Download|Pick-Up|Courier|E-?mail)`, 'i').exec(clean(parse(html).text));
+  return m ? m[1] : null;
+}
+
+// On an order page, this tender's document links only (an order can include other tenders from the basket):
+// postback links whose nearest surrounding element that names a tender reference number names only this one
+export function itemLinksOf(html, ref) {
+  const SKIP = /^(log-?out|pending task|my opportunities|help|contact us|sitemap|submit|previous|back|close|delete|continue|done|add more items|pay online|manual payment)$/i;
+  return postbackLinks(html).filter(({ text, target, el }) => {
+    if (!text || SKIP.test(text) || /LoginMenu/i.test(target)) return false;
+    for (let node = el.parentNode; node && node.tagName; node = node.parentNode) {
+      const refs = (node.text.match(/\b\d{8}\b/g) || []).filter((n) => n.slice(0, 2) === ref.slice(0, 2));
+      if (refs.length) return refs.includes(ref) && new Set(refs).size === 1;
+    }
+    return false;
+  });
+}
+
+// ---------- log-in / log-out ----------
+
+// Logs in with the company account (PHILGEPS_USERNAME / PHILGEPS_PASSWORD). onSubmitted(session) runs right
+// after the form is sent (before anything is checked), to save the cookies.
+async function login(session, onSubmitted) {
+  const { PHILGEPS_USERNAME, PHILGEPS_PASSWORD } = process.env;
+  if (!PHILGEPS_USERNAME || !PHILGEPS_PASSWORD) throw new PhilgepsSyncError('NOT_CONFIGURED', 'PHILGEPS_USERNAME / PHILGEPS_PASSWORD are not set on this server.');
+  const { res: pageRes } = await request(session, LOGIN_PAGE);
+  const { fields } = formFields(await pageRes.text(), LOGIN_PAGE);
+  let answer;
+  try {
+    answer = await request(session, LOGIN_ACTION, { method: 'POST', form: { ...fields, userName: PHILGEPS_USERNAME, password: PHILGEPS_PASSWORD } });
+  } finally {
+    await onSubmitted(session);
+  }
+  const html = await answer.res.text();
+  const said = alertsOf(html).join(' / ');
+  if (/in use/i.test(said)) throw new PhilgepsSyncError('ACCOUNT_BUSY', 'The PhilGEPS account is logged in on another device or browser. Log out there, then Sync again.');
+  if (/log-in\.aspx/i.test(answer.url) || !/Log-?\s?out/i.test(html)) {
+    throw new PhilgepsSyncError('LOGIN_REJECTED', `PhilGEPS did not accept the log-in${said ? `: "${said}"` : '.'}`);
+  }
+}
+
+// Is the session closed? (the members page answers with a redirect to the log-in page)
+async function isLoggedOut(session) {
+  const res = await fetch(MEMBERS_URL, { redirect: 'manual', headers: { cookie: session.header(), 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(30000) });
+  const location = res.headers.get('location') || '';
+  if (/ErrorPage/i.test(location)) throw new Error('PhilGEPS showed its error page');
+  return /log-in\.aspx/i.test(location) || (res.status === 200 && /id="userName"/.test(await res.text()));
+}
+
+// Logs out and confirms it (5 tries, 5 s apart). Returns true when confirmed. Never throws.
+export async function logout(session) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await request(session, LOGOUT_URL).catch(() => {});
+      if (await isLoggedOut(session)) return true;
+    } catch {
+      // PhilGEPS flickering: try again
+    }
+    if (attempt < 5) await new Promise((r) => setTimeout(r, 5000));
+  }
+  return false;
+}
+
+// ---------- one tender ----------
+
+// Downloads this tender's files from the order page in `page`; returns [{ name, title, size, path, order_no }]
+async function downloadItems(session, supabase, page, ref, orderNo, trail) {
+  if (/pick-?up/i.test(deliveryMethodOf(page.html, ref) || '')) {
+    trail.push('delivery method: Pick-Up');
+    return { files: [], pickUp: true };
+  }
+  const files = [];
+  const seen = new Set();
+  for (const link of itemLinksOf(page.html, ref)) {
+    if (seen.has(link.text)) continue;
+    seen.add(link.text);
+    const { res } = await postBack(session, page, { target: link.target, argument: link.argument });
+    const type = res.headers.get('content-type') || '';
+    const disposition = res.headers.get('content-disposition') || '';
+    if (/text\/html/i.test(type) && !/attachment/i.test(disposition)) {
+      trail.push(`"${link.text}": PhilGEPS answered with a page, not a file`);
+      await res.text();
+      continue;
+    }
+    const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition);
+    const plain = /filename="?([^";]+)"?/i.exec(disposition);
+    const name = (star ? decodeURIComponent(star[1].trim()) : plain ? plain[1].trim() : `${link.text}.pdf`).replace(/[<>:"/\\|?*]/g, '_');
+    const body = Buffer.from(await res.arrayBuffer());
+    const key = `${ref}/${storageName(name)}`;
+    const ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+    const { error } = await supabase.storage.from(BUCKET).upload(key, body, { contentType: TYPES[ext] || type.split(';')[0] || 'application/octet-stream', upsert: true });
+    if (error) {
+      trail.push(`"${name}": upload failed (${error.message})`);
+      continue;
+    }
+    trail.push(`downloaded "${name}" (${body.length} bytes)`);
+    files.push({ name, title: link.text, size: body.length, path: key, order_no: orderNo || null });
+  }
+  return { files, pickUp: false };
+}
+
+// Already-ordered route: null when PhilGEPS lists no order for this tender
+async function fromOrdered(session, supabase, ref, trail, step) {
+  const list = await getPage(session, ORDERED_URL(ref));
+  const orders = postbackLinks(list.html).filter((l) => /dgOrderDoc/.test(l.target) && /^\d+$/.test(l.text));
+  trail.push(`orders: ${orders.map((o) => o.text).join(', ') || 'none'}`);
+  if (!orders.length) return null;
+  step(40);
+  const files = [];
+  let pickUp = false;
+  for (const order of orders) {
+    const { res, url } = await postBack(session, list, { target: order.target, argument: order.argument });
+    const page = { html: await res.text(), url };
+    const got = await downloadItems(session, supabase, page, ref, order.text, trail);
+    files.push(...got.files);
+    pickUp ||= got.pickUp;
+  }
+  return { files, pickUp, orderNos: orders.map((o) => o.text) };
+}
+
+// Not-ordered route: returns { status: 'ordered' | 'already-ordered' | 'closed' | 'needs-payment' |
+// 'no-order-link' | 'order-flow-changed', page?, orderNo?, said? }
+async function placeOrder(session, ref, trail, step) {
+  const notice = await getPage(session, NOTICE_URL(ref));
+  const order = postbackLinks(notice.html).find((l) => /lbtnNosOfAssoc/.test(l.target));
+  if (!order) return { status: 'no-order-link' };
+  step(30);
+  const after = await postBack(session, notice, { target: order.target });
+  const afterHtml = await after.res.text();
+  const said = alertsOf(afterHtml);
+  if (said.some((m) => /already ordered/i.test(m))) return { status: 'already-ordered' };
+  if (said.some((m) => /notice is closed/i.test(m))) return { status: 'closed', said: said.join(' / ') };
+
+  // The tender is now in the basket (PhilGEPS's basket screen only lists it); open the basket form
+  step(45);
+  let page = await getPage(session, BASKET_URL);
+  if (!/OrderBasketUI/i.test(page.url) || !page.html.includes(ref)) return { status: 'order-flow-changed', said: 'The tender did not appear in the order basket.' };
+  if (!allAmountsZero(page.html)) return { status: 'needs-payment' };
+  step(60);
+  let next = await postBack(session, page, { button: buttonOf(page.html, 'btnCont') });
+  page = { html: await next.res.text(), url: next.url };
+
+  // Notice for tenders closing within 5 days: go on (any other warning stops)
+  if (/WarningUI/i.test(page.url)) {
+    if (!/calendar days or less remaining/i.test(clean(parse(page.html).text)) || !buttonOf(page.html, 'btnContinueOrder')) {
+      return { status: 'order-flow-changed', said: clean(parse(page.html).text).slice(0, 200) };
+    }
+    next = await postBack(session, page, { button: buttonOf(page.html, 'btnContinueOrder') });
+    page = { html: await next.res.text(), url: next.url };
+  }
+  if (!/OrderConfirmationUI/i.test(page.url)) return { status: 'order-flow-changed', said: `Unexpected page: ${page.url}` };
+  if (!allAmountsZero(page.html)) return { status: 'needs-payment' };
+  step(75);
+  next = await postBack(session, page, { button: buttonOf(page.html, 'btnSubmit') });
+  page = { html: await next.res.text(), url: next.url };
+  const orderNo = /OrderID=(\d+)/i.exec(page.url)?.[1];
+  if (!orderNo) return { status: 'order-flow-changed', said: `No order number after Submit (${page.url})` };
+  trail.push(`ordered: order ${orderNo}`);
+  return { status: 'ordered', page, orderNo };
+}
+
+function remarkFor({ status, files, ordered, orderNos, said }) {
+  const orders = orderNos.length ? ` (order ${orderNos.join(', ')})` : '';
+  const how = ordered ? `Ordered by the system on PhilGEPS (free)${orders}` : `Already ordered on PhilGEPS${orders}`;
+  const philgepsSaid = said ? ` PhilGEPS said: "${said}"` : '';
+  switch (status) {
+    case 'downloaded':
+      return `${how}; ${files} file${files === 1 ? '' : 's'} downloaded${ordered ? '' : ' from My Opportunities'}.`;
+    case 'pick-up':
+      return `${how}, but PhilGEPS lists the delivery method as Pick-Up: the procuring entity hands out these bid documents in person, so there is no file to download.`;
+    case 'closed':
+      return 'PhilGEPS said: "Tender Bid Notice is closed." Bidding has ended, so the documents can no longer be ordered.';
+    case 'needs-payment':
+      return 'The PhilGEPS order basket shows a fee, so the system did not order (it never pays). Order it on PhilGEPS by hand if the documents are needed.';
+    case 'no-order-link':
+      return 'The PhilGEPS notice has no Order link, so there are no documents to order yet. Sync checks again next time.';
+    case 'order-flow-changed':
+      return `PhilGEPS showed an unexpected page while ordering, so the system stopped for this tender.${philgepsSaid} Sync tries again next time.`;
+    default:
+      return `${how}, but no download link for this tender was found on the order page. Sync tries again next time.`;
+  }
+}
+
+async function fetchTender(session, supabase, o, step) {
+  const ref = o.ref_no;
+  const trail = [];
+  let files = [];
+  let status = null;
+  let ordered = false;
+  let orderNos = [];
+  let said = null;
+  step(10);
+  const done = await fromOrdered(session, supabase, ref, trail, step);
+  if (done) {
+    files = done.files;
+    orderNos = done.orderNos;
+    if (done.pickUp && !files.length) status = 'pick-up';
+  } else {
+    const result = await placeOrder(session, ref, trail, step);
+    said = result.said || null;
+    if (result.status === 'ordered') {
+      ordered = true;
+      orderNos = [result.orderNo];
+      step(85);
+      const got = await downloadItems(session, supabase, result.page, ref, result.orderNo, trail);
+      files = got.files;
+      if (got.pickUp && !files.length) status = 'pick-up';
+    } else if (result.status === 'already-ordered') {
+      const again = await fromOrdered(session, supabase, ref, trail, step);
+      files = again?.files || [];
+      orderNos = again?.orderNos || [];
+      if (again?.pickUp && !files.length) status = 'pick-up';
+    } else {
+      status = result.status;
+    }
+  }
+  status ||= files.length ? 'downloaded' : 'none-found';
+  const now = new Date().toISOString();
+  const documents = files.map((f) => ({ ...f, source: 'order', downloaded_at: now }));
+  return { documents, status, ordered, remark: remarkFor({ status, files: documents.length, ordered, orderNos, said }), trail };
+}
+
+// ---------- which tenders ----------
+
+// Same rule as documents.js needsDocuments (with recheckEmpty, as Sync does)
+export function needsDocuments(o, now = Date.now()) {
+  const d = o.details || {};
+  if (o.closing_date && Date.parse(String(o.closing_date).replace(' ', 'T').replace(/(\+\d\d:\d\d|Z)?$/, (z) => z || '+08:00')) < now) return false;
+  if (!d.documents_checked_at) return true;
+  if ((d.supplements?.length || 0) > (d.documents_supplements_seen || 0)) return true;
+  if (d.documents?.length || d.documents_status === 'pick-up' || d.documents_status === 'closed') return false;
+  return true;
+}
+export { RECHECK_MS };
+
+// ---------- status (philgeps_sync_relay.job, read by every dashboard) ----------
+
+async function readJob(supabase) {
+  const { data } = await supabase.from('philgeps_sync_relay').select('job, updated_at').eq('id', 'latest').maybeSingle();
+  return data || {};
+}
+
+async function saveJob(supabase, job) {
+  const { error } = await supabase.from('philgeps_sync_relay').upsert({ id: 'latest', job, updated_at: new Date().toISOString() });
+  if (error) throw new PhilgepsSyncError('DB', `Saving the Sync progress: ${error.message}`);
+}
+
+// Marks a Sync as started unless one is running (its progress moved within STALE_RUN_MS).
+// Returns { started } ; started false = already running.
+export async function claimSync(by) {
+  const supabase = admin();
+  const current = await readJob(supabase);
+  const running = current.job?.kind === 'sync' && current.job.status === 'running' && Date.now() - Date.parse(current.updated_at) < STALE_RUN_MS;
+  if (running) return { started: false };
+  await saveJob(supabase, { kind: 'sync', status: 'running', percent: 0, stage: 'Starting', startedAt: Date.now(), finishedAt: null, startedBy: by || null, round: 0 });
+  return { started: true };
+}
+
+// ---------- the Sync (one round) ----------
+
+// Runs one round of the Sync (claimSync first). Returns { more } : true when tenders are left for another round.
+export async function runSyncRound() {
+  const supabase = admin();
+  const { job: claimed } = await readJob(supabase);
+  const job = { ...claimed, round: (claimed?.round || 0) + 1 };
+  const save = () => saveJob(supabase, job).catch(() => {});
+  const roundStarted = Date.now();
+  const session = new Session();
+  let loginSent = false;
+  try {
+    const { data, error } = await supabase
+      .from('philgeps_opportunities')
+      .select('ref_no, publish_date, closing_date, details')
+      .not('matched_molecules', 'eq', '{}');
+    if (error) throw new PhilgepsSyncError('DB', error.message);
+    // The dashboard's default order: newest published first, then highest reference number
+    let pending = data
+      .filter((o) => needsDocuments(o))
+      .sort((a, b) => (b.publish_date || '').localeCompare(a.publish_date || '') || (b.ref_no || '').localeCompare(a.ref_no || ''));
+    // Later rounds: only this Sync's tenders not tried yet (a tender that failed isn't retried in the same Sync)
+    if (job.round > 1) pending = pending.filter((o) => job.tenders?.[o.ref_no] === 'waiting');
+    if (job.round === 1) {
+      job.total = pending.length;
+      job.tenders = Object.fromEntries(pending.map((o) => [o.ref_no, 'waiting']));
+      job.tenderPercent = {};
+      job.files = 0;
+    }
+    if (!pending.length) {
+      Object.assign(job, { status: 'success', percent: 100, stage: job.files ? `${job.files} new documents` : 'Everything is up to date — no new documents', finishedAt: Date.now() });
+      await save();
+      return { more: false };
+    }
+
+    job.stage = 'Logging in to PhilGEPS';
+    await save();
+    loginSent = true;
+    await login(session, async (s) => {
+      await supabase.from('philgeps_session').upsert({ id: 'current', cookies: s.cookies(), saved_at: new Date().toISOString() });
+    });
+
+    let done = Object.values(job.tenders).filter((state) => state !== 'waiting').length;
+    for (const o of pending) {
+      if (Date.now() - roundStarted > ROUND_MS) break;
+      job.tenders[o.ref_no] = 'working';
+      job.tenderPercent[o.ref_no] = 0;
+      job.stage = `Downloading documents (${done + 1} of ${job.total} tenders)`;
+      await save();
+      let result;
+      try {
+        result = await fetchTender(session, supabase, o, (p) => {
+          job.tenderPercent[o.ref_no] = p;
+        });
+      } catch (e) {
+        if (e.code === 'SESSION_ENDED' || e.code === 'SITE_DOWN') throw e;
+        job.tenders[o.ref_no] = 'failed';
+        (job.tenderErrors ??= {})[o.ref_no] = e.message;
+        done++;
+        continue;
+      }
+      const previous = o.details?.documents || [];
+      const names = new Set(result.documents.map((d) => d.name));
+      const details = {
+        ...(o.details || {}),
+        documents: [...previous.filter((d) => !names.has(d.name)), ...result.documents],
+        documents_status: previous.length || result.documents.length ? 'downloaded' : result.status,
+        documents_remark: result.remark,
+        documents_checked_at: new Date().toISOString(),
+        documents_supplements_seen: o.details?.supplements?.length || 0,
+      };
+      await supabase.from('philgeps_opportunities').update({ details }).eq('ref_no', o.ref_no);
+      job.tenders[o.ref_no] = details.documents_status;
+      job.tenderPercent[o.ref_no] = 100;
+      job.files += result.documents.length;
+      done++;
+      job.percent = Math.round((95 * done) / Math.max(job.total, 1));
+      await save();
+    }
+    const more = done < job.total;
+    job.stage = more ? `Continuing (${done} of ${job.total} tenders done)` : 'Logging out of PhilGEPS';
+    await save();
+    return { more, done };
+  } catch (e) {
+    const message =
+      e.code === 'ACCOUNT_BUSY' || e.code === 'LOGIN_REJECTED' || e.code === 'NOT_CONFIGURED' || e.code === 'SITE_DOWN' || e.code === 'SESSION_ENDED'
+        ? e.message
+        : `Sync stopped: ${e.message}`;
+    Object.assign(job, { status: 'failed', error: message, finishedAt: Date.now() });
+    for (const ref of Object.keys(job.tenders || {})) if (['waiting', 'working'].includes(job.tenders[ref])) job.tenders[ref] = 'not-reached';
+    await save();
+    return { more: false, failed: true };
+  } finally {
+    if (loginSent) {
+      const loggedOut = await logout(session);
+      if (loggedOut) await supabase.from('philgeps_session').delete().eq('id', 'current');
+      else {
+        job.warning = 'The PhilGEPS log-out could not be confirmed; the 5-minute clean-up keeps trying.';
+        await save();
+      }
+    }
+  }
+}
+
+// Marks the Sync finished after its last round
+export async function finishSync() {
+  const supabase = admin();
+  const { job } = await readJob(supabase);
+  if (!job || job.status !== 'running') return;
+  for (const ref of Object.keys(job.tenders || {})) if (['waiting', 'working'].includes(job.tenders[ref])) job.tenders[ref] = 'not-reached';
+  Object.assign(job, {
+    status: 'success',
+    percent: 100,
+    stage: job.files ? `${job.files} new document${job.files > 1 ? 's' : ''}` : 'Everything is up to date — no new documents',
+    finishedAt: Date.now(),
+  });
+  await saveJob(supabase, job);
+}
+
+// ---------- 5-minute clean-up ----------
+
+// Logs out a PhilGEPS session a cut-off round left behind (none while a Sync is running). Never throws.
+export async function sweepSession() {
+  try {
+    const supabase = admin();
+    const { data } = await supabase.from('philgeps_session').select('cookies, saved_at').eq('id', 'current').maybeSingle();
+    if (!data?.cookies?.length) return { open: false };
+    const current = await readJob(supabase);
+    const running = current.job?.status === 'running' && Date.now() - Date.parse(current.updated_at) < STALE_RUN_MS;
+    if (running) return { open: true, skipped: 'sync running' };
+    const loggedOut = await logout(new Session(data.cookies));
+    if (loggedOut) await supabase.from('philgeps_session').delete().eq('id', 'current');
+    return { open: !loggedOut, loggedOut };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
