@@ -14,7 +14,8 @@
     "next": "16.4.2",
     "node-html-parser": "^7.0.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "unpdf": "^1.3.2"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

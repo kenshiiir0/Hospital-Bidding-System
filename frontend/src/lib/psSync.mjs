@@ -197,9 +197,36 @@ const TYPES = { '.pdf': 'application/pdf', '.doc': 'application/msword', '.docx'
 // Same Storage key rule as tools/ps-publish.js
 const storageName = (name) => name.replace(/[^A-Za-z0-9._()-]/g, '_');
 
+// Key dates from a notice page. The right-hand column has labelled fields ("Prebid Conference:" then
+// "Date:" / "Venue:", "Closing Date:", "Date Last updated:"); the bid opening is usually only in the
+// description ("BID OPENING : November 17, 2026", "Bid opening shall be on ..."), so it's taken from there.
+const DATE = String.raw`(?:[A-Z][a-z]+\.? \d{1,2},? \d{4}|\d{1,2}[- ][A-Za-z]{3,9}[- ]\d{4})(?:[ ,(]+(?:at )?\d{1,2}:\d{2} ?(?:[AaPp]\.?[Mm]\.?)?)?`;
+function readSchedule(root) {
+  const lines = root.structuredText.split('\n').map(clean).filter(Boolean);
+  const after = (label, from = 0) => {
+    const i = lines.findIndex((l, n) => n >= from && l.toLowerCase().startsWith(label.toLowerCase()));
+    if (i < 0) return { i: -1 };
+    const rest = clean(lines[i].slice(label.length));
+    return { i, value: rest || lines[i + 1] || null };
+  };
+  const prebid = after('Prebid Conference:');
+  const prebidDate = prebid.i >= 0 ? after('Date:', prebid.i) : { i: -1 };
+  const prebidVenue = prebid.i >= 0 ? after('Venue:', prebid.i) : { i: -1 };
+  const text = lines.join(' ');
+  const inText = (words) => text.match(new RegExp(`${words}[^.]{0,60}?(${DATE})`, 'i'))?.[1] || null;
+  return {
+    prebid: (prebidDate.i >= 0 && prebidDate.i - prebid.i <= 3 ? prebidDate.value : null) || inText('pre-?bid conference'),
+    prebidVenue: prebidVenue.i >= 0 && prebidVenue.i - prebid.i <= 5 ? prebidVenue.value : null,
+    bidOpening: inText('(?:bid opening|opening of bids)'),
+    closing: after('Closing Date:').value || null,
+    lastUpdated: after('Date Last updated:').value || null,
+  };
+}
+
 async function readNotice(session, supabase, ref, matchMolecules) {
   const root = parse(await getPage(session, `${HOST}/tenders/viewBidNotice/${ref}`));
   const matched = matchMolecules(root.text);
+  const schedule = readSchedule(root);
 
   // Documents "Preview" pop-up: its list is loaded from href_path
   const links = new Set(root.querySelectorAll('a[href*="/portal_documents/"]').map((a) => absolute(a.getAttribute('href'))));
@@ -233,7 +260,7 @@ async function readNotice(session, supabase, ref, matchMolecules) {
       errors.push(`${name}: ${e.message}`);
     }
   }
-  return { matched, documents, errors };
+  return { matched, schedule, documents, errors };
 }
 
 async function inBatches(items, size, fn) {

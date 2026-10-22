@@ -52,6 +52,7 @@ export default function BidMatchPage() {
         empty="No Bid Match data yet. Press Sync PS-PhilGEPS above."
         columns={LIST_COLUMNS}
         extraColumns={[
+          { label: 'Pre-bid / Opening', render: (row) => <KeyDates schedule={noticeOf(row)?.schedule} /> },
           { label: 'Our products', render: (row) => <Products names={noticeOf(row)?.matched} /> },
           { label: 'Documents', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
         ]}
@@ -66,6 +67,9 @@ export default function BidMatchPage() {
           link={selected.links.find((l) => /viewBidNotice/.test(l.href))?.href}
           onClose={() => setSelected(null)}
         >
+          <PanelSection title="Schedule">
+            <ScheduleList schedule={noticeOf(selected)?.schedule} />
+          </PanelSection>
           <PanelSection title="Our products">
             <Products names={noticeOf(selected)?.matched} />
           </PanelSection>
@@ -80,6 +84,39 @@ export default function BidMatchPage() {
 
 // The list shows the hospital; the long notice title, mode and classification are in View details
 const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Closing Date', 'Status'];
+
+// Key dates read from the notice page by the Sync (psSync.mjs readSchedule); a missing one is usually
+// only in the bid documents
+function KeyDates({ schedule }) {
+  if (!schedule) return <span className="text-black/46">—</span>;
+  return (
+    <div className="text-xs space-y-0.5">
+      <div><span className="text-black/46">Pre-bid </span>{schedule.prebid || '—'}</div>
+      <div><span className="text-black/46">Opening </span>{schedule.bidOpening || '—'}</div>
+    </div>
+  );
+}
+
+function ScheduleList({ schedule }) {
+  if (!schedule) return <span className="text-sm text-black/46">Not read yet (Sync again).</span>;
+  const items = [
+    ['Pre-bid conference', schedule.prebid],
+    ['Pre-bid venue', schedule.prebidVenue],
+    ['Bid opening', schedule.bidOpening],
+    ['Closing', schedule.closing],
+    ['Last updated', schedule.lastUpdated],
+  ];
+  return (
+    <dl className="grid grid-cols-[minmax(0,10rem)_1fr] gap-x-4 gap-y-2 text-sm">
+      {items.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-black/62">{label}</dt>
+          <dd className={value ? 'text-black break-words' : 'text-black/46'}>{value || 'Not on the notice page'}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 function DocumentCount({ notice }) {
   if (!notice) return <span className="text-black/46">—</span>;
