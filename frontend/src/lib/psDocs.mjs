@@ -33,7 +33,7 @@ function admin() {
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-async function loadMatcher() {
+export async function loadMatcher() {
   // molecules.json sits in the repo root, outside what the bundler imports (as in /api/products)
   const molecules = JSON.parse(await readFile(path.resolve(process.cwd(), '..', 'molecules.json'), 'utf8'));
   const compiled = molecules.map(({ name, match }) => ({
@@ -176,16 +176,32 @@ async function fileText(name, bytes) {
 // Which documents changed since the last reading (and which rules read them)
 export const documentsKey = (notice) => `${RULES_VERSION}|${(notice.documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
 
-async function readTender(supabase, matchProducts, notice) {
+function readTender(supabase, matchProducts, notice) {
+  return readDocuments(supabase, BUCKET, notice.documents, matchProducts);
+}
+
+// Reads a tender's files ([{ name, path }] in Storage bucket `bucket`; also used by the PhilGEPS Sync,
+// philgepsSync.mjs) for our products and the bid data sheet. Returns { status: done | skipped, read,
+// result: { bid_data_sheet, items }, error }. A file that can't be opened is listed as "unreadable".
+export async function readDocuments(supabase, bucket, documents, matchProducts) {
   const items = [];
   const seen = new Set();
   const read = [];
   const texts = [];
-  for (const doc of notice.documents || []) {
-    if (!doc.path || !READABLE.test(doc.name)) continue;
-    const { data: blob, error } = await supabase.storage.from(BUCKET).download(doc.path);
+  for (const doc of documents || []) {
+    if (!doc.path || !READABLE.test(doc.name)) {
+      if (doc.path) read.push({ name: doc.name, kind: 'unsupported' });
+      continue;
+    }
+    const { data: blob, error } = await supabase.storage.from(bucket).download(doc.path);
     if (error) throw new Error(`${doc.name}: ${error.message}`);
-    const pages = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer()));
+    let pages;
+    try {
+      pages = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer()));
+    } catch {
+      read.push({ name: doc.name, kind: 'unreadable' });
+      continue;
+    }
     const isPdf = /\.pdf$/i.test(doc.name);
     const letters = pages.join('').replace(/\s/g, '').length;
     if (letters / Math.max(pages.length, 1) < TEXT_PAGE_MIN_CHARS) {
@@ -209,8 +225,8 @@ async function readTender(supabase, matchProducts, notice) {
       });
     });
   }
-  if (!read.length) return { status: 'skipped', read, error: 'No PDF, Word or Excel documents.' };
-  if (!texts.length) return { status: 'skipped', read, error: 'Only scanned documents (no text to read).' };
+  if (!read.some((d) => d.kind !== 'unsupported')) return { status: 'skipped', read, error: 'No PDF, Word or Excel documents.' };
+  if (!texts.length) return { status: 'skipped', read, error: 'No readable text (scanned or damaged documents).' };
   return {
     status: 'done',
     read,

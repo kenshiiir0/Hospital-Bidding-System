@@ -536,7 +536,8 @@ async function runScrape() {
     for (const o of opportunities) {
         const known = stored.get(o.ref_no);
         if (known) Object.assign(o, { items_text: known.items_text, abc_amount: known.abc_amount, details: known.details });
-        o.matched_molecules = matchMolecules(`${o.title}\n${o.items_text || ''}`);
+        // Products the Sync found in the tender's documents (philgepsSync.mjs) stay matched
+        o.matched_molecules = [...new Set([...matchMolecules(`${o.title}\n${o.items_text || ''}`), ...(o.details?.documents_products || [])])];
         if (o.details) {
             o.details = {
                 ...o.details,

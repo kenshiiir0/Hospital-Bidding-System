@@ -102,8 +102,17 @@ function highlight(text, names) {
 export default function TenderDetails({ bid, onClose }) {
   const d = bid.details || {};
   const matched = bid.matched_molecules || [];
-  // Lines of the item list that request our products (set by the scraper; missing until the next scrape)
-  const items = d.matched_items;
+  // Lines naming our products: from the notice's item list (scraper; missing until the next update) and from
+  // the downloaded documents (Sync, philgepsSync.mjs), as in the PS-PhilGEPS molecule tracker
+  const descriptionItems = d.matched_items;
+  const items =
+    descriptionItems === undefined && !d.documents_items
+      ? undefined
+      : [
+          ...(descriptionItems || []).map((item) => ({ ...item, where: 'Description' })),
+          ...(d.documents_items || []).map((item) => ({ ...item, products: item.our_products, where: item.source?.split(', ').pop() || 'Documents' })),
+        ];
+  const unreadDocuments = (d.documents_read || []).filter((doc) => doc.kind !== 'text');
   const supplements = d.supplements || [];
   const documents = d.documents || [];
   const remark = documentsRemark(bid);
@@ -175,13 +184,17 @@ export default function TenderDetails({ bid, onClose }) {
         {items === undefined ? (
           <p className="text-sm text-black/46">The next automatic update (hourly, 6 AM–5 PM) picks out the requested items for this tender.</p>
         ) : items.length === 0 ? (
-          <p className="text-sm text-black/46">Our products are named in the title only; no single item line mentions them. See the full description below.</p>
+          <p className="text-sm text-black/46">
+            {d.documents_read_key
+              ? 'No line in the description or the readable documents names our products.'
+              : 'Our products are named in the title only; no single item line mentions them. See the full description below.'}
+          </p>
         ) : (
           <div className="overflow-x-auto rounded-[14px] border border-[#E2E8F0]">
             <table className="w-full text-xs">
               <thead className="bg-[#1EA0DA]/5 text-left text-black/62">
                 <tr>
-                  {['Product', 'Item', 'Qty', 'Unit', 'Unit price', 'Total', 'As written'].map((h) => (
+                  {['Product', 'Item', 'Qty', 'Unit', 'Unit price', 'Total', 'As written', 'Page'].map((h) => (
                     <th key={h} className="px-2.5 py-2 font-semibold whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -196,7 +209,8 @@ export default function TenderDetails({ bid, onClose }) {
                     <td className="px-2.5 py-2 whitespace-nowrap">{formatPeso(item.unit_price) || '—'}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{formatPeso(item.total) || '—'}</td>
                     {/* A line the scraper couldn't split into columns is shown as written */}
-                    <td className="px-2.5 py-2 text-black/62 min-w-[16rem]">{item.description || item.line}</td>
+                    <td className="px-2.5 py-2 text-black/62 min-w-[16rem]">{item.where === 'Description' ? item.description || item.line : item.line}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap text-black/46">{item.where}</td>
                   </tr>
                 ))}
               </tbody>
@@ -231,6 +245,12 @@ export default function TenderDetails({ bid, onClose }) {
           <span className="font-semibold">{remark.label}.</span> {remark.text}
           {d.documents_checked_at && <span className="text-black/46"> Last checked {formatInstant(d.documents_checked_at)}.</span>}
         </p>
+        {/* As in the PS-PhilGEPS bid data sheet note: files whose text couldn't be read for our products */}
+        {unreadDocuments.length > 0 && (
+          <p className="text-xs text-black/46">
+            Not readable as text (scanned or old Word format), check by hand: {unreadDocuments.map((doc) => doc.name).join(', ')}
+          </p>
+        )}
       </PanelSection>
 
       {/* Full notice text, collapsed unless there are no requested items to show */}

@@ -133,6 +133,7 @@ function ActivityEntry({ entry, onOpen }) {
           <div className="flex flex-wrap gap-2 mt-3 text-xs">
             <Chip>{details.tenders} tenders</Chip>
             <Chip tone="green">{details.files} new documents</Chip>
+            {details.found_in_documents > 0 && <Chip tone="green">{details.found_in_documents} found only in the documents</Chip>}
             {Object.entries(details.counts || {}).map(([state, n]) => (
               <Chip key={state} tone="blue">{n} {COUNT_LABELS[state] || state}</Chip>
             ))}

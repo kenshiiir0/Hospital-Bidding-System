@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { checkLogin, recordLogin } from './loginGuard.mjs';
 import { logActivity } from './activityLog.mjs';
+import { loadMatcher, readDocuments } from './psDocs.mjs';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
 // server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
@@ -36,6 +37,11 @@ export const ROUND_MS = 200 * 1000;
 // A Sync whose progress hasn't moved for this long was cut off (host time limit) and may be started again
 export const STALE_RUN_MS = 6 * 60 * 1000;
 const RECHECK_MS = 24 * 60 * 60 * 1000;
+// A description shorter than this has no item list ("Please see attachment", "Drugs and Medicines"), so a
+// tender that doesn't name our products there gets its documents ordered and read too
+const DESCRIPTION_ITEMS_MIN = 1500;
+// Version of the document reading stored per tender (documents_read_key); a change reads them again
+const READ_RULES = 'read-1';
 // Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;
@@ -470,6 +476,36 @@ export function needsDocuments(o, now = Date.now()) {
 }
 export { RECHECK_MS };
 
+// Tenders whose documents the Sync orders: those naming our products, and those whose description has no
+// item list (our products can only be in the documents)
+export function wantsDocuments(o) {
+  return (o.matched_molecules || []).length > 0 || (o.items_text || '').length < DESCRIPTION_ITEMS_MIN;
+}
+
+const readKey = (documents) => `${READ_RULES}|${(documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
+
+// Downloaded documents not read yet (or changed since): no PhilGEPS log-in needed
+export const needsReading = (o) => (o.details?.documents || []).some((d) => d.path) && o.details?.documents_read_key !== readKey(o.details.documents);
+
+// Reads a tender's downloaded documents (PDF, Word, Excel) for our products and returns the details fields
+// to store, plus matched_molecules (description matches + products found in the documents)
+export async function readTenderDocuments(supabase, matchProducts, o, details) {
+  const outcome = await readDocuments(supabase, BUCKET, details.documents, matchProducts);
+  const items = outcome.result?.items || [];
+  const products = [...new Set(items.flatMap((i) => i.our_products))];
+  return {
+    matched_molecules: [...new Set([...(o.matched_molecules || []), ...products])],
+    details: {
+      ...details,
+      documents_products: products,
+      documents_items: items.slice(0, 300),
+      documents_read: outcome.read,
+      documents_read_note: outcome.status === 'done' ? null : outcome.error,
+      documents_read_key: readKey(details.documents),
+    },
+  };
+}
+
 // ---------- status (philgeps_sync_relay.job, read by every dashboard) ----------
 
 async function readJob(supabase) {
@@ -503,7 +539,7 @@ function logRun(job) {
     status: failed ? 'failed' : 'success',
     by: job.startedBy,
     summary: failed ? job.error : job.stage,
-    details: { duration_ms: job.finishedAt && job.startedAt ? job.finishedAt - job.startedAt : null, tenders: job.total || 0, files: job.files || 0, counts, errors: job.tenderErrors || null },
+    details: { duration_ms: job.finishedAt && job.startedAt ? job.finishedAt - job.startedAt : null, tenders: job.total || 0, files: job.files || 0, found_in_documents: job.foundInDocuments || 0, counts, errors: job.tenderErrors || null },
   });
 }
 
@@ -520,14 +556,26 @@ export async function runSyncRound() {
   let loginSent = false;
   let more = false;
   try {
-    const { data, error } = await supabase
-      .from('philgeps_opportunities')
-      .select('ref_no, publish_date, closing_date, details')
-      .not('matched_molecules', 'eq', '{}');
+    const { data, error } = await supabase.from('philgeps_opportunities').select('ref_no, publish_date, closing_date, matched_molecules, items_text, details');
     if (error) throw new PhilgepsSyncError('DB', error.message);
+    const matchProducts = await loadMatcher();
+
+    // Documents already downloaded but not read for our products yet: read them first (no log-in)
+    if (job.round === 1) {
+      const unread = data.filter(needsReading);
+      for (const [i, o] of unread.entries()) {
+        if (Date.now() - roundStarted > ROUND_MS / 2) break;
+        job.stage = `Reading downloaded documents for our products (${i + 1} of ${unread.length})`;
+        await save();
+        const update = await readTenderDocuments(supabase, matchProducts, o, o.details).catch(() => null);
+        if (!update) continue;
+        await supabase.from('philgeps_opportunities').update(update).eq('ref_no', o.ref_no);
+        Object.assign(o, update);
+      }
+    }
     // The dashboard's default order: newest published first, then highest reference number
     let pending = data
-      .filter((o) => needsDocuments(o))
+      .filter((o) => wantsDocuments(o) && needsDocuments(o))
       .sort((a, b) => (b.publish_date || '').localeCompare(a.publish_date || '') || (b.ref_no || '').localeCompare(a.ref_no || ''));
     // Later rounds: only this Sync's tenders not tried yet (a tender that failed isn't retried in the same Sync)
     if (job.round > 1) pending = pending.filter((o) => job.tenders?.[o.ref_no] === 'waiting');
@@ -589,7 +637,7 @@ export async function runSyncRound() {
       }
       const previous = o.details?.documents || [];
       const names = new Set(result.documents.map((d) => d.name));
-      const details = {
+      let details = {
         ...(o.details || {}),
         documents: [...previous.filter((d) => !names.has(d.name)), ...result.documents],
         documents_status: previous.length || result.documents.length ? 'downloaded' : result.status,
@@ -597,7 +645,16 @@ export async function runSyncRound() {
         documents_checked_at: new Date().toISOString(),
         documents_supplements_seen: o.details?.supplements?.length || 0,
       };
-      await supabase.from('philgeps_opportunities').update({ details }).eq('ref_no', o.ref_no);
+      // Our products are often only in the documents: read them now (PDF, Word, Excel)
+      let matched = o.matched_molecules || [];
+      if (needsReading({ details })) {
+        job.stage = `Reading the documents of ${o.ref_no} for our products`;
+        await save();
+        const update = await readTenderDocuments(supabase, matchProducts, o, details).catch(() => null);
+        if (update) ({ details, matched_molecules: matched } = update);
+      }
+      if (matched.length > (o.matched_molecules || []).length) job.foundInDocuments = (job.foundInDocuments || 0) + 1;
+      await supabase.from('philgeps_opportunities').update({ details, matched_molecules: matched }).eq('ref_no', o.ref_no);
       job.tenders[o.ref_no] = details.documents_status;
       job.tenderPercent[o.ref_no] = 100;
       job.files += result.documents.length;
@@ -642,7 +699,9 @@ export async function finishSync() {
   Object.assign(job, {
     status: 'success',
     percent: 100,
-    stage: job.files ? `${job.files} new document${job.files > 1 ? 's' : ''}` : 'Everything is up to date — no new documents',
+    stage:
+      (job.files ? `${job.files} new document${job.files > 1 ? 's' : ''}` : 'Everything is up to date — no new documents') +
+      (job.foundInDocuments ? ` · ${job.foundInDocuments} more tender${job.foundInDocuments > 1 ? 's' : ''} with our products found in the documents` : ''),
     finishedAt: Date.now(),
   });
   await saveJob(supabase, job);
