@@ -2,8 +2,8 @@ import { rejectNonLocal } from '@/lib/localRequest';
 import { requireUser } from '@/lib/auth';
 import { psPhilgepsData, psPhilgepsStatus, startPsSync } from '@/lib/psPhilgeps';
 
-// PS-PhilGEPS connection + Sync status; ?data=1 also returns the last Sync's lists (Bid Match,
-// My Opportunities, Award Notices) and notices
+// PS-PhilGEPS connection + Sync status on this computer (the data itself comes from Supabase;
+// ?data=1 still returns this computer's last local result)
 export async function GET(request) {
   const forbidden = rejectNonLocal(request);
   if (forbidden) return forbidden;

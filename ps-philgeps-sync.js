@@ -4,12 +4,14 @@ const path = require('node:path');
 const puppeteer = require('puppeteer');
 const { openSession, HOST } = require('./ps-philgeps-session');
 const { matchMolecules } = require('./molecules');
+const { publish } = require('./tools/ps-publish');
 
 // PS-PhilGEPS (philgeps.gov.ph) sync with the saved session (ps-philgeps-session.js):
 // 1. Bid Match, My Opportunities and My Award Notices lists (every page),
 // 2. each Bid Match notice: page text, our products mentioned (molecules.json), documents downloaded
 //    from the notice's Documents list into documents/ps/<ref>/.
-// Result: .ps-philgeps/latest.json, read by the dashboard's PS-PhilGEPS pages. Every page opened is also
+// Result: .ps-philgeps/latest.json, then published to Supabase (tools/ps-publish.js: table
+// ps_philgeps_snapshot + Storage bucket ps-documents), which the dashboard's PS-PhilGEPS pages read. Every page opened is also
 // saved under .ps-philgeps/captures/ so the parsing can be checked against the real layout.
 // `--progress` prints "PROGRESS {percent, stage}" lines for the dashboard. Reads only: never clicks
 // Accept / Refuse / Feedback or anything that changes data on PhilGEPS.
@@ -175,7 +177,11 @@ async function main() {
             }
         }
 
-        fs.writeFileSync(RESULT_FILE, JSON.stringify({ syncedAt: new Date().toISOString(), lists, notices }, null, 1));
+        const result = { syncedAt: new Date().toISOString(), lists, notices };
+        progress(96, 'Saving to the database');
+        const published = await publish(result, () => {});
+        fs.writeFileSync(RESULT_FILE, JSON.stringify(result, null, 1));
+        if (published.failed.length) console.log(`Upload failed: ${published.failed.join('; ')}`);
         const matching = Object.values(notices).filter((n) => n.matched?.length).length;
         const files = Object.values(notices).reduce((sum, n) => sum + (n.documents?.length || 0), 0);
         progress(100, `Done: ${lists.bidMatch.rows.length} bid matches (${matching} with our products), ${files} documents, ` +

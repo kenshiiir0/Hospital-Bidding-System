@@ -5,21 +5,34 @@ import { authFetch } from '@/lib/authFetch';
 import { formatInstant } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
 import { PsContext } from '@/lib/psContext';
+import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
 
-// Shared by the PS-PhilGEPS pages (Bid Match, My Opportunities, Award Notices): connection + Sync status
-// and the last Sync's data from GET /api/ps-philgeps?data=1, polled once here for all three pages.
+// Shared by the PS-PhilGEPS pages (Bid Match, My Opportunities, Award Notices): the last Sync's data from
+// Supabase (ps_philgeps_snapshot, so it shows on every computer and the deployed dashboard) and, where the
+// dashboard runs on a team computer, connection + Sync status from GET /api/ps-philgeps.
 
 export default function PsPhilgepsLayout({ children }) {
   const [status, setStatus] = useState(null);
+  const [data, setData] = useState(null);
   const [requestError, setRequestError] = useState('');
+
+  const loadData = useCallback(async () => {
+    const { data: row, error } = await supabase
+      .from('ps_philgeps_snapshot')
+      .select('synced_at, lists, notices')
+      .eq('id', 'latest')
+      .maybeSingle();
+    if (error) setRequestError(`Could not load PS-PhilGEPS data: ${error.message}`);
+    else if (row) setData({ syncedAt: row.synced_at, lists: row.lists, notices: row.notices });
+  }, []);
 
   // Sync runs only where the dashboard runs on a team computer (it needs this project, Chrome and the
   // saved PhilGEPS session). A deployed copy's API refuses (403) or lacks the route: say so instead of
   // leaving the button waiting.
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/ps-philgeps?data=1');
+      const res = await fetch('/api/ps-philgeps');
       if (res.ok) setStatus(await res.json());
       else setStatus({ unavailable: true });
     } catch {
@@ -28,6 +41,17 @@ export default function PsPhilgepsLayout({ children }) {
   }, []);
 
   const running = ['connecting', 'syncing'].includes(status?.job?.status);
+  const finishedAt = status?.job?.finishedAt;
+
+  // Data: on open, every 5 minutes, and when a Sync on this computer finishes
+  useEffect(() => {
+    const first = setTimeout(loadData, 0);
+    const timer = setInterval(loadData, 5 * 60000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [loadData, finishedAt]);
 
   // Every 2 s while a Sync runs, else every minute
   useEffect(() => {
@@ -52,7 +76,7 @@ export default function PsPhilgepsLayout({ children }) {
   };
 
   return (
-    <PsContext.Provider value={{ status, data: status?.data }}>
+    <PsContext.Provider value={{ status, data }}>
       <div className="min-h-screen bg-white text-black antialiased">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
           <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
@@ -68,7 +92,7 @@ export default function PsPhilgepsLayout({ children }) {
                   : status?.connected
                     ? `Connected since ${formatInstant(status.connectedAt)}`
                     : 'Not connected'}
-                {status?.data?.syncedAt && ` · Last sync ${formatInstant(status.data.syncedAt)}`}
+                {data?.syncedAt && ` · Last sync ${formatInstant(data.syncedAt)}`}
               </p>
             </div>
             <button

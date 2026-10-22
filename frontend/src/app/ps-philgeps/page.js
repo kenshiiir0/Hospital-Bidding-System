@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { usePsPhilgeps } from '@/lib/psContext';
+import { supabase } from '@/lib/supabase';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel, { PanelSection } from '@/components/PsDetailsPanel';
 
@@ -113,16 +114,33 @@ function Documents({ ref_, notice }) {
     <ul className="space-y-1">
       {notice.documents.map((d) => (
         <li key={d.name}>
-          <a
-            href={`/api/documents?source=ps&ref=${ref_}&name=${encodeURIComponent(d.name)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-[#12769F] hover:text-[#0E5C7C] hover:underline break-all"
+          <button
+            onClick={() => openDocument(ref_, d)}
+            className="text-left text-xs text-[#12769F] hover:text-[#0E5C7C] hover:underline break-all"
           >
             📄 {d.name}
-          </a>
+          </button>
         </li>
       ))}
     </ul>
   );
+}
+
+// Documents live in the private Supabase bucket "ps-documents" (see tools/ps-publish.js): open a
+// short-lived signed link. The tab is opened first so the browser doesn't block it as a pop-up.
+// Documents from before the upload existed only on the computer that synced (/api/documents there).
+async function openDocument(ref, doc) {
+  if (!doc.path) {
+    window.open(`/api/documents?source=ps&ref=${ref}&name=${encodeURIComponent(doc.name)}`, '_blank', 'noopener');
+    return;
+  }
+  const tab = window.open('', '_blank');
+  const { data, error } = await supabase.storage.from('ps-documents').createSignedUrl(doc.path, 3600);
+  if (error || !data?.signedUrl) {
+    tab?.close();
+    alert(`Could not open ${doc.name}: ${error?.message || 'no link'}`);
+    return;
+  }
+  if (tab) tab.location.href = data.signedUrl;
+  else window.location.href = data.signedUrl;
 }

@@ -84,3 +84,30 @@ BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE activity_log;
     END IF;
 END $$;
+
+-- PS-PhilGEPS (philgeps.gov.ph): the last Sync's result, so every computer and the deployed dashboard
+-- show the same data. One row ('latest'): lists = { bidMatch, opportunities, awards } as read by
+-- ps-philgeps-sync.js ({ label, headers, rows: [{ cells, links }], pages }), notices = { ref: { matched,
+-- documents: [{ name, size, url, path }], errors } }. Written with the secret key (tools/ps-publish.js).
+CREATE TABLE IF NOT EXISTS ps_philgeps_snapshot (
+    id TEXT PRIMARY KEY,
+    synced_at TIMESTAMPTZ NOT NULL,
+    lists JSONB NOT NULL,
+    notices JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE ps_philgeps_snapshot ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON ps_philgeps_snapshot;
+CREATE POLICY "dashboard can read" ON ps_philgeps_snapshot FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ps_philgeps_snapshot FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ps_philgeps_snapshot FROM authenticated;
+
+-- PS-PhilGEPS bid documents (PDFs), private bucket: <ref>/<file name>. Team members may read (the
+-- dashboard makes short-lived signed links); uploads use the secret key.
+INSERT INTO storage.buckets (id, name, public) VALUES ('ps-documents', 'ps-documents', false)
+ON CONFLICT (id) DO NOTHING;
+DROP POLICY IF EXISTS "team can read ps documents" ON storage.objects;
+CREATE POLICY "team can read ps documents" ON storage.objects FOR SELECT TO authenticated
+    USING (bucket_id = 'ps-documents' AND coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
