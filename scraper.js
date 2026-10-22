@@ -5,6 +5,7 @@ const { matchMolecules, matchItemLines } = require('./molecules');
 const { extractSchedule } = require('./schedule');
 const { withPhilgepsSession, hasCredentials } = require('./philgeps-session');
 const { needsDocuments, fetchDocuments } = require('./documents');
+const { uploadTenderDocuments } = require('./documents-storage');
 
 // Initialize Supabase client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -277,6 +278,9 @@ async function fetchDocumentsLoggedIn(browser, matched, { start = 83, end = 94, 
 // A failed save only costs the early update: the end of the run saves again.
 async function saveTenderDetails(o) {
     if (DRY_RUN) return;
+    // Into Storage first, so the saved documents carry the paths the dashboard opens them by
+    const { failed } = await uploadTenderDocuments(supabase, o.ref_no, o.details?.documents || []);
+    for (const f of failed) console.warn(`Could not upload ${f}`);
     const { error } = await supabase.from('philgeps_opportunities').update({ details: o.details }).eq('ref_no', o.ref_no);
     if (error) console.warn(`Could not save documents of ${o.ref_no}: ${error.message}`);
 }

@@ -112,6 +112,14 @@ DROP POLICY IF EXISTS "team can read ps documents" ON storage.objects;
 CREATE POLICY "team can read ps documents" ON storage.objects FOR SELECT TO authenticated
     USING (bucket_id = 'ps-documents' AND coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
 
+-- PhilGEPS bid documents downloaded by Sync, private bucket: <ref>/<file name>. Team members may read (the
+-- dashboard makes short-lived signed links); uploads use the secret key (documents-storage.js).
+INSERT INTO storage.buckets (id, name, public) VALUES ('philgeps-documents', 'philgeps-documents', false)
+ON CONFLICT (id) DO NOTHING;
+DROP POLICY IF EXISTS "team can read philgeps documents" ON storage.objects;
+CREATE POLICY "team can read philgeps documents" ON storage.objects FOR SELECT TO authenticated
+    USING (bucket_id = 'philgeps-documents' AND coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+
 -- PS-PhilGEPS log-in session (cookies) shared by the deployed dashboard's Sync and every computer.
 -- Saved by `node ps-philgeps-session.js --connect` (a person ticks the captcha) and refreshed by each
 -- Sync. Private: no policies, so only the secret key (server side) can read or write it.

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
+import { supabase } from '@/lib/supabase';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -60,6 +61,25 @@ function documentsRemark(bid) {
     ? `${docs.length} file${docs.length === 1 ? '' : 's'} downloaded from PhilGEPS${orders.length ? ` (order ${orders.join(', ')})` : ''}.`
     : DOCUMENT_STATUS_NOTE[status] || 'No documents yet.';
   return { label, tone, text: d.documents_remark || fallback };
+}
+
+// Documents uploaded to the private Storage bucket "philgeps-documents" open by a short-lived signed link
+// (works on any computer and the deployed dashboard); older ones only from this computer (/api/documents).
+// The tab is opened first so the browser doesn't block it as a pop-up.
+async function openDocument(ref, doc) {
+  if (!doc.path) {
+    window.open(`/api/documents?ref=${ref}&name=${encodeURIComponent(doc.name)}`, '_blank', 'noopener');
+    return;
+  }
+  const tab = window.open('', '_blank');
+  const { data, error } = await supabase.storage.from('philgeps-documents').createSignedUrl(doc.path, 3600);
+  if (error || !data?.signedUrl) {
+    tab?.close();
+    alert(`Could not open ${doc.name}: ${error?.message || 'no link'}`);
+    return;
+  }
+  if (tab) tab.location.href = data.signedUrl;
+  else window.location.href = data.signedUrl;
 }
 
 const formatSize = (bytes) =>
@@ -170,14 +190,12 @@ export default function TenderDetails({ bid, onClose }) {
                       </div>
                     </div>
                     {validRef && (
-                      <a
-                        href={`/api/documents?ref=${bid.ref_no}&name=${encodeURIComponent(doc.name)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => openDocument(bid.ref_no, doc)}
                         className="shrink-0 text-xs font-semibold text-[#12769F] hover:text-[#0E5C7C] transition"
                       >
                         Open ↗
-                      </a>
+                      </button>
                     )}
                   </li>
                 ))}
