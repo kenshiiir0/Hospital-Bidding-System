@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
+import { logActivity } from './activityLog.mjs';
 
 // PS-PhilGEPS (philgeps.gov.ph) Sync without a browser, so it runs on the deployed dashboard's server.
 // PhilGEPS's lists, notices and document lists are plain HTML; they are fetched with the log-in session
@@ -288,6 +289,9 @@ export async function claimSync(by) {
 
 export async function runSync() {
   const supabase = admin();
+  // For the History page (activityLog.mjs)
+  const { data: started } = await supabase.from('ps_sync_status').select('started_by, started_at').eq('id', 'latest').maybeSingle();
+  const tookMs = () => (started?.started_at ? Date.now() - Date.parse(started.started_at) : null);
   const progress = (percent, stage) => setStatus(supabase, { percent: Math.round(percent), stage }).catch(() => {});
   try {
     const { data: saved } = await supabase.from('ps_philgeps_session').select('cookies').eq('id', 'current').maybeSingle();
@@ -348,6 +352,13 @@ export async function runSync() {
     const files = Object.values(notices).reduce((sum, n) => sum + (n.documents?.length || 0), 0);
     const stage = `Done: ${lists.bidMatch.rows.length} bid matches (${matching} with our products), ${files} documents, ${lists.opportunities.rows.length} opportunities, ${lists.awards.rows.length} award notices`;
     await setStatus(supabase, { status: 'success', percent: 100, stage, finished_at: new Date().toISOString() });
+    await logActivity({
+      event: 'ps-sync',
+      status: 'success',
+      by: started?.started_by,
+      summary: stage,
+      details: { duration_ms: tookMs(), bid_matches: lists.bidMatch.rows.length, matching, files, opportunities: lists.opportunities.rows.length, awards: lists.awards.rows.length },
+    });
     return stage;
   } catch (e) {
     const fields = { status: 'failed', error: e.message, finished_at: new Date().toISOString() };
@@ -357,6 +368,7 @@ export async function runSync() {
       await supabase.from('ps_philgeps_session').delete().eq('id', 'current');
     }
     await setStatus(supabase, fields).catch(() => {});
+    await logActivity({ event: 'ps-sync', status: 'failed', by: started?.started_by, summary: e.message, details: { duration_ms: tookMs() } });
     throw e;
   }
 }

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { checkLogin, recordLogin } from './loginGuard.mjs';
+import { logActivity } from './activityLog.mjs';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
 // server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
@@ -492,6 +493,20 @@ export async function claimSync(by) {
   return { started: true };
 }
 
+// The finished Sync on the History page: how many tenders ended in each state
+function logRun(job) {
+  const counts = {};
+  for (const state of Object.values(job.tenders || {})) counts[state] = (counts[state] || 0) + 1;
+  const failed = job.status === 'failed';
+  return logActivity({
+    event: 'documents',
+    status: failed ? 'failed' : 'success',
+    by: job.startedBy,
+    summary: failed ? job.error : job.stage,
+    details: { duration_ms: job.finishedAt && job.startedAt ? job.finishedAt - job.startedAt : null, tenders: job.total || 0, files: job.files || 0, counts, errors: job.tenderErrors || null },
+  });
+}
+
 // ---------- the Sync (one round) ----------
 
 // Runs one round of the Sync (claimSync first). Returns { more } : true when tenders are left for another round.
@@ -525,6 +540,7 @@ export async function runSyncRound() {
     if (!pending.length) {
       Object.assign(job, { status: 'success', percent: 100, stage: job.files ? `${job.files} new documents` : 'Everything is up to date — no new documents', finishedAt: Date.now() });
       await save();
+      await logRun(job);
       return { more: false };
     }
 
@@ -603,6 +619,7 @@ export async function runSyncRound() {
     Object.assign(job, { status: 'failed', error: message, finishedAt: Date.now() });
     for (const ref of Object.keys(job.tenders || {})) if (['waiting', 'working'].includes(job.tenders[ref])) job.tenders[ref] = 'not-reached';
     await save();
+    await logRun(job);
     return { more: false, failed: true };
   } finally {
     if (loginSent && !more) {
@@ -629,6 +646,7 @@ export async function finishSync() {
     finishedAt: Date.now(),
   });
   await saveJob(supabase, job);
+  await logRun(job);
 }
 
 // ---------- 5-minute clean-up ----------

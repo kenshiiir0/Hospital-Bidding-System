@@ -21,6 +21,7 @@ const GROUPS = [
       { href: '/ps-philgeps', label: 'Bid Match', icon: '◎' },
       { href: '/ps-philgeps/opportunities', label: 'My Opportunities', icon: '☰' },
       { href: '/ps-philgeps/awards', label: 'Award Notices', icon: '★' },
+      { href: '/history/ps-philgeps', label: 'History', icon: '⟲' },
     ],
   },
 ];
