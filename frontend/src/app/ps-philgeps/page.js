@@ -17,9 +17,10 @@ export default function BidMatchPage() {
   const notices = data?.notices || {};
   const noticeOf = (row) => notices[refOf(row)];
   const readingOf = (row) => data?.analysis?.[refOf(row)];
-  const ours = (list?.rows || []).filter((row) => noticeOf(row)?.matched?.length);
-  // Our products of a tender: matched on the notice page or named in its documents
+  // Our products of a tender: matched on the notice page or named in its documents (a notice titled only
+  // "Drugs and Medicines" lists its items in the documents)
   const productsOf = (row) => [...new Set([...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)])];
+  const ours = (list?.rows || []).filter((row) => productsOf(row).length);
   const filters = usePsFilters(list, {
     selects: [
       { label: 'Our product', valuesOf: productsOf },
@@ -73,7 +74,7 @@ export default function BidMatchPage() {
         empty="No Bid Match data yet. Press Sync PS-PhilGEPS above."
         columns={LIST_COLUMNS}
         extraColumns={[
-          { label: 'Our products', render: (row) => <Products names={noticeOf(row)?.matched} /> },
+          { label: 'Our products', render: (row) => <Products names={productsOf(row)} /> },
           { label: 'Remarks', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
         ]}
         onDetails={setSelected}
@@ -94,7 +95,7 @@ export default function BidMatchPage() {
           }
         >
           <PanelSection title="Our products">
-            <Products names={noticeOf(selected)?.matched} />
+            <Products names={productsOf(selected)} />
           </PanelSection>
           <FromDocuments reading={readingOf(selected)} />
           <PanelSection title="Documents">

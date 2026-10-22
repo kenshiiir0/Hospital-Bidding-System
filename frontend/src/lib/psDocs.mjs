@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
@@ -10,11 +11,14 @@ import { extractText, getDocumentProxy } from 'unpdf';
 // - items (molecule tracker): every line that names one of our products (molecules.json), with item no.,
 //   quantity, unit, unit price and total where the line's layout allows (same rules as parseItemLine in
 //   scraper.js); the raw line is always kept.
+// PDFs, Word (.docx) and Excel (.xlsx) files are read; a table row of a Word or Excel file becomes one line.
 // Scanned PDFs (no text layer) can't be read this way; they are listed in documents_read as "scanned".
 // A tender is read again only when its documents change or RULES_VERSION changes.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-const RULES_VERSION = 'rules-2';
+// rules-4: also Word and Excel files, item codes like "DM14" (rules-2 read PDFs only)
+const RULES_VERSION = 'rules-4';
+const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
 const TENDERS_AT_ONCE = 3;
@@ -45,7 +49,11 @@ async function loadMatcher() {
 
 const num = (s) => Number(s.replace(/,/g, ''));
 
-function parseItemLine(line) {
+// A delivery period after the amounts ("... 78,120.00 15 calendar days") is not part of the item
+const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
+
+function parseItemLine(fullLine) {
+  const line = fullLine.replace(DELIVERY_TAIL, '');
   const parsed = parseItemColumns(line);
   if (parsed.unit_price != null) return parsed;
   // Any other layout ending in "<unit price> <total>": accept the pair only when a quantity in the line
@@ -62,7 +70,8 @@ function parseItemLine(line) {
 }
 
 function parseItemColumns(line) {
-  const ITEM = String.raw`(\d+)[.)]*`;
+  // Item numbers may carry a letter code, e.g. "DM14"
+  const ITEM = String.raw`([A-Z]{0,4}-?\d+)[.)]*`;
   const UNIT = String.raw`([A-Za-z][A-Za-z.'’]*)`;
   const QTY = String.raw`([\d,]+(?:\.\d+)?)`;
   const PRICE = String.raw`([\d,]+\.\d{2})`;
@@ -115,6 +124,53 @@ function readBidDataSheet(text) {
   };
 }
 
+// ---------- reading a file ----------
+
+const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const xmlText = (xml) =>
+  xml
+    .replace(/<w:tab\/>/g, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(amp|lt|gt|quot|apos|#\d+);/g, (m, e) => (e[0] === '#' ? String.fromCharCode(Number(e.slice(1))) : XML_ENTITIES[e]));
+
+// Word: paragraphs are lines; a table row (its cells side by side) is one line, like a PDF table row
+async function docxText(zip) {
+  const xml = (await zip.file('word/document.xml')?.async('string')) || '';
+  const rows = xml.replace(/<w:tr[ >][\s\S]*?<\/w:tr>/g, (row) =>
+    `${(row.match(/<w:tc[ >][\s\S]*?<\/w:tc>/g) || []).map((cell) => clean(xmlText(cell.replace(/<\/w:p>/g, ' ')))).filter(Boolean).join(' ')}</w:p>`
+  );
+  return xmlText(rows.replace(/<\/w:p>/g, '\n'));
+}
+
+// Excel: every sheet row is one line (cells in column order)
+async function xlsxText(zip) {
+  const shared = ((await zip.file('xl/sharedStrings.xml')?.async('string')) || '').match(/<si>[\s\S]*?<\/si>/g) || [];
+  const strings = shared.map((si) => xmlText(si));
+  const lines = [];
+  for (const name of Object.keys(zip.files).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()) {
+    const xml = await zip.file(name).async('string');
+    for (const row of xml.match(/<row[ >][\s\S]*?<\/row>/g) || []) {
+      const cells = (row.match(/<c [^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || []).map((c) => {
+        const value = /<v>([\s\S]*?)<\/v>/.exec(c)?.[1] ?? xmlText(/<is>([\s\S]*?)<\/is>/.exec(c)?.[1] || '');
+        return / t="s"/.test(c) ? strings[Number(value)] || '' : value;
+      });
+      const line = clean(cells.join(' '));
+      if (line) lines.push(line);
+    }
+  }
+  return lines.join('\n');
+}
+
+// A file's text as pages (a Word or Excel file is one "page"); [] when it can't be opened
+async function fileText(name, bytes) {
+  if (/\.pdf$/i.test(name)) {
+    const { text } = await extractText(await getDocumentProxy(bytes), { mergePages: false });
+    return text;
+  }
+  const zip = await JSZip.loadAsync(bytes);
+  return [/\.docx$/i.test(name) ? await docxText(zip) : await xlsxText(zip)];
+}
+
 // ---------- one tender ----------
 
 // Which documents changed since the last reading (and which rules read them)
@@ -126,11 +182,11 @@ async function readTender(supabase, matchProducts, notice) {
   const read = [];
   const texts = [];
   for (const doc of notice.documents || []) {
-    if (!doc.path || !/\.pdf$/i.test(doc.name)) continue;
+    if (!doc.path || !READABLE.test(doc.name)) continue;
     const { data: blob, error } = await supabase.storage.from(BUCKET).download(doc.path);
     if (error) throw new Error(`${doc.name}: ${error.message}`);
-    const pdf = await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()));
-    const { text: pages } = await extractText(pdf, { mergePages: false });
+    const pages = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer()));
+    const isPdf = /\.pdf$/i.test(doc.name);
     const letters = pages.join('').replace(/\s/g, '').length;
     if (letters / Math.max(pages.length, 1) < TEXT_PAGE_MIN_CHARS) {
       read.push({ name: doc.name, kind: 'scanned', pages: pages.length });
@@ -149,11 +205,11 @@ async function readTender(supabase, matchProducts, notice) {
         // Table rows often break over several lines ("65 Aztreonam 1 g Powder for" / "injection 50 vials ..."),
         // so keep the next two lines to show with it when the line alone has no quantity
         const context = lines.slice(n, n + 3).filter(Boolean).join(' / ');
-        items.push({ our_products: products, ...parseItemLine(line), line, context, source: `${doc.name}, page ${i + 1}` });
+        items.push({ our_products: products, ...parseItemLine(line), line, context, source: `${doc.name}, ${isPdf ? `page ${i + 1}` : 'Word/Excel file'}` });
       });
     });
   }
-  if (!read.length) return { status: 'skipped', read, error: 'No PDF documents.' };
+  if (!read.length) return { status: 'skipped', read, error: 'No PDF, Word or Excel documents.' };
   if (!texts.length) return { status: 'skipped', read, error: 'Only scanned documents (no text to read).' };
   return {
     status: 'done',
