@@ -13,14 +13,18 @@ import PsLiveLogin from '@/components/PsLiveLogin';
 // - data: the last Sync's result (Supabase ps_philgeps_snapshot),
 // - sync: Sync status for the whole team (Supabase ps_sync_status; connected_at = a saved session exists),
 //   started with POST /api/ps-sync (runs on the server, no browser),
-// - connect: only where the dashboard runs on a team computer (GET/POST /api/ps-philgeps opens the Chrome
-//   log-in window there). On the deployed dashboard that route refuses, and the page says how to connect.
+// - one button: when the PhilGEPS log-in has ended, Sync first opens the log-in (Google's captcha needs a
+//   real browser) on this laptop: through POST /api/ps-philgeps where the dashboard runs on this computer,
+//   else through the "ps-philgeps-connect:" link (set up once per laptop by tools/register-connect-link.js,
+//   runs "Connect PS-PhilGEPS.cmd"). Once the session is saved the Sync starts by itself.
 export default function PsPhilgepsLayout({ children }) {
   const [data, setData] = useState(null);
   const [sync, setSync] = useState(null);
   // null = not checked yet, false = this dashboard can't open a log-in window (deployed copy)
   const [connect, setConnect] = useState(null);
   const [requestError, setRequestError] = useState('');
+  // Sync pressed while not connected: start it as soon as the log-in is saved
+  const [syncAfterConnect, setSyncAfterConnect] = useState(false);
 
   const loadData = useCallback(async () => {
     const { data: row, error } = await supabase.from('ps_philgeps_snapshot').select('synced_at, lists, notices').eq('id', 'latest').maybeSingle();
@@ -54,12 +58,12 @@ export default function PsPhilgepsLayout({ children }) {
     const timer = setInterval(() => {
       loadSync();
       loadConnect();
-    }, syncing || connecting ? 3000 : 30000);
+    }, syncing || connecting || syncAfterConnect ? 3000 : 30000);
     return () => {
       clearTimeout(first);
       clearInterval(timer);
     };
-  }, [loadSync, loadConnect, syncing, connecting]);
+  }, [loadSync, loadConnect, syncing, connecting, syncAfterConnect]);
 
   // Data: on open, every 5 minutes, and whenever a Sync finishes
   const finishedAt = sync?.finished_at;
@@ -83,10 +87,32 @@ export default function PsPhilgepsLayout({ children }) {
       setRequestError(err.message);
     }
   };
-  const startSync = () => post('/api/ps-sync', loadSync);
-  const startConnect = () => post('/api/ps-philgeps', loadConnect);
-
   const connected = Boolean(sync?.connected_at);
+
+  const runSync = useCallback(() => post('/api/ps-sync', loadSync), [loadSync]);
+  const pressSync = () => {
+    if (connected) return runSync();
+    setSyncAfterConnect(true);
+    if (connect) post('/api/ps-philgeps', loadConnect);
+    else window.location.href = 'ps-philgeps-connect:start';
+  };
+
+  // The log-in was saved (on this or another laptop): run the Sync that was asked for
+  useEffect(() => {
+    if (!syncAfterConnect || !connected) return;
+    const start = setTimeout(() => {
+      setSyncAfterConnect(false);
+      runSync();
+    }, 0);
+    return () => clearTimeout(start);
+  }, [syncAfterConnect, connected, runSync]);
+  // A failed log-in window here ends the wait
+  const connectFailed = connect?.status === 'failed';
+  useEffect(() => {
+    if (!connectFailed) return;
+    const stop = setTimeout(() => setSyncAfterConnect(false), 0);
+    return () => clearTimeout(stop);
+  }, [connectFailed]);
 
   return (
     <PsContext.Provider value={{ data }}>
@@ -103,29 +129,24 @@ export default function PsPhilgepsLayout({ children }) {
                 {data?.syncedAt && ` · Last sync ${formatInstant(data.syncedAt)}`}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2.5">
-              {!connected && connect && (
-                <button
-                  onClick={startConnect}
-                  disabled={connecting}
-                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-[#1EA0DA]/6 text-[#12769F] border border-[#1EA0DA]/25 disabled:cursor-wait px-4 py-2 rounded-full text-sm font-medium transition"
-                >
-                  {connecting ? <>Waiting for captcha <WorkingDots /></> : '🔑 Connect PS-PhilGEPS'}
-                </button>
+            <button
+              onClick={pressSync}
+              disabled={!sync || syncing || connecting || (syncAfterConnect && !connected)}
+              title="Reads Bid Match (with notice details and documents), My Opportunities and Award Notices. Opens the PhilGEPS log-in first when it has ended."
+              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2 rounded-full text-sm font-medium transition"
+            >
+              {syncing ? (
+                <>Syncing {sync.percent || 0}% <WorkingDots /></>
+              ) : connecting || syncAfterConnect ? (
+                <>Waiting for log-in <WorkingDots /></>
+              ) : (
+                '🔄 Sync PS-PhilGEPS'
               )}
-              <button
-                onClick={startSync}
-                disabled={!connected || syncing}
-                title={connected ? 'Reads Bid Match (with notice details and documents), My Opportunities and Award Notices.' : 'Connect PS-PhilGEPS first.'}
-                className={`inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 ${syncing ? 'disabled:cursor-wait' : 'disabled:cursor-not-allowed'} text-white px-4 py-2 rounded-full text-sm font-medium transition`}
-              >
-                {syncing ? <>Syncing {sync.percent || 0}% <WorkingDots /></> : '🔄 Sync PS-PhilGEPS'}
-              </button>
-            </div>
+            </button>
           </header>
 
           {requestError && <Notice tone="error">{requestError}</Notice>}
-          <ConnectNotice sync={sync} connect={connect} connected={connected} />
+          <ConnectNotice connect={connect} connected={connected} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
           <SyncNotice sync={sync} />
           {children}
         </div>
@@ -142,13 +163,13 @@ const switchToLive = () =>
     body: JSON.stringify({ switch: true }),
   }).catch(() => {});
 
-function ConnectNotice({ sync, connect, connected }) {
+function ConnectNotice({ connect, connected, waiting, onCancel }) {
   if (connect?.status === 'connecting' && connect.view === 'live') {
     return (
       <div className="space-y-3">
         <Notice>
           Below is the PS-PhilGEPS log-in page with everything filled in. Click &ldquo;I&rsquo;m not a robot&rdquo; on it
-          (and the pictures, if Google asks). The log-in then finishes by itself.
+          (and the pictures, if Google asks). The log-in then finishes by itself and the Sync starts.
         </Notice>
         <PsLiveLogin />
       </div>
@@ -157,25 +178,31 @@ function ConnectNotice({ sync, connect, connected }) {
   if (connect?.status === 'connecting') {
     return (
       <Notice>
-        A small Google Chrome window opened with the PS-PhilGEPS log-in filled in (find it on the taskbar if it is
-        behind this page). Tick &ldquo;I&rsquo;m not a robot&rdquo; there; the log-in finishes by itself and the window
-        closes.{' '}
+        The PhilGEPS log-in ended, so a small Google Chrome window opened with the log-in filled in (find it on the
+        taskbar if it is behind this page). Tick &ldquo;I&rsquo;m not a robot&rdquo; there; the window closes and the
+        Sync starts by itself.{' '}
         <button onClick={switchToLive} className="underline underline-offset-2 hover:text-[#0E5C7C]">
           Window not showing? Do the captcha here instead.
         </button>
       </Notice>
     );
   }
-  if (connect?.status === 'failed' && !connected) return <Notice tone="error">Connect failed: {connect.error}</Notice>;
-  if (!sync || connected) return null;
-  if (connect) return <Notice>PS-PhilGEPS is not connected. Press Connect PS-PhilGEPS and tick the captcha; then Sync.</Notice>;
-  return (
-    <Notice>
-      PS-PhilGEPS is not connected (PhilGEPS ends the log-in after a while). The log-in needs Google&rsquo;s captcha in a
-      real browser, so it is done on a team laptop: double-click <b>Connect PS-PhilGEPS</b> in the project folder and
-      tick &ldquo;I&rsquo;m not a robot&rdquo;. After that, Sync works here.
-    </Notice>
-  );
+  if (connect?.status === 'failed' && !connected) return <Notice tone="error">Log-in failed: {connect.error}</Notice>;
+  if (waiting && !connected) {
+    return (
+      <Notice>
+        The PhilGEPS log-in ended, so it is opening on this laptop: if the browser asks to open{' '}
+        <b>Connect PS-PhilGEPS</b>, allow it, then tick &ldquo;I&rsquo;m not a robot&rdquo; in the Chrome window. The Sync
+        starts by itself once you are logged in.
+        <span className="block mt-1.5 text-xs text-black/62">
+          Nothing opened? This laptop needs a one-time setup: in the project folder run{' '}
+          <code>node tools/register-connect-link.js</code> (or double-click <b>Connect PS-PhilGEPS</b> there).{' '}
+          <button onClick={onCancel} className="underline underline-offset-2">Cancel</button>
+        </span>
+      </Notice>
+    );
+  }
+  return null;
 }
 
 function SyncNotice({ sync }) {
