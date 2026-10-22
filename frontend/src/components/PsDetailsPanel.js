@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import HospitalLinks from '@/components/HospitalLinks';
 
 // Side panel for one PS-PhilGEPS list row: the title (long notice title or award line item) as the
 // heading, then every column PhilGEPS shows, plus optional extra sections (our products, documents).
@@ -25,6 +26,8 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
           <div>
             <h2 className="text-lg font-bold text-black leading-snug">{valueOf(titleColumn)}</h2>
             {subtitleColumn && <p className="text-sm text-black/62 mt-1">{valueOf(subtitleColumn)}</p>}
+            {/* The subtitle is the agency (hospital): its own website and latest postings */}
+            {subtitleColumn && <HospitalLinks name={valueOf(subtitleColumn)} />}
           </div>
           <button onClick={onClose} className="shrink-0 rounded-full px-3 py-1 text-sm text-black/62 hover:bg-[#1EA0DA]/6" aria-label="Close">
             ✕

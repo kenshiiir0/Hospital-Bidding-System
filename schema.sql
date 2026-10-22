@@ -177,3 +177,56 @@ CREATE POLICY "dashboard can read" ON ps_tender_analysis FOR SELECT TO authentic
     USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
 REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ps_tender_analysis FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ps_tender_analysis FROM authenticated;
+
+-- Hospitals' own websites, shown under the hospital name in View details. agency_key = the agency name
+-- in capitals with punctuation removed (PhilGEPS and PS-PhilGEPS spell names slightly differently).
+-- procurement_pages = [{ label, url }]: pages listing their Invitations to Bid / RFQs, checked by
+-- frontend/src/lib/hospitals.mjs. Team members may add and edit hospitals from the dashboard.
+CREATE TABLE IF NOT EXISTS hospitals (
+    agency_key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    website TEXT,
+    procurement_pages JSONB NOT NULL DEFAULT '[]',
+    note TEXT,                            -- e.g. "site under maintenance"
+    checked_at TIMESTAMPTZ,
+    check_error TEXT,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE hospitals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON hospitals;
+CREATE POLICY "dashboard can read" ON hospitals FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "team can add" ON hospitals;
+CREATE POLICY "team can add" ON hospitals FOR INSERT TO authenticated
+    WITH CHECK (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "team can edit" ON hospitals;
+CREATE POLICY "team can edit" ON hospitals FOR UPDATE TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false))
+    WITH CHECK (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON hospitals FROM anon;
+REVOKE DELETE, TRUNCATE ON hospitals FROM authenticated;
+GRANT SELECT, INSERT, UPDATE ON hospitals TO authenticated;
+
+-- Postings found on hospitals' procurement pages (links only, nothing downloaded). first_seen_at = the
+-- day the check first saw it (the pages show no dates), used for "this month".
+CREATE TABLE IF NOT EXISTS hospital_postings (
+    url TEXT PRIMARY KEY,
+    agency_key TEXT NOT NULL REFERENCES hospitals(agency_key) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    page_url TEXT NOT NULL,
+    page_label TEXT,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS hospital_postings_agency ON hospital_postings (agency_key, first_seen_at DESC);
+ALTER TABLE hospital_postings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON hospital_postings;
+CREATE POLICY "dashboard can read" ON hospital_postings FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON hospital_postings FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON hospital_postings FROM authenticated;
+-- page_order: position on the hospital's page (the pages list newest first). baseline: already on the
+-- page at the first check (the pages show no dates), so it never counts as new.
+ALTER TABLE hospital_postings ADD COLUMN IF NOT EXISTS page_order INT;
+ALTER TABLE hospital_postings ADD COLUMN IF NOT EXISTS baseline BOOLEAN NOT NULL DEFAULT false;

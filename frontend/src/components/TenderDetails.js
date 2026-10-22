@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import HospitalLinks from '@/components/HospitalLinks';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -140,6 +141,7 @@ export default function TenderDetails({ bid, onClose }) {
             )}
             <h2 className="text-lg font-bold text-black leading-snug">{bid.title}</h2>
             <p className="text-sm text-black/62 mt-1">{bid.procuring_entity}</p>
+            <HospitalLinks name={bid.procuring_entity} />
           </div>
           <button
             onClick={onClose}
