@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import { PanelSection } from '@/components/PsDetailsPanel';
 import HospitalLinks from '@/components/HospitalLinks';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -99,16 +100,8 @@ function highlight(text, names) {
   );
 }
 
-function Fact({ label, value }) {
-  return (
-    <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-black/46">{label}</dt>
-      <dd className="text-sm text-black mt-0.5 break-words">{value || '—'}</dd>
-    </div>
-  );
-}
-
-// Side panel with everything the scraper stored for one tender
+// Side panel with everything the scraper stored for one tender, laid out like the PS-PhilGEPS panel
+// (PsDetailsPanel): title and agency, label/value facts, then small-heading sections
 export default function TenderDetails({ bid, onClose }) {
   // Close on Escape
   useEffect(() => {
@@ -126,236 +119,214 @@ export default function TenderDetails({ bid, onClose }) {
   const remark = documentsRemark(bid);
   const validRef = /^\d+$/.test(bid.ref_no || '');
 
+  const facts = [
+    ['Reference Number', bid.ref_no],
+    ['Notice type', d.notice_type],
+    ['Solicitation Number', d.solicitation_no],
+    ['Approved Budget', bid.abc_amount && formatPeso(bid.abc_amount)],
+    ['Procurement Mode', d.procurement_mode],
+    ['Classification', d.classification],
+    ['Publish Date', formatDate(bid.publish_date)],
+    ['Closing Date', formatDateTime(bid.closing_date)],
+    ['Delivery Period', d.delivery_period],
+    ['Area of Delivery', d.area_of_delivery],
+    ['Status', d.status],
+    ['Last Updated', d.last_updated],
+  ].filter(([, value]) => value);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={bid.title}>
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-
-      <aside className="relative w-full max-w-2xl h-full overflow-y-auto bg-white border-l border-[#E2E8F0] shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white border-b border-[#E2E8F0] px-6 py-5 flex items-start gap-4">
-          <div className="flex-1 min-w-0">
-            {d.notice_type && (
-              <span className="inline-block text-[11px] font-semibold uppercase tracking-wider text-[#12769F] bg-[#1EA0DA]/8 border border-[#1EA0DA]/25 rounded-full px-2 py-0.5 mb-2">
-                {d.notice_type}
-              </span>
-            )}
+      <button className="absolute inset-0 bg-black/20" aria-label="Close" onClick={onClose} />
+      <div className="relative w-full max-w-4xl h-full overflow-y-auto bg-white p-6 shadow-[0_4px_16px_rgba(0,0,0,.08)] space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
             <h2 className="text-lg font-bold text-black leading-snug">{bid.title}</h2>
             <p className="text-sm text-black/62 mt-1">{bid.procuring_entity}</p>
             <HospitalLinks name={bid.procuring_entity} />
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Close details"
-            className="shrink-0 h-9 w-9 rounded-lg text-black/62 hover:text-black hover:bg-[#1EA0DA]/6 transition text-xl leading-none"
-          >
-            ×
+          <button onClick={onClose} className="shrink-0 rounded-full px-3 py-1 text-sm text-black/62 hover:bg-[#1EA0DA]/6" aria-label="Close">
+            ✕
           </button>
         </div>
 
-        <div className="px-6 py-6 space-y-8">
-          {!bid.details && (
-            <div className="bg-[#1EA0DA]/8 border border-[#1EA0DA]/25 text-[#12769F] text-sm rounded-[14px] px-4 py-3">
-              Full notice details have not been captured for this tender yet. The next automatic update (hourly, 6 AM–5 PM) reads them from PhilGEPS.
-            </div>
-          )}
+        {!bid.details && (
+          <p className="rounded-[14px] border border-[#1EA0DA]/25 bg-[#1EA0DA]/6 px-4 py-3 text-sm text-[#12769F]">
+            Full notice details have not been captured for this tender yet. The next automatic update (hourly, 6 AM–5 PM) reads them from PhilGEPS.
+          </p>
+        )}
 
-          {/* Key facts */}
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-            <Fact label="Reference No." value={bid.ref_no} />
-            <Fact label="Solicitation No." value={d.solicitation_no} />
-            <Fact
-              label="Approved Budget (ABC)"
-              value={bid.abc_amount && formatPeso(bid.abc_amount)}
-            />
-            <Fact label="Procurement Mode" value={d.procurement_mode} />
-            <Fact label="Published" value={formatDate(bid.publish_date)} />
-            <Fact label="Closing" value={formatDateTime(bid.closing_date)} />
-            <Fact label="Delivery Period" value={d.delivery_period} />
-            <Fact label="Area of Delivery" value={d.area_of_delivery} />
-            <Fact label="PhilGEPS Status" value={d.status} />
-            <Fact label="Last Updated" value={d.last_updated} />
-          </dl>
+        <FactList items={facts} />
 
-          {/* Files downloaded by the logged-in fetch, opened from this machine's documents/ folder */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-black/62 mb-3">
-              Downloaded Documents{documents.length ? ` (${documents.length})` : ''}
-            </h3>
-            {documents.length > 0 ? (
-              <ul className="bg-white border border-[#E2E8F0] rounded-[14px] divide-y divide-[#E2E8F0] text-sm">
-                {documents.map((doc) => (
-                  <li key={doc.name} className="px-4 py-3 flex items-center gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-black truncate" title={doc.title}>{doc.title}</div>
-                      <div className="text-xs text-black/46 mt-0.5 truncate">
-                        {doc.name} · {formatSize(doc.size)} · {doc.order_no ? `PhilGEPS order ${doc.order_no}` : doc.source === 'supplements' ? 'bid supplement' : 'PhilGEPS'} · {formatInstant(doc.downloaded_at)}
-                      </div>
-                    </div>
-                    {validRef && (
-                      <button
-                        onClick={() => openDocument(bid.ref_no, doc)}
-                        className="shrink-0 text-xs font-semibold text-[#12769F] hover:text-[#0E5C7C] transition"
-                      >
-                        Open ↗
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {/* Remarks: why this tender has documents or not */}
-            <div className={`${documents.length ? 'mt-3' : ''} rounded-[14px] border px-4 py-3 ${REMARK_STYLE[remark.tone]}`}>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-80">Remarks · {remark.label}</div>
-              <p className="text-sm mt-1 leading-relaxed">{remark.text}</p>
-              {d.documents_checked_at && (
-                <p className="text-xs opacity-70 mt-1.5">Last checked {formatInstant(d.documents_checked_at)}</p>
-              )}
-            </div>
+        <PanelSection title="Schedule">
+          <FactList
+            items={[
+              ['Pre-bid conference', d.pre_bid],
+              ['Bid opening', d.bid_opening],
+              ['Closing', formatDateTime(bid.closing_date)],
+            ]}
+            missing="Not on the notice page"
+          />
+        </PanelSection>
 
-          </section>
-
-
-          {/* Our products */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-black/62 mb-3">Our Products Requested</h3>
-            <div className="flex flex-wrap gap-1.5">
+        <PanelSection title="Our products">
+          {matched.length ? (
+            <div className="flex flex-wrap gap-1">
               {matched.map((name) => (
-                <span key={name} className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#61A644]/10 text-[#3F6F2C] border border-[#61A644]/25">
-                  {name}
-                </span>
+                <span key={name} className="rounded-full bg-[#61A644]/10 text-[#3F6F2C] px-2 py-0.5 text-xs">{name}</span>
               ))}
             </div>
-          </section>
+          ) : (
+            <span className="text-black/46">—</span>
+          )}
+        </PanelSection>
 
-          {/* Only the item lines that request our products */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-black/62 mb-3">
-              Requested Items{items?.length ? ` (${items.length})` : ''}
-            </h3>
-            {items === undefined ? (
-              <p className="text-sm text-black/46">The next automatic update (hourly, 6 AM–5 PM) picks out the requested items for this tender.</p>
-            ) : items.length === 0 ? (
-              <p className="text-sm text-black/46">
-                Our products are named in the title only; no single item line mentions them. See the full description below.
-              </p>
-            ) : (
-              <div className="overflow-x-auto bg-white border border-[#E2E8F0] rounded-[14px]">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-[11px] uppercase tracking-wider text-black/46 border-b border-[#E2E8F0]">
-                      <th className="py-2 px-3 text-left w-10">#</th>
-                      <th className="py-2 px-3 text-right">Qty</th>
-                      <th className="py-2 px-3 text-left">Unit</th>
-                      <th className="py-2 px-3 text-left">Description</th>
-                      <th className="py-2 px-3 text-right">Unit Price</th>
-                      <th className="py-2 px-3 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
-                    {items.map((item, i) =>
-                      item.description ? (
-                        <tr key={i} className="text-black align-top">
-                          <td className="py-2 px-3 text-black/46 font-mono text-xs">{item.item_no || '—'}</td>
-                          <td className="py-2 px-3 text-right tabular-nums">{item.quantity?.toLocaleString('en-PH')}</td>
-                          <td className="py-2 px-3">{item.unit}</td>
-                          <td className="py-2 px-3">{highlight(item.description, item.products)}</td>
-                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap">{formatPeso(item.unit_price) || '—'}</td>
-                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap">{formatPeso(item.total) || '—'}</td>
-                        </tr>
-                      ) : (
-                        // Layout the scraper couldn't split into columns: show the line as written
-                        <tr key={i} className="text-black">
-                          <td colSpan="6" className="py-2 px-3">{highlight(item.line, item.products)}</td>
-                        </tr>
-                      )
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* Full notice text, collapsed unless there are no requested items to show */}
-          <section>
-            {bid.items_text ? (
-              <details open={!items?.length} className="group bg-white border border-[#E2E8F0] rounded-[14px]">
-                <summary className="cursor-pointer select-none list-none px-4 py-3 text-xs font-semibold uppercase tracking-wider text-black/62 hover:text-black flex items-center justify-between">
-                  Full Description
-                  <span className="text-black/46 transition group-open:rotate-180">▾</span>
-                </summary>
-                <div className="px-4 pb-4 text-sm text-black leading-relaxed whitespace-pre-wrap max-h-[28rem] overflow-y-auto">
-                  {highlight(bid.items_text, matched)}
-                </div>
-              </details>
-            ) : (
-              <p className="text-sm text-black/46">No description on the PhilGEPS notice.</p>
-            )}
-          </section>
-
-          {/* Bid supplements list (public) */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-black/62 mb-3">
-              Documents / Bid Supplements{supplements.length ? ` (${supplements.length})` : ''}
-            </h3>
-            {supplements.length > 0 ? (
-              <ul className="bg-white border border-[#E2E8F0] rounded-[14px] divide-y divide-[#E2E8F0] text-sm">
-                {supplements.map((s) => (
-                  <li key={s.no} className="px-4 py-3">
-                    <div className="text-black">{s.title}</div>
-                    <div className="text-xs text-black/46 mt-0.5">
-                      {s.no} · {s.type} · {formatDate(s.published) || s.published}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-black/46">No bid bulletins or addenda posted.</p>
-            )}
-            {validRef && supplements.length > 0 && (
-              <a
-                href={supplementsUrl(bid.ref_no)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-[#12769F] hover:text-[#0E5C7C] transition mt-1"
-              >
-                Open supplement list on PhilGEPS <span className="text-[10px]">↗</span>
-              </a>
-            )}
-          </section>
-
-          {/* Contact */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-black/62 mb-3">Contact Person</h3>
-            {d.contact_name ? (
-              <div className="bg-white border border-[#E2E8F0] rounded-[14px] p-4 text-sm space-y-0.5">
-                <div className="font-semibold text-black">{d.contact_name}</div>
-                {(d.contact_info || []).map((line, i) =>
-                  EMAIL.test(line) ? (
-                    <a key={i} href={`mailto:${line}`} className="block text-[#12769F] hover:text-[#0E5C7C] break-all">
-                      {line}
-                    </a>
+        {/* Files downloaded by Sync; Remarks say why there are files or not */}
+        <PanelSection title={`Documents${documents.length ? ` (${documents.length})` : ''}`}>
+          {documents.length > 0 && (
+            <ul className="space-y-1.5">
+              {documents.map((doc) => (
+                <li key={doc.name}>
+                  {validRef ? (
+                    <button
+                      onClick={() => openDocument(bid.ref_no, doc)}
+                      className="text-left text-sm text-[#12769F] hover:text-[#0E5C7C] hover:underline break-all"
+                    >
+                      📄 {doc.title || doc.name}
+                    </button>
                   ) : (
-                    <div key={i} className="text-black/62">{line}</div>
-                  )
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-black/46">—</p>
-            )}
-          </section>
+                    <span className="text-sm">📄 {doc.title || doc.name}</span>
+                  )}
+                  <div className="text-xs text-black/46 pl-6 break-all">
+                    {doc.name} · {formatSize(doc.size)}
+                    {doc.order_no ? ` · PhilGEPS order ${doc.order_no}` : ''} · {formatInstant(doc.downloaded_at)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className={`rounded-[14px] border px-4 py-3 ${REMARK_STYLE[remark.tone]}`}>
+            <div className="text-xs font-semibold">Remarks · {remark.label}</div>
+            <p className="text-sm mt-1 leading-relaxed">{remark.text}</p>
+            {d.documents_checked_at && <p className="text-xs opacity-70 mt-1.5">Last checked {formatInstant(d.documents_checked_at)}</p>}
+          </div>
+        </PanelSection>
 
-          {PHILGEPS_LINK.test(bid.detail_link || '') && (
-            <a
-              href={bid.detail_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-black/62 hover:text-black transition"
-            >
-              View original notice on PhilGEPS <span className="text-[10px]">↗</span>
+        {/* Only the item lines that request our products */}
+        <PanelSection title={`Requested items${items?.length ? ` (${items.length} lines naming our products)` : ''}`}>
+          {items === undefined ? (
+            <p className="text-sm text-black/46">The next automatic update (hourly, 6 AM–5 PM) picks out the requested items for this tender.</p>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-black/46">Our products are named in the title only; no single item line mentions them. See the full description below.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-[14px] border border-[#E2E8F0]">
+              <table className="w-full text-xs">
+                <thead className="bg-[#1EA0DA]/5 text-left text-black/62">
+                  <tr>
+                    {['Item', 'Qty', 'Unit', 'Description', 'Unit price', 'Total'].map((h) => (
+                      <th key={h} className="px-2.5 py-2 font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, i) =>
+                    item.description ? (
+                      <tr key={i} className="border-t border-[#E2E8F0] align-top">
+                        <td className="px-2.5 py-2">{item.item_no || '—'}</td>
+                        <td className="px-2.5 py-2 whitespace-nowrap">{item.quantity != null ? item.quantity.toLocaleString('en-PH') : '—'}</td>
+                        <td className="px-2.5 py-2">{item.unit || '—'}</td>
+                        <td className="px-2.5 py-2 min-w-[16rem]">{highlight(item.description, item.products)}</td>
+                        <td className="px-2.5 py-2 whitespace-nowrap">{formatPeso(item.unit_price) || '—'}</td>
+                        <td className="px-2.5 py-2 whitespace-nowrap">{formatPeso(item.total) || '—'}</td>
+                      </tr>
+                    ) : (
+                      // Layout the scraper couldn't split into columns: show the line as written
+                      <tr key={i} className="border-t border-[#E2E8F0]">
+                        <td colSpan="6" className="px-2.5 py-2 text-black/62">{highlight(item.line, item.products)}</td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </PanelSection>
+
+        {/* Full notice text, collapsed unless there are no requested items to show */}
+        <PanelSection title="Full description">
+          {bid.items_text ? (
+            <details open={!items?.length} className="group rounded-[14px] border border-[#E2E8F0]">
+              <summary className="cursor-pointer select-none list-none px-4 py-2.5 text-sm text-[#12769F] hover:text-[#0E5C7C] flex items-center justify-between">
+                <span className="group-open:hidden">Show the notice text</span>
+                <span className="hidden group-open:inline">Hide the notice text</span>
+                <span className="text-black/46 transition group-open:rotate-180">▾</span>
+              </summary>
+              <div className="px-4 pb-4 text-sm text-black leading-relaxed whitespace-pre-wrap max-h-[28rem] overflow-y-auto">
+                {highlight(bid.items_text, matched)}
+              </div>
+            </details>
+          ) : (
+            <p className="text-sm text-black/46">No description on the PhilGEPS notice.</p>
+          )}
+        </PanelSection>
+
+        <PanelSection title={`Bid supplements${supplements.length ? ` (${supplements.length})` : ''}`}>
+          {supplements.length > 0 ? (
+            <ul className="space-y-1.5 text-sm">
+              {supplements.map((s) => (
+                <li key={s.no}>
+                  <div className="text-black">{s.title}</div>
+                  <div className="text-xs text-black/46">{s.no} · {s.type} · {formatDate(s.published) || s.published}</div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-black/46">No bid bulletins or addenda posted.</p>
+          )}
+          {validRef && supplements.length > 0 && (
+            <a href={supplementsUrl(bid.ref_no)} target="_blank" rel="noreferrer" className="inline-block text-sm text-[#12769F] hover:text-[#0E5C7C] hover:underline">
+              Supplement list on PhilGEPS ↗
             </a>
           )}
-        </div>
-      </aside>
+        </PanelSection>
+
+        <PanelSection title="Contact person">
+          {d.contact_name ? (
+            <div className="text-sm space-y-0.5">
+              <div className="font-semibold text-black">{d.contact_name}</div>
+              {(d.contact_info || []).map((line, i) =>
+                EMAIL.test(line) ? (
+                  <a key={i} href={`mailto:${line}`} className="block text-[#12769F] hover:text-[#0E5C7C] break-all">{line}</a>
+                ) : (
+                  <div key={i} className="text-black/62">{line}</div>
+                )
+              )}
+            </div>
+          ) : (
+            <span className="text-black/46">—</span>
+          )}
+        </PanelSection>
+
+        {PHILGEPS_LINK.test(bid.detail_link || '') && (
+          <a href={bid.detail_link} target="_blank" rel="noreferrer" className="inline-block text-sm text-[#12769F] hover:text-[#0E5C7C] hover:underline">
+            Open on PhilGEPS ↗
+          </a>
+        )}
+      </div>
     </div>
+  );
+}
+
+// Label / value pairs as in the PS-PhilGEPS panel; an empty value shows `missing` (or is left out when not given)
+function FactList({ items, missing }) {
+  const shown = missing ? items : items.filter(([, value]) => value);
+  return (
+    <dl className="grid grid-cols-[minmax(0,10rem)_1fr] gap-x-4 gap-y-2 text-sm">
+      {shown.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-black/62">{label}</dt>
+          <dd className={value ? 'text-black break-words' : 'text-black/46'}>{value || missing}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

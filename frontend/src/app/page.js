@@ -7,7 +7,7 @@ import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import ScrapeProgress from '@/components/ScrapeProgress';
 import TenderDetails from '@/components/TenderDetails';
 import WorkingDots from '@/components/WorkingDots';
-import { formatDate, formatDateTime, instantDay } from '@/lib/format';
+import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
 import { downloadOpportunityWorkbook } from '@/lib/opportunityWorkbook';
 import { supabase } from '@/lib/supabase';
 import { authFetch } from '@/lib/authFetch';
@@ -66,49 +66,49 @@ function readStoredExcluded() {
   }
 }
 
-// Pieces of a list row, shared by the wide-screen table and the narrow-screen cards
+// Pieces of a list row, in the PS-PhilGEPS pages' style (PsListTable): plain table cells, green product
+// pills, a documents count and an outlined "View details" button. The long tender title is in View details.
 
-// The list shows the hospital (procuring entity); the full tender title is in the details panel
-function BidSummary({ bid }) {
+function Products({ names }) {
+  if (!names?.length) return <span className="text-black/46">—</span>;
   return (
-    <>
-      <div className="line-clamp-2 break-words">{bid.procuring_entity || bid.title}</div>
-      {bid.abc_amount && (
-        <div className="text-xs font-normal text-black/46 mt-0.5">
-          ABC ₱{Number(bid.abc_amount).toLocaleString('en-PH')}
-        </div>
-      )}
-      {bid.details?.supplements?.length > 0 && (
-        <div className="inline-flex items-center gap-1 text-[11px] font-medium text-[#12769F] bg-white border border-[#1EA0DA]/25 rounded-full px-2 py-0.5 mt-1.5">
-          📄 {bid.details.supplements.length} bid supplement{bid.details.supplements.length > 1 ? 's' : ''}
-        </div>
-      )}
-      {bid.details?.documents?.length > 0 && (
-        <div className="inline-flex items-center gap-1 text-[11px] font-medium text-[#3F6F2C] bg-[#61A644]/10 border border-[#61A644]/25 rounded-full px-2 py-0.5 mt-1.5 ml-1">
-          📎 {bid.details.documents.length} document{bid.details.documents.length > 1 ? 's' : ''}
-        </div>
-      )}
-    </>
-  );
-}
-
-function ProductPills({ names }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {(names || []).map((name) => (
-        <span key={name} className="max-w-full truncate px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#61A644]/10 text-[#3F6F2C] border border-[#61A644]/25" title={name}>
-          {name}
-        </span>
+    <div className="flex flex-wrap gap-1">
+      {names.map((n) => (
+        <span key={n} className="rounded-full bg-[#61A644]/10 text-[#3F6F2C] px-2 py-0.5 text-xs">{n}</span>
       ))}
     </div>
   );
 }
 
-function StatusPill({ status }) {
+// Pre-bid and bid opening read from the notice text (schedule.js); a missing one is usually only in the documents
+function KeyDates({ details }) {
+  if (!details) return <span className="text-black/46">—</span>;
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#61A644] text-white">
-      {status || 'NEW'}
-    </span>
+    <div className="text-xs space-y-0.5">
+      <div><span className="text-black/46">Pre-bid </span>{details.pre_bid || '—'}</div>
+      <div><span className="text-black/46">Opening </span>{details.bid_opening || '—'}</div>
+    </div>
+  );
+}
+
+function DocumentCount({ bid }) {
+  const d = bid.details || {};
+  const n = d.documents?.length || 0;
+  if (n) return <span className="text-xs text-[#3F6F2C]">📎 {n} file{n > 1 ? 's' : ''}</span>;
+  if (d.documents_status === 'pick-up') return <span className="text-xs text-black/62">Pick-up only</span>;
+  if (d.documents_status === 'closed') return <span className="text-xs text-black/46">Closed</span>;
+  if (!d.documents_checked_at) return <span className="text-xs text-black/46">Not checked</span>;
+  return <span className="text-xs text-[#B3312C]">None yet</span>;
+}
+
+// The reference number opens the notice on PhilGEPS, like the notice numbers on the PS-PhilGEPS pages
+const PHILGEPS_LINK = /^https:\/\/notices\.philgeps\.gov\.ph\//;
+function RefLink({ bid }) {
+  if (!PHILGEPS_LINK.test(bid.detail_link || '')) return bid.ref_no;
+  return (
+    <a href={bid.detail_link} target="_blank" rel="noreferrer" className="text-[#12769F] hover:text-[#0E5C7C] underline-offset-2 hover:underline">
+      {bid.ref_no}
+    </a>
   );
 }
 
@@ -116,12 +116,37 @@ function DetailsButton({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-1 text-xs font-semibold text-[#12769F] hover:text-[#0E5C7C] whitespace-nowrap transition"
+      className="whitespace-nowrap rounded-full border border-[#1EA0DA]/25 px-3 py-1 text-xs font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 transition"
     >
-      View Details <span className="text-[10px]">→</span>
+      View details
     </button>
   );
 }
+
+function Notice({ tone = 'info', children }) {
+  const tones = {
+    info: 'border-[#1EA0DA]/25 bg-[#1EA0DA]/6 text-[#12769F]',
+    error: 'border-[#B3312C]/25 bg-[#B3312C]/6 text-[#B3312C]',
+  };
+  return (
+    <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-[14px] border px-4 py-3 text-sm ${tones[tone]}`}>
+      {children}
+    </div>
+  );
+}
+
+function EmptyState({ children }) {
+  return (
+    <div className="rounded-[14px] border border-dashed border-[#CBD5E1] px-4 py-10 text-center text-sm text-black/62">
+      {children}
+    </div>
+  );
+}
+
+const outlineButton =
+  'inline-flex items-center justify-center gap-2 rounded-full border border-[#1EA0DA]/25 bg-white px-4 py-2 text-sm font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 disabled:text-black/46 disabled:border-[#E2E8F0] disabled:cursor-not-allowed transition';
+const fieldClass =
+  'bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25';
 
 export default function Home() {
   const [bids, setBids] = useState([]);
@@ -448,329 +473,235 @@ export default function Home() {
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {/* Header Bar */}
+        {/* Header, as on the PS-PhilGEPS pages: title, one status line, actions with Sync last */}
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-black flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-[#61A644]" aria-hidden />
-              Hospital Opportunity Radar
+              <span className="h-2 w-2 rounded-full bg-[#1EA0DA]" aria-hidden />
+              PhilGEPS
             </h1>
-            <p className="text-xs text-black/62 mt-1">PhilGEPS Automated Procurement Intelligence</p>
+            <p className="text-xs text-black/62 mt-1">
+              notices.philgeps.gov.ph · {reloading ? 'Updating…' : updatedAt ? `Updated ${formatUpdatedAt(updatedAt)}` : 'Loading…'}
+              {addedToday > 0 && ` · ${addedToday} new today`}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2.5">
-          <button
-            onClick={exportBids}
-            disabled={exporting || loading || filteredBids.length === 0}
-            className="inline-flex items-center justify-center gap-2 bg-[#61A644]/10 hover:bg-[#61A644]/20 text-[#3F6F2C] border border-[#61A644]/25 disabled:bg-white disabled:text-black/46 disabled:border-[#E2E8F0] disabled:cursor-not-allowed px-4 py-2 rounded-full text-sm font-medium transition"
-          >
-            {exporting ? '⏳ Exporting...' : `⬇ Export to Excel (${filteredBids.length})`}
-          </button>
-          <button
-            onClick={fetchBids}
-            disabled={reloading}
-            title="Reload the list from the database without scraping PhilGEPS"
-            className="inline-flex items-center justify-center gap-2 bg-white hover:bg-[#1EA0DA]/6 text-[#12769F] border border-[#1EA0DA]/25 disabled:text-black/46 disabled:border-[#E2E8F0] disabled:cursor-wait px-4 py-2 rounded-full text-sm font-medium transition"
-          >
-            {reloading ? '⏳ Reloading...' : '↻ Reload'}
-          </button>
-          <button
-            onClick={triggerSync}
-            disabled={syncing || syncUnavailable}
-            title={
-              syncUnavailable
-                ? 'Sync runs only in the dashboard on a team computer (127.0.0.1:3000), which has Chrome and the PhilGEPS log-in.'
-                : 'Log in to PhilGEPS and download the documents of the screened tenders. Public data updates by itself every hour, 6 AM to 5 PM.'
-            }
-            className={`inline-flex items-center justify-center gap-2 bg-[#4A8033] hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/60 ${syncUnavailable ? 'disabled:cursor-not-allowed' : 'disabled:cursor-wait'} text-white px-4 py-2 rounded-full text-sm font-medium transition`}
-          >
-            {syncView?.status === 'checking'
-              ? <>Checking PhilGEPS <WorkingDots /></>
-              : syncView?.status === 'queued'
-                ? <>Sync waiting <WorkingDots /></>
-                : syncing
-                  ? <>Syncing {syncView.percent || 0}% <WorkingDots /></>
-                  : '🔄 Sync'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={exportBids} disabled={exporting || loading || filteredBids.length === 0} className={outlineButton}>
+              {exporting ? <>Exporting <WorkingDots /></> : `⬇ Export to Excel (${filteredBids.length})`}
+            </button>
+            <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={outlineButton}>
+              {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
+            </button>
+            <button
+              onClick={triggerSync}
+              disabled={syncing || syncUnavailable}
+              title={
+                syncUnavailable
+                  ? 'Sync runs only in the dashboard on a team computer (127.0.0.1:3000), which has Chrome and the PhilGEPS log-in.'
+                  : 'Log in to PhilGEPS and download the documents of the screened tenders. Public data updates by itself every hour, 6 AM to 5 PM.'
+              }
+              className={`inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 ${syncUnavailable ? 'disabled:cursor-not-allowed' : 'disabled:cursor-wait'} text-white px-4 py-2 rounded-full text-sm font-medium transition`}
+            >
+              {syncView?.status === 'checking'
+                ? <>Checking PhilGEPS <WorkingDots /></>
+                : syncView?.status === 'queued'
+                  ? <>Sync waiting <WorkingDots /></>
+                  : syncing
+                    ? <>Syncing {syncView.percent || 0}% <WorkingDots /></>
+                    : '🔄 Sync PhilGEPS'}
+            </button>
           </div>
         </header>
 
-        {scrapeError && (
-          <div className="bg-[#B3312C]/8 border border-[#B3312C]/25 text-[#B3312C] text-sm rounded-[14px] px-4 py-3">
-            {scrapeError}
-          </div>
-        )}
+        {scrapeError && <Notice tone="error">{scrapeError}</Notice>}
 
-        {/* Number tiles */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white border border-[#E2E8F0] p-5 rounded-[14px]">
-            <span className="flex items-center gap-2 text-black/62 text-xs font-semibold uppercase tracking-wider">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#61A644]" aria-hidden />
-              Matching Opportunities
-            </span>
-            <div className="text-3xl font-bold text-black mt-2">{visibleBids.length}</div>
-          </div>
-          <div className="bg-white border border-[#E2E8F0] p-5 rounded-[14px]">
-            <span className="flex items-center gap-2 text-black/62 text-xs font-semibold uppercase tracking-wider">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#61A644]" aria-hidden />
-              Our Products Requested
-            </span>
-            <div className="text-3xl font-bold text-[#3F6F2C] mt-2">{productCount}</div>
-          </div>
-          <div className="bg-white border border-[#E2E8F0] p-5 rounded-[14px]">
-            <span className="flex items-center gap-2 text-black/62 text-xs font-semibold uppercase tracking-wider">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#1EA0DA]" aria-hidden />
-              Added Today
-            </span>
-            <div className="text-3xl font-bold text-[#12769F] mt-2">{addedToday}</div>
-            <div className="text-xs text-black/46 mt-1.5">
-              {reloading ? 'Updating…' : updatedAt ? `Updated ${formatUpdatedAt(updatedAt)}` : ''}
+        <section ref={listTop} className="scroll-mt-6 space-y-4">
+          {/* Section heading with the documents filter, like "Bid Match · n of m mention our products" */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-base font-semibold">
+              Opportunities{' '}
+              <span className="text-sm font-normal text-black/62">
+                · {visibleBids.length} mention our products · {productCount} of our products requested
+              </span>
+            </h2>
+            <div className="flex flex-wrap gap-1 rounded-full border border-[#CBD5E1] p-0.5 text-sm" role="tablist" aria-label="Documents">
+              {DOC_GROUPS.map(({ key, label }) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={docFilter === key}
+                  onClick={() => {
+                    setDocFilter(key);
+                    setPage(1);
+                  }}
+                  className={`rounded-full px-3 py-1 transition ${docFilter === key ? 'bg-[#1EA0DA] text-white' : 'text-black/62 hover:text-black'}`}
+                >
+                  {label} <span className={`text-xs tabular-nums ${docFilter === key ? 'text-white/80' : 'text-black/46'}`}>{docCounts[key]}</span>
+                </button>
+              ))}
             </div>
           </div>
-        </section>
 
-        {/* Search Input Bar */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="text"
-            placeholder="Search by reference no., tender title, hospital name or molecule..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="flex-1 bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-[14px] px-4 py-3 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25 transition"
-          />
-          <button
-            onClick={() => setShowExclusions(!showExclusions)}
-            aria-expanded={showExclusions}
-            className={`rounded-[14px] px-4 py-3 text-sm font-medium border transition ${
-              excluded.length
-                ? 'bg-[#1EA0DA]/8 border-[#1EA0DA]/25 text-[#12769F] hover:bg-[#1EA0DA]/12'
-                : 'bg-white border-[#CBD5E1] text-black hover:bg-[#1EA0DA]/6'
-            }`}
-          >
-            Exclude Products{excluded.length ? ` (${excluded.length})` : ''} {showExclusions ? '▴' : '▾'}
-          </button>
-        </div>
-
-        {/* Documents filter: tenders with files / pick-up only / no documents yet */}
-        <div className="flex flex-wrap items-center gap-2 text-sm" role="tablist" aria-label="Documents">
-          {DOC_GROUPS.map(({ key, label }) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={docFilter === key}
-              onClick={() => {
-                setDocFilter(key);
+          {/* Search, products to leave out, published dates and order */}
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <input
+              type="text"
+              placeholder="Search reference no., title, hospital or molecule…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
                 setPage(1);
               }}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 border transition ${
-                docFilter === key
-                  ? 'bg-[#1EA0DA]/10 border-[#1EA0DA]/40 text-[#12769F] font-medium'
-                  : 'bg-white border-[#CBD5E1] text-black hover:bg-[#1EA0DA]/6'
+              className={`${fieldClass} flex-1 min-w-[16rem]`}
+            />
+            <button
+              onClick={() => setShowExclusions(!showExclusions)}
+              aria-expanded={showExclusions}
+              className={`rounded-full px-3 py-1.5 border transition ${
+                excluded.length ? 'bg-[#1EA0DA]/8 border-[#1EA0DA]/25 text-[#12769F]' : 'bg-white border-[#CBD5E1] text-black hover:bg-[#1EA0DA]/6'
               }`}
             >
-              {label}
-              <span className="text-xs tabular-nums text-black/46">{docCounts[key]}</span>
+              Exclude products{excluded.length ? ` (${excluded.length})` : ''} {showExclusions ? '▴' : '▾'}
             </button>
-          ))}
-        </div>
-
-        {/* Published-date filter and sort direction */}
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span className="text-black/62">Published</span>
-          <label className="flex items-center gap-2 text-black/62">
-            from
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo || undefined}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPage(1);
-              }}
-              className="bg-white border border-[#CBD5E1] text-black rounded-full px-3 py-1.5 focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-black/62">
-            to
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom || undefined}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPage(1);
-              }}
-              className="bg-white border border-[#CBD5E1] text-black rounded-full px-3 py-1.5 focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25"
-            />
-          </label>
-          <button
-            onClick={() => {
-              setOldestFirst(!oldestFirst);
-              setPage(1);
-            }}
-            title="Reverse the order of the list"
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 border border-[#CBD5E1] bg-white text-black hover:bg-[#1EA0DA]/6 transition"
-          >
-            <span aria-hidden>⇅</span> {oldestFirst ? 'Oldest first' : 'Latest first'}
-          </button>
-          {(dateFrom || dateTo) && (
+            <label className="flex items-center gap-1.5 text-black/62">
+              Published from
+              <input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setPage(1);
+                }}
+                className={fieldClass}
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-black/62">
+              to
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setPage(1);
+                }}
+                className={fieldClass}
+              />
+            </label>
             <button
               onClick={() => {
-                setDateFrom('');
-                setDateTo('');
+                setOldestFirst(!oldestFirst);
                 setPage(1);
               }}
-              className="text-[#12769F] hover:text-[#0E5C7C] px-2 py-1.5 transition"
+              title="Reverse the order of the list"
+              className="rounded-full px-3 py-1.5 border border-[#CBD5E1] bg-white text-black hover:bg-[#1EA0DA]/6 transition"
             >
-              Clear dates
+              ⇅ {oldestFirst ? 'Oldest first' : 'Latest first'}
             </button>
-          )}
-        </div>
-
-        {/* Product Exclusion Filter */}
-        {showExclusions && (
-          <div className="bg-white border border-[#E2E8F0] rounded-[14px] p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <input
-                type="text"
-                placeholder="Search products..."
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                className="flex-1 bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-[14px] px-3 py-2.5 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25 transition"
-              />
+            {(dateFrom || dateTo) && (
               <button
-                onClick={() => updateExcluded([])}
-                disabled={!excluded.length}
-                className="text-sm text-[#12769F] hover:text-[#0E5C7C] disabled:text-black/36 disabled:cursor-not-allowed px-3 py-2.5 transition"
+                onClick={() => {
+                  setDateFrom('');
+                  setDateTo('');
+                  setPage(1);
+                }}
+                className="text-[#12769F] hover:text-[#0E5C7C] px-2 py-1.5 transition"
               >
-                Clear exclusions
+                Clear dates
               </button>
-            </div>
-            <p className="text-xs text-black/46">
-              Checked products are excluded: any tender that requests one of them is removed from the list.
-            </p>
-            {listedProducts.length === 0 ? (
-              <p className="text-sm text-black/46 py-4 text-center">No products match &quot;{productSearch}&quot;.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1 max-h-72 overflow-y-auto pr-1">
-                {listedProducts.map((name) => (
-                  <label
-                    key={name}
-                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-black hover:bg-[#1EA0DA]/6 cursor-pointer select-none"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={excluded.includes(name)}
-                      onChange={() => toggleExcluded(name)}
-                      className="h-4 w-4 accent-[#1EA0DA]"
-                    />
-                    <span className="flex-1 truncate">{name}</span>
-                    <span className="text-xs text-black/46 tabular-nums">{tendersPerProduct[name] || 0}</span>
-                  </label>
-                ))}
+            )}
+          </div>
+
+          {/* Products to leave out */}
+          {showExclusions && (
+            <div className="rounded-[14px] border border-[#E2E8F0] p-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Search products…"
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  className={`${fieldClass} flex-1 min-w-[12rem]`}
+                />
+                <button
+                  onClick={() => updateExcluded([])}
+                  disabled={!excluded.length}
+                  className="text-sm text-[#12769F] hover:text-[#0E5C7C] disabled:text-black/36 disabled:cursor-not-allowed px-2 py-1.5 transition"
+                >
+                  Clear exclusions
+                </button>
               </div>
-            )}
-          </div>
-        )}
-
-        {excluded.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-black/62">
-              Excluding ({bids.length - visibleBids.length} tenders hidden):
-            </span>
-            {excluded.map((name) => (
-              <button
-                key={name}
-                onClick={() => toggleExcluded(name)}
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#1EA0DA]/8 text-[#12769F] border border-[#1EA0DA]/25 hover:bg-[#1EA0DA]/12 transition"
-                title={`Stop excluding ${name}`}
-              >
-                {name} <span aria-hidden>×</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Opportunity list: one page at a time, sized to fit without sideways scrolling.
-            A table on wide screens, stacked cards below xl (the sidebar leaves too little room for 7 columns). */}
-        <div ref={listTop} className="scroll-mt-6 space-y-4">
-          <div className="bg-white border border-[#E2E8F0] rounded-[14px] overflow-hidden shadow-none">
-            {loading ? (
-              <p className="py-12 text-center text-sm text-black/46">Fetching live opportunities from database...</p>
-            ) : filteredBids.length === 0 ? (
-              <p className="py-12 text-center text-sm text-black/46">No matching records found.</p>
-            ) : (
-              <>
-                <table className="hidden xl:table w-full table-fixed text-left text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-[#1EA0DA]/5 border-b border-[#E2E8F0] text-black/62 text-xs font-semibold uppercase tracking-wider">
-                      <th className="py-3.5 pl-4 pr-2 w-12 text-center">#</th>
-                      <th className="py-3.5 px-3 w-28">Reference No.</th>
-                      <th className="py-3.5 px-4">Hospital / Procuring Entity</th>
-                      <th className="py-3.5 px-4 w-[22%]">Our Products</th>
-                      <th className="py-3.5 px-3 w-40">Published / Closing</th>
-                      <th className="py-3.5 px-3 w-24 text-center">Status</th>
-                      <th className="py-3.5 pl-3 pr-4 w-28 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageBids.map((bid, index) => (
-                      <tr key={bid.id || index} className="bg-white border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#1EA0DA]/6 transition-colors align-top">
-                        <td className="py-3 pl-4 pr-2 text-center">
-                          <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
-                        </td>
-                        <td className="py-4 px-3 font-mono text-xs text-black/62 break-all">{bid.ref_no}</td>
-                        <td className="py-4 px-4 font-semibold text-black leading-relaxed">
-                          <BidSummary bid={bid} />
-                        </td>
-                        <td className="py-4 px-4">
-                          <ProductPills names={bid.matched_molecules} />
-                        </td>
-                        <td className="py-4 px-3 text-xs">
-                          <div className="text-sm font-semibold text-black">{formatDate(bid.publish_date) || '—'}</div>
-                          <div className="text-black/46 mt-1">Closes {formatDateTime(bid.closing_date) || '—'}</div>
-                        </td>
-                        <td className="py-4 px-3 text-center">
-                          <StatusPill status={bid.status} />
-                        </td>
-                        <td className="py-4 pl-3 pr-4 text-right">
-                          <DetailsButton onClick={() => setSelectedBid(bid)} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <ul className="xl:hidden divide-y divide-[#E2E8F0]">
-                  {pageBids.map((bid, index) => (
-                    <li key={bid.id || index} className="p-4 space-y-3 hover:bg-[#1EA0DA]/6 transition-colors">
-                      <div className="flex items-center justify-between gap-3 text-xs">
-                        <span className="font-mono text-black/62 break-all">
-                          <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} /> {bid.ref_no}
-                        </span>
-                        <StatusPill status={bid.status} />
-                      </div>
-                      <div className="font-semibold text-sm text-black leading-relaxed">
-                        <BidSummary bid={bid} />
-                      </div>
-                      <ProductPills names={bid.matched_molecules} />
-                      <div className="flex flex-wrap items-end justify-between gap-3 text-xs">
-                        <div className="space-y-0.5">
-                          <div className="text-black/62">
-                            Published <span className="text-sm font-semibold text-black">{formatDate(bid.publish_date) || '—'}</span>
-                          </div>
-                          <div className="text-black/46">Closes {formatDateTime(bid.closing_date) || '—'}</div>
-                        </div>
-                        <DetailsButton onClick={() => setSelectedBid(bid)} />
-                      </div>
-                    </li>
+              <p className="text-xs text-black/46">Checked products are left out: any tender that requests one of them is removed from the list.</p>
+              {listedProducts.length === 0 ? (
+                <p className="text-sm text-black/46 py-4 text-center">No products match &quot;{productSearch}&quot;.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1 max-h-72 overflow-y-auto pr-1">
+                  {listedProducts.map((name) => (
+                    <label key={name} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-black hover:bg-[#1EA0DA]/6 cursor-pointer select-none">
+                      <input type="checkbox" checked={excluded.includes(name)} onChange={() => toggleExcluded(name)} className="h-4 w-4 accent-[#1EA0DA]" />
+                      <span className="flex-1 truncate">{name}</span>
+                      <span className="text-xs text-black/46 tabular-nums">{tendersPerProduct[name] || 0}</span>
+                    </label>
                   ))}
-                </ul>
-              </>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {excluded.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-black/62">Leaving out ({bids.length - visibleBids.length} tenders hidden):</span>
+              {excluded.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => toggleExcluded(name)}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#1EA0DA]/8 text-[#12769F] border border-[#1EA0DA]/25 hover:bg-[#1EA0DA]/12 transition"
+                  title={`Stop leaving out ${name}`}
+                >
+                  {name} <span aria-hidden>×</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* The list: same table as the PS-PhilGEPS pages (PsListTable) */}
+          {loading ? (
+            <EmptyState>Loading opportunities…</EmptyState>
+          ) : filteredBids.length === 0 ? (
+            <EmptyState>Nothing to show.</EmptyState>
+          ) : (
+            <div className="rounded-[14px] border border-[#E2E8F0] overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#1EA0DA]/5 text-left text-xs text-black/62">
+                  <tr>
+                    {['#', 'Reference Number', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Pre-bid / Opening', 'Our products', 'Documents'].map((h) => (
+                      <th key={h} className="px-3 py-2.5 font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                    <th className="px-3 py-2.5" aria-label="Details" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageBids.map((bid, index) => (
+                    <tr key={bid.id || index} className="border-t border-[#E2E8F0] align-top">
+                      <td className="px-3 py-2">
+                        <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap"><RefLink bid={bid} /></td>
+                      <td className="px-3 py-2.5 min-w-[11rem]">{bid.procuring_entity || bid.title}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</td>
+                      <td className="px-3 py-2.5">{formatDate(bid.publish_date) || '—'}</td>
+                      <td className="px-3 py-2.5">{formatDateTime(bid.closing_date) || '—'}</td>
+                      <td className="px-3 py-2.5 min-w-[8rem] max-w-[11rem]"><KeyDates details={bid.details} /></td>
+                      <td className="px-3 py-2.5 min-w-[13rem]"><Products names={bid.matched_molecules} /></td>
+                      <td className="px-3 py-2.5 whitespace-nowrap"><DocumentCount bid={bid} /></td>
+                      <td className="px-3 py-2.5 text-right"><DetailsButton onClick={() => setSelectedBid(bid)} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {!loading && filteredBids.length > 0 && (
             <Pagination
@@ -784,8 +715,7 @@ export default function Home() {
               }}
             />
           )}
-        </div>
-
+        </section>
       </div>
 
       {selectedBid && (
