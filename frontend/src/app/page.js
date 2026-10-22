@@ -80,16 +80,6 @@ function Products({ names }) {
   );
 }
 
-// Pre-bid and bid opening read from the notice text (schedule.js); a missing one is usually only in the documents
-function KeyDates({ details }) {
-  if (!details) return <span className="text-black/46">—</span>;
-  return (
-    <div className="text-xs space-y-0.5">
-      <div><span className="text-black/46">Pre-bid </span>{details.pre_bid || '—'}</div>
-      <div><span className="text-black/46">Opening </span>{details.bid_opening || '—'}</div>
-    </div>
-  );
-}
 
 function DocumentCount({ bid }) {
   const d = bid.details || {};
@@ -673,7 +663,7 @@ export default function Home() {
               <table className="w-full text-sm">
                 <thead className="bg-[#1EA0DA]/5 text-left text-xs text-black/62">
                   <tr>
-                    {['#', 'Reference Number', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Pre-bid / Opening', 'Our products', 'Documents'].map((h) => (
+                    {['#', 'Reference Number', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Our products', 'Documents'].map((h) => (
                       <th key={h} className="px-3 py-2.5 font-semibold whitespace-nowrap">{h}</th>
                     ))}
                     <th className="px-3 py-2.5" aria-label="Details" />
@@ -690,7 +680,6 @@ export default function Home() {
                       <td className="px-3 py-2.5 whitespace-nowrap">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</td>
                       <td className="px-3 py-2.5">{formatDate(bid.publish_date) || '—'}</td>
                       <td className="px-3 py-2.5">{formatDateTime(bid.closing_date) || '—'}</td>
-                      <td className="px-3 py-2.5 min-w-[8rem] max-w-[11rem]"><KeyDates details={bid.details} /></td>
                       <td className="px-3 py-2.5 min-w-[13rem]"><Products names={bid.matched_molecules} /></td>
                       <td className="px-3 py-2.5 whitespace-nowrap"><DocumentCount bid={bid} /></td>
                       <td className="px-3 py-2.5 text-right"><DetailsButton onClick={() => setSelectedBid(bid)} /></td>
