@@ -180,6 +180,21 @@ CREATE TABLE IF NOT EXISTS philgeps_session (
 ALTER TABLE philgeps_session ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON philgeps_session FROM anon, authenticated;
 
+-- Every log-in the system makes to PhilGEPS ('philgeps') and PS-PhilGEPS ('ps-philgeps'), read by
+-- frontend/src/lib/loginGuard.mjs to keep log-ins few (no lock-out for suspicious activity).
+-- outcome: started | ok | rejected | busy | error | cancelled. Private: secret key only.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id BIGSERIAL PRIMARY KEY,
+    site TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    detail TEXT,
+    source TEXT,
+    at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_attempts_site_at ON login_attempts (site, at DESC);
+ALTER TABLE login_attempts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON login_attempts FROM anon, authenticated;
+
 -- What was read in each PS-PhilGEPS tender's bid documents (frontend/src/lib/psDocs.mjs, free text
 -- rules, run by the keep-alive call): result = { bid_data_sheet: { prebid_conference, bid_opening,
 -- bid_submission_deadline, delivery_period, bid_validity, bid_security } (passages as written),

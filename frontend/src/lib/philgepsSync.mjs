@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
+import { checkLogin, recordLogin } from './loginGuard.mjs';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
 // server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
@@ -10,8 +11,9 @@ import { parse } from 'node-html-parser';
 // Files go to the Storage bucket philgeps-documents, results to philgeps_opportunities.details, progress to
 // philgeps_sync_relay.job (read by every dashboard). Never pays: anything above 0.00 stops at that tender.
 // Session safety: one Sync at a time (claimSync), the session's cookies are saved in philgeps_session the moment
-// the log-in is sent, every round logs out and confirms it, and sweepSession() (every 5 minutes) logs out a
-// session a cut-off round left behind. A round stops starting tenders after ROUND_MS (the host allows 300 s)
+// the log-in is sent, one log-in serves every round of a Sync (the next round reuses it), the last round (or a
+// failed one) logs out and confirms it, and sweepSession() (every 5 minutes) logs out a session left idle.
+// Account safety: every log-in passes loginGuard.mjs first (few log-ins, none after a refused password). A round stops starting tenders after ROUND_MS (the host allows 300 s)
 // and the next round continues with the rest.
 // Plain .mjs (no Next imports) so it can also be run directly with node for testing.
 
@@ -33,7 +35,11 @@ export const ROUND_MS = 200 * 1000;
 // A Sync whose progress hasn't moved for this long was cut off (host time limit) and may be started again
 export const STALE_RUN_MS = 6 * 60 * 1000;
 const RECHECK_MS = 24 * 60 * 60 * 1000;
+// Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
+const LOGIN_POSTS = 2;
+// A saved session with no Sync progress for this long is logged out by sweepSession()
+const SESSION_IDLE_MS = 5 * 60 * 1000;
 
 const TYPES = { '.pdf': 'application/pdf', '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.zip': 'application/zip', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
 const storageName = (name) => name.replace(/[^A-Za-z0-9._()-]/g, '_');
@@ -209,14 +215,29 @@ export function itemLinksOf(html, ref) {
 // ---------- log-in / log-out ----------
 
 // Logs in with the company account (PHILGEPS_USERNAME / PHILGEPS_PASSWORD). onSubmitted(session) runs right
-// after the form is sent (before anything is checked), to save the cookies.
-export async function login(session, onSubmitted) {
+// after the form is sent (before anything is checked), to save the cookies. trigger: 'person' | 'schedule'
+// (loginGuard.mjs: a schedule waits longer after "account in use"). Throws LOGIN_PAUSED when the guard says no.
+export async function login(session, onSubmitted, { trigger = 'person', source = 'server' } = {}) {
   const { PHILGEPS_USERNAME, PHILGEPS_PASSWORD } = process.env;
   if (!PHILGEPS_USERNAME || !PHILGEPS_PASSWORD) throw new PhilgepsSyncError('NOT_CONFIGURED', 'PHILGEPS_USERNAME / PHILGEPS_PASSWORD are not set on this server.');
+  await checkLogin('philgeps', { trigger });
+  await recordLogin('philgeps', 'started', { source });
+  try {
+    await sendLogin(session, onSubmitted, PHILGEPS_USERNAME, PHILGEPS_PASSWORD);
+    await recordLogin('philgeps', 'ok', { source });
+  } catch (e) {
+    const outcome = e.code === 'ACCOUNT_BUSY' ? 'busy' : e.code === 'LOGIN_REJECTED' ? 'rejected' : 'error';
+    await recordLogin('philgeps', outcome, { source, detail: e.message });
+    throw e;
+  }
+}
+
+async function sendLogin(session, onSubmitted, PHILGEPS_USERNAME, PHILGEPS_PASSWORD) {
   // PhilGEPS sometimes answers a fresh visitor with its error page (it flickers; the cookies of a failed try
-  // make the next fail too), so each try starts with no cookies
+  // make the next fail too), so each try starts with no cookies. A refused password is never sent again.
   let lastProblem = '';
-  for (let attempt = 1; attempt <= LOGIN_TRIES; attempt++) {
+  let posts = 0;
+  for (let attempt = 1; attempt <= LOGIN_TRIES && posts < LOGIN_POSTS; attempt++) {
     session.jar.clear();
     let fields;
     try {
@@ -230,6 +251,7 @@ export async function login(session, onSubmitted) {
     // Only the log-in answer itself: a redirect away from the log-in page means accepted. The page it
     // redirects to (Pending Task) counts every notice of the account and can take over a minute to build.
     let answer;
+    posts++;
     try {
       answer = await request(session, LOGIN_ACTION, { method: 'POST', form: { ...fields, userName: PHILGEPS_USERNAME, password: PHILGEPS_PASSWORD }, follow: false, timeout: 40000, referer: LOGIN_PAGE });
     } catch (e) {
@@ -251,7 +273,7 @@ export async function login(session, onSubmitted) {
     if (accepted) return;
     throw new PhilgepsSyncError('LOGIN_REJECTED', `PhilGEPS did not accept the log-in${said ? `: "${said}"` : location ? ` (sent to ${location})` : '.'}`);
   }
-  throw new PhilgepsSyncError('SITE_DOWN', `PhilGEPS did not let the log-in through after ${LOGIN_TRIES} tries (${lastProblem}). Try again in a few minutes.`);
+  throw new PhilgepsSyncError('SITE_DOWN', `PhilGEPS did not let the log-in through (${lastProblem}). Try again in a few minutes.`);
 }
 
 // Is the session closed? (the members page answers with a redirect to the log-in page)
@@ -479,8 +501,9 @@ export async function runSyncRound() {
   const job = { ...claimed, round: (claimed?.round || 0) + 1 };
   const save = () => saveJob(supabase, job).catch(() => {});
   const roundStarted = Date.now();
-  const session = new Session();
+  let session = new Session();
   let loginSent = false;
+  let more = false;
   try {
     const { data, error } = await supabase
       .from('philgeps_opportunities')
@@ -505,12 +528,29 @@ export async function runSyncRound() {
       return { more: false };
     }
 
-    job.stage = 'Logging in to PhilGEPS';
-    await save();
-    loginSent = true;
-    await login(session, async (s) => {
-      await supabase.from('philgeps_session').upsert({ id: 'current', cookies: s.cookies(), saved_at: new Date().toISOString() });
-    });
+    // Later rounds continue in the log-in of the first (one log-in per Sync); a new log-in only if it ended
+    const saved = job.round > 1 ? (await supabase.from('philgeps_session').select('cookies').eq('id', 'current').maybeSingle()).data : null;
+    if (saved?.cookies?.length) {
+      session = new Session(saved.cookies);
+      loginSent = true;
+      if (await isLoggedOut(session).catch(() => false)) {
+        await supabase.from('philgeps_session').delete().eq('id', 'current');
+        session = new Session();
+        loginSent = false;
+      }
+    }
+    if (!loginSent) {
+      job.stage = 'Logging in to PhilGEPS';
+      await save();
+      await login(
+        session,
+        async (s) => {
+          loginSent = true;
+          await supabase.from('philgeps_session').upsert({ id: 'current', cookies: s.cookies(), saved_at: new Date().toISOString() });
+        },
+        { trigger: job.startedBy === 'schedule' ? 'schedule' : 'person' }
+      );
+    }
 
     let done = Object.values(job.tenders).filter((state) => state !== 'waiting').length;
     for (const o of pending) {
@@ -549,13 +589,15 @@ export async function runSyncRound() {
       job.percent = Math.round((95 * done) / Math.max(job.total, 1));
       await save();
     }
-    const more = done < job.total;
+    more = done < job.total;
     job.stage = more ? `Continuing (${done} of ${job.total} tenders done)` : 'Logging out of PhilGEPS';
+    // The next round reuses this log-in: keep the newest cookies for it
+    if (more) await supabase.from('philgeps_session').upsert({ id: 'current', cookies: session.cookies(), saved_at: new Date().toISOString() });
     await save();
     return { more, done };
   } catch (e) {
     const message =
-      e.code === 'ACCOUNT_BUSY' || e.code === 'LOGIN_REJECTED' || e.code === 'NOT_CONFIGURED' || e.code === 'SITE_DOWN' || e.code === 'SESSION_ENDED'
+      ['ACCOUNT_BUSY', 'LOGIN_REJECTED', 'LOGIN_PAUSED', 'NOT_CONFIGURED', 'SITE_DOWN', 'SESSION_ENDED'].includes(e.code)
         ? e.message
         : `Sync stopped: ${e.message}`;
     Object.assign(job, { status: 'failed', error: message, finishedAt: Date.now() });
@@ -563,7 +605,7 @@ export async function runSyncRound() {
     await save();
     return { more: false, failed: true };
   } finally {
-    if (loginSent) {
+    if (loginSent && !more) {
       const loggedOut = await logout(session);
       if (loggedOut) await supabase.from('philgeps_session').delete().eq('id', 'current');
       else {
@@ -591,19 +633,32 @@ export async function finishSync() {
 
 // ---------- 5-minute clean-up ----------
 
-// Logs out a PhilGEPS session a cut-off round left behind (none while a Sync is running). Never throws.
+// Logs out a PhilGEPS session left behind: a cut-off round, or a Sync whose progress hasn't moved for
+// SESSION_IDLE_MS (a running Sync saves progress every tender). Never throws.
 export async function sweepSession() {
   try {
     const supabase = admin();
     const { data } = await supabase.from('philgeps_session').select('cookies, saved_at').eq('id', 'current').maybeSingle();
     if (!data?.cookies?.length) return { open: false };
     const current = await readJob(supabase);
-    const running = current.job?.status === 'running' && Date.now() - Date.parse(current.updated_at) < STALE_RUN_MS;
-    if (running) return { open: true, skipped: 'sync running' };
-    const loggedOut = await logout(new Session(data.cookies));
-    if (loggedOut) await supabase.from('philgeps_session').delete().eq('id', 'current');
-    return { open: !loggedOut, loggedOut };
+    const busy = current.job?.status === 'running' && Date.now() - Math.max(Date.parse(current.updated_at), Date.parse(data.saved_at)) < SESSION_IDLE_MS;
+    if (busy) return { open: true, skipped: 'sync running' };
+    return { open: !(await closeSession()), loggedOut: true };
   } catch (e) {
     return { error: e.message };
+  }
+}
+
+// Logs out the saved session now (the next round could not be started). Returns true when confirmed. Never throws.
+export async function closeSession() {
+  try {
+    const supabase = admin();
+    const { data } = await supabase.from('philgeps_session').select('cookies').eq('id', 'current').maybeSingle();
+    if (!data?.cookies?.length) return true;
+    const loggedOut = await logout(new Session(data.cookies));
+    if (loggedOut) await supabase.from('philgeps_session').delete().eq('id', 'current');
+    return loggedOut;
+  } catch {
+    return false;
   }
 }

@@ -1,5 +1,5 @@
 import { after } from 'next/server';
-import { claimSync, finishSync, runSyncRound } from '@/lib/philgepsSync.mjs';
+import { claimSync, closeSession, finishSync, runSyncRound } from '@/lib/philgepsSync.mjs';
 
 // Starts the server-side PhilGEPS Sync (philgepsSync.mjs) for `by` and runs it in rounds: each round runs after
 // the response, within one request's time limit; when tenders are left it asks POST /api/philgeps-sync (with
@@ -15,11 +15,13 @@ export function runRoundsAfterResponse(origin) {
     try {
       const { more, failed } = await runSyncRound();
       if (more) {
-        await fetch(`${origin}/api/philgeps-sync`, {
+        // The next round keeps this round's log-in; if it can't be started, log out now instead of waiting
+        const next = await fetch(`${origin}/api/philgeps-sync`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${process.env.CRON_SECRET}`, 'content-type': 'application/json' },
           body: JSON.stringify({ continue: true }),
-        });
+        }).catch(() => null);
+        if (!next?.ok) await closeSession();
       } else if (!failed) {
         await finishSync();
       }

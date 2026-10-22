@@ -16,13 +16,18 @@ const LOGIN_URL = `${HOST}/Indexes/login`;
 const CHECK_URL = `${HOST}/EventManagements/myBidMatch`;
 const USER_TYPE = 'Marchant'; // value of "Merchant" in the log-in form's user type list (PhilGEPS spelling)
 const CONNECT_TIMEOUT_MS = 10 * 60 * 1000;
+// A connect stops after this many refused log-ins (wrong password), so the account is never locked
+const MAX_REFUSED = 2;
 
 const STATE_DIR = path.join(__dirname, '.ps-philgeps');
 const COOKIES_FILE = path.join(STATE_DIR, 'session-cookies.json');
 // One line per connect / check / expiry, to learn how long PhilGEPS keeps a session (no account details)
 const SESSION_LOG = path.join(STATE_DIR, 'session.log');
 
-// code: NO_CREDENTIALS | NOT_CONNECTED | CONNECT_FAILED | SITE_DOWN | CANCELLED
+// Shared log-in rules for both PhilGEPS sites (frontend/src/lib/loginGuard.mjs; records in login_attempts)
+const loginGuard = () => import('./frontend/src/lib/loginGuard.mjs');
+
+// code: NO_CREDENTIALS | NOT_CONNECTED | CONNECT_FAILED | SITE_DOWN | CANCELLED | LOGIN_PAUSED
 class PsPhilgepsSessionError extends Error {
     constructor(code, message) {
         super(message);
@@ -218,6 +223,31 @@ async function connect({ live = false } = {}) {
     if (!hasCredentials()) {
         throw new PsPhilgepsSessionError('NO_CREDENTIALS', 'Set PS_PHILGEPS_USERNAME and PS_PHILGEPS_PASSWORD in .env');
     }
+    const { checkLogin, recordLogin } = await loginGuard();
+    try {
+        await checkLogin('ps-philgeps');
+    } catch (e) {
+        throw new PsPhilgepsSessionError('LOGIN_PAUSED', e.message);
+    }
+    await recordLogin('ps-philgeps', 'started', { source: live ? 'dashboard' : 'team computer' });
+    let refused = 0;
+    try {
+        await connectWindow({ live, onRefused: async (said) => {
+            refused++;
+            await recordLogin('ps-philgeps', 'rejected', { detail: said });
+            if (refused >= MAX_REFUSED) {
+                throw new PsPhilgepsSessionError('CONNECT_FAILED', `PS-PhilGEPS refused the log-in ${refused} times${said ? ` ("${said}")` : ''}. Stopped so the account isn't locked; check the password in the settings before connecting again.`);
+            }
+        } });
+        await recordLogin('ps-philgeps', 'ok');
+        return true;
+    } catch (e) {
+        if (e.code !== 'CONNECT_FAILED' || !refused) await recordLogin('ps-philgeps', e.code === 'CANCELLED' ? 'cancelled' : 'error', { detail: e.message });
+        throw e;
+    }
+}
+
+async function connectWindow({ live, onRefused }) {
     const browser = live ? await launchLive() : await launchLoginWindow();
     let stopLive = () => {};
     try {
@@ -280,8 +310,12 @@ async function connect({ live = false } = {}) {
                 continue;
             }
             // Wrong password / expired captcha: back on the form with a message; let the person retry there
+            // (a refused password counts toward MAX_REFUSED; an expired captcha has no message)
             if (submitted && state?.form && !state.solved) {
-                if (state.alert) console.log(`PhilGEPS says: ${state.alert}`);
+                if (state.alert) {
+                    console.log(`PhilGEPS says: ${state.alert}`);
+                    await onRefused(state.alert);
+                }
                 submitted = false;
             }
             await new Promise((r) => setTimeout(r, 1000));
@@ -298,7 +332,6 @@ async function connect({ live = false } = {}) {
         await saveCookies(page);
         await shareSession();
         sessionLog(`Connected (landed on ${page.url()})`);
-        return true;
     } finally {
         stopLive();
         await browser.close().catch(() => {});
