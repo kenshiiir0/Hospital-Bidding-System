@@ -5,6 +5,7 @@ import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel, { PanelSection } from '@/components/PsDetailsPanel';
+import { usePsFilters } from '@/components/PsFilters';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
@@ -17,10 +18,25 @@ export default function BidMatchPage() {
   const noticeOf = (row) => notices[refOf(row)];
   const readingOf = (row) => data?.analysis?.[refOf(row)];
   const ours = (list?.rows || []).filter((row) => noticeOf(row)?.matched?.length);
-  // Search also finds our product names (matched on the notice page or named in its documents)
-  const rows = (onlyOurs ? ours : list?.rows || []).filter((row) =>
-    matchesSearch(search, row, [...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)].join(' '))
-  );
+  // Our products of a tender: matched on the notice page or named in its documents
+  const productsOf = (row) => [...new Set([...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)])];
+  const filters = usePsFilters(list, {
+    selects: [
+      { label: 'Our product', valuesOf: productsOf },
+      { label: 'Mode', column: 'Mode of Procurement' },
+      { label: 'Status', column: 'Status' },
+    ],
+    dates: [
+      { label: 'Published', column: 'Publish Date' },
+      { label: 'Closing', column: 'Closing Date' },
+    ],
+    sorts: [
+      { label: 'Closing soonest', column: 'Closing Date', kind: 'date', dir: 'asc' },
+      { label: 'Latest published', column: 'Publish Date', kind: 'date', dir: 'desc' },
+      { label: 'Highest budget', column: 'Approve Budget Contract', kind: 'number', dir: 'desc' },
+    ],
+  });
+  const rows = filters.apply((onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' '))));
 
   return (
     <section className="space-y-4">
@@ -29,8 +45,7 @@ export default function BidMatchPage() {
           Bid Match{' '}
           {list && (
             <span className="text-sm font-normal text-black/62">
-              · {ours.length} of {list.rows.length} mention our products
-              {search && ` · ${rows.length} match the search`}
+              · {ours.length} of {list.rows.length} mention our products · {rows.length} shown
             </span>
           )}
         </h2>
@@ -51,6 +66,7 @@ export default function BidMatchPage() {
           </div>
         )}
       </div>
+      {filters.bar}
       <PsListTable
         list={list}
         rows={rows}
