@@ -14,11 +14,17 @@ export default function PsPhilgepsLayout({ children }) {
   const [status, setStatus] = useState(null);
   const [requestError, setRequestError] = useState('');
 
+  // Sync runs only where the dashboard runs on a team computer (it needs this project, Chrome and the
+  // saved PhilGEPS session). A deployed copy's API refuses (403) or lacks the route: say so instead of
+  // leaving the button waiting.
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/ps-philgeps?data=1');
       if (res.ok) setStatus(await res.json());
-    } catch {}
+      else setStatus({ unavailable: true });
+    } catch {
+      setStatus({ unavailable: true });
+    }
   }, []);
 
   const running = ['connecting', 'syncing'].includes(status?.job?.status);
@@ -57,15 +63,19 @@ export default function PsPhilgepsLayout({ children }) {
               </h1>
               <p className="text-xs text-black/62 mt-1">
                 philgeps.gov.ph ·{' '}
-                {status?.connected ? `Connected since ${formatInstant(status.connectedAt)}` : 'Not connected'}
+                {status?.unavailable
+                  ? 'Sync not available here'
+                  : status?.connected
+                    ? `Connected since ${formatInstant(status.connectedAt)}`
+                    : 'Not connected'}
                 {status?.data?.syncedAt && ` · Last sync ${formatInstant(status.data.syncedAt)}`}
               </p>
             </div>
             <button
               onClick={sync}
-              disabled={!status || running}
+              disabled={!status || status.unavailable || running}
               title="Reads Bid Match (with notice details and documents), My Opportunities and Award Notices. Asks for the captcha first when not connected."
-              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2 rounded-full text-sm font-medium transition"
+              className={`inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 ${status?.unavailable ? 'disabled:cursor-not-allowed' : 'disabled:cursor-wait'} text-white px-4 py-2 rounded-full text-sm font-medium transition`}
             >
               {status?.job?.status === 'connecting' ? (
                 <>Waiting for captcha <WorkingDots /></>
@@ -79,7 +89,14 @@ export default function PsPhilgepsLayout({ children }) {
             </button>
           </header>
 
-          <SyncNotice job={status?.job} requestError={requestError} />
+          {status?.unavailable ? (
+            <Notice>
+              PS-PhilGEPS Sync runs only in the dashboard on a team computer (opened as 127.0.0.1:3000 with{' '}
+              <code>npm run dev</code>), because it needs Chrome and the saved PhilGEPS log-in on that computer.
+            </Notice>
+          ) : (
+            <SyncNotice job={status?.job} requestError={requestError} />
+          )}
           {children}
         </div>
       </div>

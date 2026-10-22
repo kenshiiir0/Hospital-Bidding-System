@@ -134,6 +134,8 @@ export default function Home() {
   const [fetchJob, setFetchJob] = useState(null);
   // Sync states that exist only in this page: checking PhilGEPS before starting, PhilGEPS down, request failed
   const [localSync, setLocalSync] = useState(null);
+  // true on a deployed copy: Sync needs the dashboard running on a team computer
+  const [syncUnavailable, setSyncUnavailable] = useState(false);
   // startedAt of finished fetches that were closed, hid themselves, or had finished before this page opened
   const [dismissed, setDismissed] = useState([]);
   const wakePoll = useRef(null);
@@ -312,8 +314,14 @@ export default function Home() {
     (async () => {
       while (!stopped) {
         try {
-          const job = await (await fetch('/api/scrape')).json();
+          const res = await fetch('/api/scrape');
           if (stopped) break;
+          // A deployed copy can't run fetches (no Chrome or PhilGEPS log-in there): its API refuses
+          if (!res.ok) {
+            setSyncUnavailable(true);
+            break;
+          }
+          const job = await res.json();
           // A fetch that had already finished when the page opened isn't news
           if (first && job.status !== 'running' && job.startedAt) setDismissed((list) => [...list, job.startedAt]);
           first = false;
@@ -467,9 +475,13 @@ export default function Home() {
           </button>
           <button
             onClick={triggerSync}
-            disabled={syncing}
-            title="Log in to PhilGEPS and download the documents of the screened tenders. Public data updates by itself every hour, 6 AM to 5 PM."
-            className="inline-flex items-center justify-center gap-2 bg-[#4A8033] hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/60 disabled:cursor-wait text-white px-4 py-2 rounded-full text-sm font-medium transition"
+            disabled={syncing || syncUnavailable}
+            title={
+              syncUnavailable
+                ? 'Sync runs only in the dashboard on a team computer (127.0.0.1:3000), which has Chrome and the PhilGEPS log-in.'
+                : 'Log in to PhilGEPS and download the documents of the screened tenders. Public data updates by itself every hour, 6 AM to 5 PM.'
+            }
+            className={`inline-flex items-center justify-center gap-2 bg-[#4A8033] hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/60 ${syncUnavailable ? 'disabled:cursor-not-allowed' : 'disabled:cursor-wait'} text-white px-4 py-2 rounded-full text-sm font-medium transition`}
           >
             {syncView?.status === 'checking'
               ? <>Checking PhilGEPS <WorkingDots /></>
