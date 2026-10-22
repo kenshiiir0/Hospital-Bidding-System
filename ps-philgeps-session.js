@@ -232,6 +232,14 @@ async function connect({ live = false } = {}) {
         sessionLog(`Connect${live ? ' (live view)' : ''}: opening the log-in page`);
         await openLoginForm(page);
         await page.select('select[name=type]', USER_TYPE);
+        // The log-in window keeps its Chrome profile between connects, so Chrome may already have filled
+        // the fields (saved password / autofill); typing would add to that ("namename"). Empty them first.
+        for (const field of ['input[name=username]', 'input[name=password]']) {
+            await page.$eval(field, (el) => {
+                el.value = '';
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+        }
         await page.type('input[name=username]', process.env.PS_PHILGEPS_USERNAME);
         await page.type('input[name=password]', process.env.PS_PHILGEPS_PASSWORD);
         if (live) {

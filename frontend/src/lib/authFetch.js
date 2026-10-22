@@ -13,5 +13,10 @@ export async function authFetch(url, options = {}) {
   const res = await send(data.session);
   if (res.status !== 401) return res;
   const { data: renewed } = await supabase.auth.refreshSession();
-  return renewed.session ? send(renewed.session) : res;
+  const retried = renewed.session ? await send(renewed.session) : res;
+  // Still refused: the sign-in itself has ended (signed out elsewhere, or revoked). Leave it on this
+  // browser only, so the sign-in screen shows instead of a "Sign in first." message on a page that
+  // still looks signed in.
+  if (retried.status === 401) await supabase.auth.signOut({ scope: 'local' });
+  return retried;
 }
