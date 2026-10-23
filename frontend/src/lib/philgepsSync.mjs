@@ -278,9 +278,29 @@ async function sendLogin(session, onSubmitted, PHILGEPS_USERNAME, PHILGEPS_PASSW
     }
     const accepted = location ? !/log-in\.aspx/i.test(location) : /Log-?\s?out/i.test(html);
     if (accepted) return;
-    throw new PhilgepsSyncError('LOGIN_REJECTED', `PhilGEPS did not accept the log-in${said ? `: "${said}"` : location ? ` (sent to ${location})` : '.'}`);
+    // Refused: PhilGEPS sends the browser back to the log-in page, which pops up the reason ("The user id you
+    // have provided is currently in use", a wrong password, ...). Open that page with the same cookies to read
+    // it (no new log-in is sent).
+    const reason = said || (location ? await refusalReason(session, new URL(location, LOGIN_ACTION).href) : '');
+    if (/in use/i.test(reason)) throw new PhilgepsSyncError('ACCOUNT_BUSY', `The PhilGEPS account is logged in on another device or browser (PhilGEPS: "${reason}"). Log out there, then Sync again.`);
+    throw new PhilgepsSyncError('LOGIN_REJECTED', `PhilGEPS did not accept the log-in${reason ? `: "${reason}"` : location ? ` (sent to ${location}, no reason given)` : '.'}`);
   }
   throw new PhilgepsSyncError('SITE_DOWN', `PhilGEPS did not let the log-in through (${lastProblem}). Try again in a few minutes.`);
+}
+
+// The message on the log-in page PhilGEPS sent a refused log-in back to: its alert() text, else a sentence
+// about the account being in use or the password. '' when it shows none. Never throws.
+async function refusalReason(session, url) {
+  try {
+    const { res } = await request(session, url, { timeout: 30000 });
+    const html = await res.text();
+    const alerts = alertsOf(html).join(' / ');
+    if (alerts) return alerts;
+    const text = clean(parse(html).text);
+    return text.match(/[^.]*(?:in use|invalid|incorrect|locked|disabled|expired|not (?:found|registered|valid))[^.]*/i)?.[0].trim() || '';
+  } catch {
+    return '';
+  }
 }
 
 // Is the session closed? (the members page answers with a redirect to the log-in page)
