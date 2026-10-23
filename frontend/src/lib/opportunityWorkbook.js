@@ -100,9 +100,44 @@ function splitContact(info = []) {
   };
 }
 
+// Words that belong to the product's own description after a comma ("2 mL", "vial", "Isobaric")
+const FORM_WORD =
+  /\b(?:tab|tabs|tablets?|caps?|capsules?|vials?|amp|ampules?|ampoules?|polyamp|syringes?|pfs|pre-?filled|bottles?|sachets?|solution|suspension|syrup|oral|drops?|cream|ointment|oint|tube|bag|powder|inj|injection|emulsion|nebules?|patch|suppository|isobaric|heavy|plain|hyperbaric|spinal)\b/i;
+const STRENGTH = /\d\s*(?:mg|g|gm|mcg|ml|l|iu|%|units?|meq|mmol)\b/i;
+
+// The Molecule cell keeps the product as the team writes it (molecule, strength, form: "Cefazolin 1g vial"):
+// item codes, pack sizes, quantities, prices and requirements written after the product are dropped,
+// e.g. "DM290. Cefazolin Sodium Salt 1g Vial with up to date local assay among..." -> "Cefazolin Sodium Salt 1g Vial"
+export function moleculeText(text) {
+  const original = String(text || '').replace(/\s+/g, ' ').trim();
+  let s = original;
+  s = s.replace(/^[A-Z]{1,4}-?\d+[.):-]?\s+/, ''); // item codes such as "DM290."
+  s = s.replace(/^[\d,]+(?:\.\d+)?\s+(?!(?:mg|g|gm|mcg|ml|l|iu|units?)\b)(?=[A-Za-z(])/i, ''); // a quantity or line number written first
+  s = s.replace(/\s*[_….·\-–—]{3,}.*$/, ''); // fill-in lines "______", "………"
+  // Requirements and remarks: "with up to date local assay...", "without porcine content", "CPR & COD", "@ 920.00"
+  s = s.replace(/\s+(?:with(?!\s*\d)|without|among|which|that|must|should|compliant|comply|registered|certified|CPR\b|COD\b|FDA\b|halal\b|and a\b|@).*$/i, '');
+  // Pack sizes and quantities: "x 100's", "(100's/box)", "100 tablet/box", "4,500 prefilled-syringe", ", 1200 Vial"
+  s = s.replace(/\s+(?:x|by)\s*\d[\d,]*\s*(?:['’]?s\b)?.*$/i, '');
+  s = s.replace(/[,;]?\s*(?:box\s*)?\(?\b\d+\s*(?:['’]?s|pcs)\b(?:\s*(?:\/|per)\s*box(?:es)?)?\)?/gi, '');
+  s = s.replace(/\s+\d[\d,]*\s*(?:pre-?filled[- ]syringes?|tablets?\/box|pcs|pieces|boxes)\b.*$/i, '');
+  // Comma-separated parts (not the comma in 10,000): everything up to the strength, then only parts with a
+  // strength or a form; remarks such as ", Halal Certified" or ", 90% reduced blood transfusion..." are dropped
+  const parts = s.split(/(?<!\d),(?!\d)\s*|,\s+/).map((p) => p.trim()).filter(Boolean);
+  const first = parts.findIndex((p) => /\d/.test(p));
+  if (first >= 0) {
+    const rest = parts.slice(first + 1).filter((p) => (STRENGTH.test(p) && !/%\s*reduced/i.test(p)) || FORM_WORD.test(p));
+    s = [...parts.slice(0, first + 1), ...rest].join(', ');
+  } else s = parts.join(', ');
+  // Prices or quantities left at the end once a strength is given: "... 5 mg 450", "... 60 mL 46.00"
+  if (/\d.*\s[\d,]+(?:\.\d+)?$/.test(s)) s = s.replace(/(?:\s+[\d,]+(?:\.\d+)?)+$/, '');
+  s = s.replace(/[,\s]+\d[\d,]{2,}\s+(?:capsules?|tablets?|vials?|amp\w*|bottles?)(?:\/\w+)?$/i, ''); // "..., 1200 Vial"
+  s = s.replace(/\s+([),])/g, '$1').replace(/[\s,;:.\-–/]+$/, '').replace(/^[\s,;:.\-–]+/, '').trim();
+  return s || original;
+}
+
 // One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total], numbered "7. " like the original
 function itemRow(item) {
-  const text = item.description || item.line;
+  const text = moleculeText(item.description || item.line);
   if (item.quantity == null && item.unit_price == null) return [text, '', '', null];
   const n = item.item_no ? `${item.item_no}. ` : '';
   const qty = item.quantity != null ? `${n}${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
