@@ -9,7 +9,8 @@ import ScrapeProgress from '@/components/ScrapeProgress';
 import TenderDetails from '@/components/TenderDetails';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
-import { downloadOpportunityWorkbook } from '@/lib/opportunityWorkbook';
+import { philgepsTender } from '@/lib/opportunityWorkbook';
+import { exportBothPortals } from '@/lib/unifiedExport';
 import { supabase } from '@/lib/supabase';
 import { authFetch } from '@/lib/authFetch';
 
@@ -261,12 +262,18 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [finishedCleanly, finishedStartedAt]);
 
-  // Download the listed tenders (after exclusions, search and date filter) as the team's Opportunity sheet,
-  // in the same order as the table
+  // One Excel for both portals (lib/unifiedExport.js): the PhilGEPS tenders listed here (all filters applied)
+  // plus the PS-PhilGEPS Bid Match tenders matching the same search and published dates, oldest at the top
   const exportBids = async () => {
     setExporting(true);
     try {
-      await downloadOpportunityWorkbook(filteredBids);
+      await exportBothPortals({
+        from: 'philgeps',
+        shown: filteredBids.map(philgepsTender),
+        search,
+        publishedFrom: dateFrom,
+        publishedTo: dateTo,
+      });
     } catch (err) {
       setScrapeError(`Export failed: ${err.message}`);
     }
@@ -462,8 +469,13 @@ export default function Home() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={exportBids} disabled={exporting || loading || filteredBids.length === 0} className={greenButton}>
-              {exporting ? <>Exporting <WorkingDots /></> : `⬇ Export to Excel (${filteredBids.length})`}
+            <button
+              onClick={exportBids}
+              disabled={exporting || loading}
+              title="One Excel with the PhilGEPS tenders listed here and the PS-PhilGEPS Bid Match tenders matching the same search, oldest at the top"
+              className={greenButton}
+            >
+              {exporting ? <>Exporting <WorkingDots /></> : '⬇ Export Excel (PhilGEPS + PS-PhilGEPS)'}
             </button>
             <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={outlineButton}>
               {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}

@@ -7,6 +7,13 @@ import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import { usePsFilters } from '@/components/PsFilters';
 import { ProductChips as Products, SegmentedTabs } from '@/components/FilterControls';
+import WorkingDots from '@/components/WorkingDots';
+import { psRefOf } from '@/lib/opportunityWorkbook';
+import { exportBothPortals, psTenders } from '@/lib/unifiedExport';
+
+// Green call to action, as the Export button on the PhilGEPS page
+const greenButton =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/50 disabled:cursor-not-allowed transition';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
@@ -47,6 +54,21 @@ export default function BidMatchPage() {
   });
   const rows = filters.apply((onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' '))));
 
+  // One Excel for both portals (lib/unifiedExport.js): the Bid Match rows shown here (all filters applied)
+  // plus the PhilGEPS tenders matching the same search, oldest at the top
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const exportExcel = async () => {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportBothPortals({ from: 'ps', shown: psTenders(data, rows), search });
+    } catch (err) {
+      setExportError(`Export failed: ${err.message}`);
+    }
+    setExporting(false);
+  };
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -59,17 +81,28 @@ export default function BidMatchPage() {
           )}
         </h2>
         {list && (
-          <SegmentedTabs
-            label="Which tenders"
-            value={onlyOurs}
-            onChange={setOnlyOurs}
-            options={[
-              { value: true, label: 'Our products', count: ours.length },
-              { value: false, label: 'All', count: list.rows.length },
-            ]}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedTabs
+              label="Which tenders"
+              value={onlyOurs}
+              onChange={setOnlyOurs}
+              options={[
+                { value: true, label: 'Our products', count: ours.length },
+                { value: false, label: 'All', count: list.rows.length },
+              ]}
+            />
+            <button
+              onClick={exportExcel}
+              disabled={exporting}
+              title="One Excel with the Bid Match tenders listed here and the PhilGEPS tenders matching the same search, oldest at the top"
+              className={greenButton}
+            >
+              {exporting ? <>Exporting <WorkingDots /></> : '⬇ Export Excel (PhilGEPS + PS-PhilGEPS)'}
+            </button>
+          </div>
         )}
       </div>
+      {exportError && <p role="alert" className="text-xs font-medium text-[#B3312C]">{exportError}</p>}
       {filters.bar}
       <PsListTable
         list={list}
@@ -219,11 +252,7 @@ function DocumentCount({ notice }) {
 }
 
 // Same rule as ps-philgeps-sync.js: the row's link to its notice page, else a numeric first cell
-function refOf(row) {
-  const link = row.links.find((l) => /viewBidNotice\/(\d+)/.test(l.href));
-  if (link) return link.href.match(/viewBidNotice\/(\d+)/)[1];
-  return /^\d+$/.test(row.cells[0]) ? row.cells[0] : null;
-}
+const refOf = psRefOf;
 
 
 function Documents({ ref_, notice }) {

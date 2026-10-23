@@ -1,6 +1,10 @@
 // Builds the "Opportunity" sheet in the same layout as the team's PHILGEPS OPPORTUNITY.xlsx:
 // a title row, a header row, then one block per tender (tender facts merged down the block,
 // one row per requested molecule) separated by a blank merged row.
+// Tenders from both portals are first turned into one shape (philgepsTender / psTender below):
+//   { type, solicitationNo, published: "YYYY-MM-DD", hospital, ref, molecules: [[molecule, qty, unitPrice, total]],
+//     preBid, bidOpening, deliveryPeriod, lastUpdated: Date|text, closing: Date, contactName, designation,
+//     phone, email, address }
 
 const COLUMNS = [
   // header, width, header font size
@@ -95,20 +99,101 @@ function splitContact(info = []) {
   };
 }
 
-// One sheet row per requested molecule: [Molecule, Qty, ABC/Unit, ABC Total]
-function moleculeRows(bid) {
-  const items = bid.details?.matched_items || [];
-  if (!items.length) return [[(bid.matched_molecules || []).join(', '), '', '', null]];
-  return items.map((item) => {
-    if (!item.description) return [item.line, '', '', null];
-    const n = item.item_no ? `${item.item_no}. ` : '';
-    const qty = item.quantity != null ? `${n}${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
-    const total = item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null);
-    return [`${n}${item.description}`, qty, item.unit_price != null ? `${n}${amount(item.unit_price)}` : '', total];
-  });
+// One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total], numbered "7. " like the original
+function itemRow(item) {
+  const text = item.description || item.line;
+  if (item.quantity == null && item.unit_price == null) return [text, '', '', null];
+  const n = item.item_no ? `${item.item_no}. ` : '';
+  const qty = item.quantity != null ? `${n}${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
+  const total = item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null);
+  return [`${n}${text}`, qty, item.unit_price != null ? `${n}${amount(item.unit_price)}` : '', total];
 }
 
-export function buildOpportunitySheet(workbook, bids) {
+// Molecule rows: the notice's own item lines, else the lines read in the bid documents that have a quantity
+// (lines without one are context such as "Project Name: ..."), else just our product names
+function moleculeRows(noticeItems, documentItems, productNames) {
+  if (noticeItems?.length) return noticeItems.map(itemRow);
+  const fromDocs = (documentItems || []).filter((item) => item.quantity != null);
+  if (fromDocs.length) return fromDocs.map(itemRow);
+  return [[productNames.join(', '), '', '', null]];
+}
+
+// A PhilGEPS tender (philgeps_opportunities row)
+export function philgepsTender(bid) {
+  const d = bid.details || {};
+  const contact = splitContact(d.contact_info);
+  return {
+    type: noticeType(d.notice_type),
+    solicitationNo: d.solicitation_no || '',
+    published: bid.publish_date || '',
+    hospital: bid.procuring_entity || '',
+    ref: bid.ref_no || '',
+    molecules: moleculeRows(d.matched_items, d.documents_items, bid.matched_molecules || []),
+    preBid: d.pre_bid || '',
+    bidOpening: d.bid_opening || '',
+    deliveryPeriod: d.delivery_period || '',
+    lastUpdated: dmyTime(d.last_updated),
+    closing: isoDateTime(bid.closing_date),
+    contactName: d.contact_name || '',
+    designation: contact.designation,
+    phone: contact.phone,
+    email: contact.email,
+    address: contact.address,
+  };
+}
+
+// PS-PhilGEPS writes dates as "23-Oct-2026 12:00 AM"
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function psDate(text) {
+  const m = /(\d{1,2})-([A-Za-z]{3})-(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM))?/i.exec(text || '');
+  if (!m || !MONTHS[m[2].toLowerCase()]) return null;
+  const hour = m[4] ? (+m[4] % 12) + (m[6].toUpperCase() === 'PM' ? 12 : 0) : 0;
+  return { iso: `${m[3]}-${String(MONTHS[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`, date: new Date(Date.UTC(+m[3], MONTHS[m[2].toLowerCase()] - 1, +m[1], hour, +(m[5] || 0))) };
+}
+// Text read from bid documents can run on (a whole delivery schedule); keep the cell to a readable hint
+const clip = (text, max = 200) => (text && text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text || '');
+
+// PS mode of procurement -> the sheet's Type
+const psType = (mode = '') => (/public bidding/i.test(mode) ? 'ITB' : /small value|shopping|negotiated/i.test(mode) ? 'RFQ' : mode);
+
+// The PS-PhilGEPS notice number of a Bid Match row: its link to the notice page, else a numeric first cell
+export function psRefOf(row) {
+  const link = row.links.find((l) => /viewBidNotice\/(\d+)/.test(l.href));
+  if (link) return link.href.match(/viewBidNotice\/(\d+)/)[1];
+  return /^\d+$/.test(row.cells[0]) ? row.cells[0] : null;
+}
+
+// A PS-PhilGEPS Bid Match row, with its notice (Sync) and what was read in its documents (ps_tender_analysis).
+// PS-PhilGEPS shows no contact person or solicitation number, so those columns stay blank.
+export function psTender(row, headers, notice, reading) {
+  const cell = (name) => row.cells[headers.indexOf(name)] || '';
+  const schedule = notice?.schedule || {};
+  const done = reading?.status === 'done' ? reading.result : null;
+  const bds = done?.bid_data_sheet || {};
+  const products = [...new Set([...(notice?.matched || []), ...(done?.items || []).flatMap((i) => i.our_products)])];
+  // The notice's "closing" text sometimes runs on into "Date Last updated: 14-Oct-2026 09:11 AM ..."
+  const lastUpdated = psDate(schedule.lastUpdated) || psDate(/Last updated:\s*([^\n]+)/i.exec(schedule.closing || '')?.[1]);
+  return {
+    type: psType(cell('Mode of Procurement')),
+    solicitationNo: '',
+    published: psDate(cell('Publish Date'))?.iso || '',
+    hospital: cell('Agency name'),
+    ref: psRefOf(row) || '',
+    molecules: moleculeRows(null, done?.items, products),
+    preBid: [schedule.prebid, schedule.prebidVenue].filter(Boolean).join(' · ') || clip(bds.prebid_conference),
+    bidOpening: schedule.bidOpening || clip(bds.bid_opening),
+    deliveryPeriod: clip(bds.delivery_period),
+    lastUpdated: lastUpdated?.date || null,
+    closing: psDate(cell('Closing Date'))?.date || null,
+    contactName: '',
+    designation: '',
+    phone: '',
+    email: '',
+    address: '',
+  };
+}
+
+export function buildOpportunitySheet(workbook, tenders) {
   const ws = workbook.addWorksheet('Opportunity', { views: [{ state: 'frozen', ySplit: 2 }] });
   ws.columns = COLUMNS.map(([, width]) => ({ width }));
 
@@ -134,30 +219,28 @@ export function buildOpportunitySheet(workbook, bids) {
   });
 
   let r = 3;
-  for (const bid of bids) {
-    const d = bid.details || {};
-    const contact = splitContact(d.contact_info);
-    const rows = moleculeRows(bid);
+  for (const t of tenders) {
+    const rows = t.molecules;
     const first = r;
     const last = r + rows.length - 1;
 
     // Tender facts on the block's first row
     const facts = {
-      A: noticeType(d.notice_type),
-      B: d.solicitation_no || '',
-      C: dmy(bid.publish_date),
-      D: bid.procuring_entity || '',
-      E: bid.ref_no || '',
-      J: d.pre_bid || '',
-      K: d.bid_opening || '',
-      N: d.delivery_period || '',
-      O: dmyTime(d.last_updated),
-      P: isoDateTime(bid.closing_date),
-      Q: d.contact_name || '',
-      R: contact.designation,
-      S: contact.phone,
-      T: contact.email,
-      U: contact.address,
+      A: t.type,
+      B: t.solicitationNo,
+      C: dmy(t.published),
+      D: t.hospital,
+      E: t.ref,
+      J: t.preBid,
+      K: t.bidOpening,
+      N: t.deliveryPeriod,
+      O: t.lastUpdated,
+      P: t.closing,
+      Q: t.contactName,
+      R: t.designation,
+      S: t.phone,
+      T: t.email,
+      U: t.address,
     };
     for (const [col, value] of Object.entries(facts)) {
       const cell = ws.getCell(`${col}${first}`);
@@ -236,11 +319,19 @@ export function buildOpportunitySheet(workbook, bids) {
   return ws;
 }
 
+// Oldest published at the top, latest at the bottom (then by closing, then reference number)
+export function oldestFirst(tenders) {
+  const time = (d) => (d instanceof Date ? d.getTime() : 0);
+  return [...tenders].sort(
+    (a, b) => a.published.localeCompare(b.published) || time(a.closing) - time(b.closing) || String(a.ref).localeCompare(String(b.ref))
+  );
+}
+
 // Build the workbook in the browser and download it
-export async function downloadOpportunityWorkbook(bids) {
+export async function downloadOpportunityWorkbook(tenders) {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-  buildOpportunitySheet(workbook, bids);
+  buildOpportunitySheet(workbook, tenders);
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
