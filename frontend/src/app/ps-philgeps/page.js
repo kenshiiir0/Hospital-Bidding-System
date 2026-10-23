@@ -26,6 +26,12 @@ export default function BidMatchPage() {
       { label: 'Our product', valuesOf: productsOf },
       { label: 'Mode', column: 'Mode of Procurement' },
       { label: 'Status', column: 'Status' },
+      // Whether the Sync found and downloaded the notice's documents
+      {
+        label: 'Documents',
+        options: ['With documents', 'Without documents'],
+        valuesOf: (row) => [noticeOf(row)?.documents?.length ? 'With documents' : 'Without documents'],
+      },
     ],
     dates: [
       { label: 'Published', column: 'Publish Date' },
