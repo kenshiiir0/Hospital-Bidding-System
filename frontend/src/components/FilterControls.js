@@ -225,20 +225,24 @@ export function CustomSelect({ label, value, onChange, options, defaultValue = '
  * "📅 Published from [date] to [date]" in one white pill. from / to are "YYYY-MM-DD" ('' = no limit).
  * The date fields themselves stay the browser's (its calendar and typing work everywhere).
  */
-export function DateRangePill({ label, from, to, onFrom, onTo }) {
+export function DateRangePill({ label, from, to, onFrom, onTo, className = '' }) {
   const input = 'bg-transparent text-xs text-black focus:outline-none focus:text-[#12769F] cursor-pointer';
   const set = Boolean(from || to);
   return (
     <span
-      className={`inline-flex flex-wrap items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs text-black transition focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 ${
+      className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-[14px] border px-3.5 py-1.5 text-xs text-black transition focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 sm:inline-flex sm:rounded-full ${className} ${
         set ? 'border-[#1EA0DA] bg-[#1EA0DA]/5' : 'border-[#CBD5E1] bg-white hover:border-[#1EA0DA]'
       }`}
     >
-      <svg viewBox="0 0 20 20" fill="none" stroke="#12769F" strokeWidth="1.8" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
-        <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
-        <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
-      </svg>
-      <span className="font-medium text-black/62">{label} from</span>
+      {/* Phones: "📅 Published" on its own line, then "from … to …" */}
+      <span className="flex basis-full items-center gap-1.5 sm:basis-auto">
+        <svg viewBox="0 0 20 20" fill="none" stroke="#12769F" strokeWidth="1.8" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
+          <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
+          <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
+        </svg>
+        <span className="font-medium text-black/62">{label}</span>
+      </span>
+      <span className="text-black/46">from</span>
       <input type="date" aria-label={`${label} from`} value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} className={input} />
       <span className="text-black/46">to</span>
       <input type="date" aria-label={`${label} to`} value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} className={input} />

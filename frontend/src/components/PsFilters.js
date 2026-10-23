@@ -59,6 +59,10 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
   const choose = (label, value) => setChosen((c) => ({ ...c, [label]: value }));
   const active = Object.values(chosen).some(Boolean) || Object.values(ranges).some((r) => r.from || r.to);
   const total = list?.rows.length || 0;
+  // Two-column phone grid: with an odd number of dropdowns (sort included) the last one spans the row
+  const dropdowns = selects.map((s, n) => (s.tabs ? null : n)).filter((n) => n !== null);
+  const spanLast = (dropdowns.length + (sorts.length ? 1 : 0)) % 2 === 1;
+  const lastDropdown = sorts.length ? -1 : dropdowns.at(-1);
 
   const bar = list ? (
     <div className="space-y-3">
@@ -73,7 +77,9 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
           />
         ) : null
       )}
-      <div className="flex flex-wrap items-center gap-2.5">
+      {/* Phones: an even two-column grid (a lone last dropdown spans the row, dates get their own rows);
+          wider: one wrapping row */}
+      <div className="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap sm:items-center">
         {selects.map((s, n) =>
           s.tabs ? null : (
             <CustomSelect
@@ -82,20 +88,10 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
               value={chosen[s.label] || ''}
               onChange={(v) => choose(s.label, v)}
               options={[{ value: '', label: 'All' }, ...options[n]]}
-              className="max-w-[18rem]"
+              className={`w-full sm:w-auto sm:max-w-[18rem] ${spanLast && n === lastDropdown ? 'col-span-2' : ''}`}
             />
           )
         )}
-        {dates.map((d) => (
-          <DateRangePill
-            key={d.label}
-            label={d.label}
-            from={ranges[d.label]?.from || ''}
-            to={ranges[d.label]?.to || ''}
-            onFrom={(from) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], from } }))}
-            onTo={(to) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], to } }))}
-          />
-        ))}
         {sorts.length > 0 && (
           <CustomSelect
             label="Sort"
@@ -103,8 +99,20 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
             defaultValue={0}
             onChange={setSortIndex}
             options={sorts.map((s, i) => ({ value: i, label: s.label }))}
+            className={`w-full sm:w-auto ${spanLast ? 'col-span-2 sm:col-auto' : ''}`}
           />
         )}
+        {dates.map((d) => (
+          <DateRangePill
+            key={d.label}
+            className="col-span-2"
+            label={d.label}
+            from={ranges[d.label]?.from || ''}
+            to={ranges[d.label]?.to || ''}
+            onFrom={(from) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], from } }))}
+            onTo={(to) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], to } }))}
+          />
+        ))}
         {active && (
           <button
             type="button"
@@ -112,7 +120,7 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
               setChosen({});
               setRanges({});
             }}
-            className="rounded-full px-3 py-1.5 text-xs font-medium text-[#12769F] hover:bg-[#1EA0DA]/6"
+            className="col-span-2 rounded-full px-3 py-1.5 text-xs font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 sm:col-auto"
           >
             Clear filters
           </button>

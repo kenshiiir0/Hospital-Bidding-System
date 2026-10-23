@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { CustomSelect, DateRangePill, DetailsButton, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import { CustomSelect, DateRangePill, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
+import ResponsiveTable from '@/components/ResponsiveTable';
 import ScrapeProgress from '@/components/ScrapeProgress';
 import TenderDetails from '@/components/TenderDetails';
 import TypeBadge from '@/components/TypeBadge';
@@ -470,7 +471,7 @@ export default function Home() {
               {addedToday > 0 && ` · ${addedToday} new today`}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={outlineButton}>
               {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
             </button>
@@ -514,8 +515,10 @@ export default function Home() {
           </div>
 
           {/* Search, products to leave out, published dates and order */}
-          <div className="flex flex-wrap items-center gap-2.5 text-xs">
+          {/* Phones: an even two-column grid, search and dates on their own rows; wider: one wrapping row */}
+          <div className="grid grid-cols-2 gap-2.5 text-xs sm:flex sm:flex-wrap sm:items-center">
             <SearchPill
+              className="col-span-2"
               value={search}
               onChange={(value) => {
                 setSearch(value);
@@ -525,27 +528,15 @@ export default function Home() {
             <button
               onClick={() => setShowExclusions(!showExclusions)}
               aria-expanded={showExclusions}
-              className={`rounded-full px-3.5 py-1.5 border text-xs font-medium transition ${
+              className={`truncate rounded-full px-3.5 py-1.5 border text-xs font-medium transition ${
                 excluded.length ? 'bg-[#1EA0DA]/5 border-[#1EA0DA] text-[#12769F] ring-2 ring-[#1EA0DA]/20' : 'bg-white border-[#CBD5E1] text-black hover:border-[#1EA0DA]'
               }`}
             >
               Exclude products{excluded.length ? ` (${excluded.length})` : ''} {showExclusions ? '▴' : '▾'}
             </button>
-            <DateRangePill
-              label="Published"
-              from={dateFrom}
-              to={dateTo}
-              onFrom={(value) => {
-                setDateFrom(value);
-                setPage(1);
-              }}
-              onTo={(value) => {
-                setDateTo(value);
-                setPage(1);
-              }}
-            />
             <CustomSelect
               label="Type"
+              className="w-full sm:w-auto"
               value={typeFilter}
               onChange={(value) => {
                 setTypeFilter(value);
@@ -559,10 +550,24 @@ export default function Home() {
                 setPage(1);
               }}
               title="Reverse the order of the list"
-              className="rounded-full px-3.5 py-1.5 border border-[#CBD5E1] bg-white text-xs font-medium text-black hover:border-[#1EA0DA] transition"
+              className="col-span-2 rounded-full px-3.5 py-1.5 border border-[#CBD5E1] bg-white text-xs font-medium text-black hover:border-[#1EA0DA] transition sm:col-auto"
             >
               ⇅ {oldestFirst ? 'Oldest first' : 'Latest first'}
             </button>
+            <DateRangePill
+              className="col-span-2"
+              label="Published"
+              from={dateFrom}
+              to={dateTo}
+              onFrom={(value) => {
+                setDateFrom(value);
+                setPage(1);
+              }}
+              onTo={(value) => {
+                setDateTo(value);
+                setPage(1);
+              }}
+            />
           </div>
 
           {/* Products to leave out */}
@@ -623,36 +628,29 @@ export default function Home() {
           ) : filteredBids.length === 0 ? (
             <EmptyState>Nothing to show.</EmptyState>
           ) : (
-            <div className="bg-white rounded-[14px] border border-[#E2E8F0] overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
-                  <tr>
-                    {['#', 'Reference Number', 'Type', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Our products', 'Remarks'].map((h) => (
-                      <th key={h} className="px-3 py-2.5 font-semibold whitespace-nowrap">{h}</th>
-                    ))}
-                    <th className="px-3 py-2.5" aria-label="Details" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageBids.map((bid, index) => (
-                    <tr key={bid.id || index} className="border-t border-[#E2E8F0] align-top bg-white hover:bg-[#1EA0DA]/6 transition-colors">
-                      <td className="px-3 py-2">
-                        <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap"><RefLink bid={bid} /></td>
-                      <td className="px-3 py-2.5"><TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} /></td>
-                      <td className="px-3 py-2.5 min-w-[11rem]">{bid.procuring_entity || bid.title}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</td>
-                      <td className="px-3 py-2.5">{formatDate(bid.publish_date) || '—'}</td>
-                      <td className="px-3 py-2.5">{formatDateTime(bid.closing_date) || '—'}</td>
-                      <td className="px-3 py-2.5 min-w-[13rem]"><Products names={bid.matched_molecules} /></td>
-                      <td className="px-3 py-2.5 whitespace-nowrap"><DocumentCount bid={bid} /></td>
-                      <td className="px-3 py-2.5 text-right"><DetailsButton onClick={() => setSelectedBid(bid)} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResponsiveTable
+              rows={pageBids}
+              rowKey={(bid, index) => bid.id || index}
+              onDetails={setSelectedBid}
+              columns={[
+                {
+                  label: '#',
+                  lead: true,
+                  width: '3rem',
+                  render: (bid, index) => (
+                    <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
+                  ),
+                },
+                { label: 'Reference Number', title: true, nowrap: true, width: '6.5rem', render: (bid) => <RefLink bid={bid} /> },
+                { label: 'Type', badge: true, width: '5rem', render: (bid) => <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} /> },
+                { label: 'Agency name', wide: true, render: (bid) => bid.procuring_entity || bid.title },
+                { label: 'Approved Budget', nowrap: true, width: '8rem', render: (bid) => (bid.abc_amount ? formatPeso(bid.abc_amount) : '—') },
+                { label: 'Publish Date', width: '6.5rem', render: (bid) => formatDate(bid.publish_date) || '—' },
+                { label: 'Closing Date', width: '7rem', render: (bid) => formatDateTime(bid.closing_date) || '—' },
+                { label: 'Our products', wide: true, render: (bid) => <Products names={bid.matched_molecules} /> },
+                { label: 'Remarks', width: '6.5rem', render: (bid) => <DocumentCount bid={bid} /> },
+              ]}
+            />
           )}
 
           {!loading && filteredBids.length > 0 && (

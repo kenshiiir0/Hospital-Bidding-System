@@ -2,6 +2,7 @@
 
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import ResponsiveTable from '@/components/ResponsiveTable';
 import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -182,32 +183,21 @@ export default function TenderDetails({ bid, onClose }) {
               : 'Our products are named in the title only; no single item line mentions them. See the full description below.'}
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-[14px] border border-[#E2E8F0]">
-            <table className="w-full text-xs">
-              <thead className="bg-[#1EA0DA]/5 text-left text-black/62">
-                <tr>
-                  {['Product', 'Item', 'Qty', 'Unit', 'Unit price', 'Total', 'As written', 'Page'].map((h) => (
-                    <th key={h} className="px-2.5 py-2 font-semibold whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, i) => (
-                  <tr key={i} className="border-t border-[#E2E8F0] align-top">
-                    <td className="px-2.5 py-2 font-medium text-[#3F6F2C]">{(item.products || []).join(', ') || '—'}</td>
-                    <td className="px-2.5 py-2">{item.item_no || '—'}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{item.quantity != null ? item.quantity.toLocaleString('en-PH') : '—'}</td>
-                    <td className="px-2.5 py-2">{item.unit || '—'}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{formatPeso(item.unit_price) || '—'}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{formatPeso(item.total) || '—'}</td>
-                    {/* A line the scraper couldn't split into columns is shown as written */}
-                    <td className="px-2.5 py-2 text-black/62 min-w-[16rem]">{item.where === 'Description' ? item.description || item.line : item.line}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap text-black/46">{item.where}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResponsiveTable
+            size="xs"
+            rows={items}
+            columns={[
+              { label: 'Product', title: true, render: (item) => <span className="text-[#3F6F2C]">{(item.products || []).join(', ') || '—'}</span> },
+              { label: 'Item', render: (item) => item.item_no || '—' },
+              { label: 'Qty', nowrap: true, render: (item) => (item.quantity != null ? item.quantity.toLocaleString('en-PH') : '—') },
+              { label: 'Unit', render: (item) => item.unit || '—' },
+              { label: 'Unit price', nowrap: true, render: (item) => formatPeso(item.unit_price) || '—' },
+              { label: 'Total', nowrap: true, render: (item) => formatPeso(item.total) || '—' },
+              // A line the scraper couldn't split into columns is shown as written
+              { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{item.where === 'Description' ? item.description || item.line : item.line}</span> },
+              { label: 'Found in', render: (item) => <span className="text-black/46">{item.where}</span> },
+            ]}
+          />
         )}
       </PanelSection>
 

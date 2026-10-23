@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsListTable from '@/components/PsListTable';
+import ResponsiveTable from '@/components/ResponsiveTable';
 import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import { usePsFilters } from '@/components/PsFilters';
 import { ProductChips as Products, SegmentedTabs } from '@/components/FilterControls';
@@ -200,31 +201,20 @@ function FromDocuments({ reading }) {
           {reading.result.items.length === 0 ? (
             <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
           ) : (
-            <div className="overflow-x-auto rounded-[14px] border border-[#E2E8F0]">
-              <table className="w-full text-xs">
-                <thead className="bg-[#1EA0DA]/5 text-left text-black/62">
-                  <tr>
-                    {['Product', 'Item', 'Qty', 'Unit', 'Unit price', 'Total', 'As written', 'Page'].map((h) => (
-                      <th key={h} className="px-2.5 py-2 font-semibold whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reading.result.items.map((it, i) => (
-                    <tr key={i} className="border-t border-[#E2E8F0] align-top">
-                      <td className="px-2.5 py-2 font-medium text-[#3F6F2C]">{it.our_products.join(', ')}</td>
-                      <td className="px-2.5 py-2">{it.item_no ?? '—'}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{it.quantity != null ? it.quantity.toLocaleString('en-PH') : '—'}</td>
-                      <td className="px-2.5 py-2">{it.unit ?? '—'}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{peso(it.unit_price)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{peso(it.total)}</td>
-                      <td className="px-2.5 py-2 text-black/62 min-w-[16rem]">{it.quantity != null ? it.line : it.context}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap text-black/46">{it.source.split(', ').pop()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResponsiveTable
+              size="xs"
+              rows={reading.result.items}
+              columns={[
+                { label: 'Product', title: true, render: (it) => <span className="text-[#3F6F2C]">{it.our_products.join(', ')}</span> },
+                { label: 'Item', render: (it) => it.item_no ?? '—' },
+                { label: 'Qty', nowrap: true, render: (it) => (it.quantity != null ? it.quantity.toLocaleString('en-PH') : '—') },
+                { label: 'Unit', render: (it) => it.unit ?? '—' },
+                { label: 'Unit price', nowrap: true, render: (it) => peso(it.unit_price) },
+                { label: 'Total', nowrap: true, render: (it) => peso(it.total) },
+                { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{it.quantity != null ? it.line : it.context}</span> },
+                { label: 'Page', render: (it) => <span className="text-black/46">{it.source.split(', ').pop()}</span> },
+              ]}
+            />
           )}
         </PanelSection>
       )}

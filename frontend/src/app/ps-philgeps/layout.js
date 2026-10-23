@@ -144,7 +144,7 @@ export default function PsPhilgepsLayout({ children }) {
               onClick={pressSync}
               disabled={!sync || syncing || connecting || (syncAfterConnect && !connected)}
               title="Reads Bid Match (with notice details and documents), My Opportunities and Award Notices. Opens the PhilGEPS log-in first when it has ended."
-              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#1790C5] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2.5 rounded-lg text-xs font-semibold transition"
+              className="inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#1790C5] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2.5 rounded-lg text-xs font-semibold transition"
             >
               {syncing ? (
                 <>Syncing {sync.percent || 0}% <WorkingDots /></>

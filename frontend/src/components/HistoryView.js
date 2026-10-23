@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import ResponsiveTable from '@/components/ResponsiveTable';
 import TenderDetails from '@/components/TenderDetails';
 import { formatDate, formatInstant, instantDay } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
@@ -426,67 +427,39 @@ export default function HistoryView({ site = 'philgeps' }) {
               </div>
             </div>
 
-            <div className="bg-white border border-[#E2E8F0] rounded-[14px] overflow-hidden shadow-none">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-[#1EA0DA]/5 border-b border-[#E2E8F0] text-black/62 text-xs uppercase tracking-wider">
-                      <th className="py-4 px-4 w-44">First Screened</th>
-                      <th className="py-4 px-4 w-28">Reference No.</th>
-                      <th className="py-4 px-6">Hospital / Procuring Entity</th>
-                      <th className="py-4 px-6 w-56">Result</th>
-                      <th className="py-4 px-4 w-32">Published</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
-                    {loading && screened.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="py-12 text-center text-black/46">Loading screened tenders...</td>
-                      </tr>
-                    ) : visibleScreened.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="py-12 text-center text-black/46">No matching records found.</td>
-                      </tr>
-                    ) : (
-                      visibleScreened.map((t, i) => {
-                        // Day heading whenever the screened date changes
-                        const day = instantDay(t.created_at);
-                        const newDay = i === 0 || day !== instantDay(visibleScreened[i - 1].created_at);
-                        const molecules = t.matched_molecules || [];
-                        return [
-                          newDay && (
-                            <tr key={`day-${day}-${i}`} className="bg-[#1EA0DA]/5">
-                              <td colSpan="5" className="py-2 px-4 text-xs font-semibold uppercase tracking-wider text-black/46">
-                                {formatDate(day) || 'Unknown date'}
-                              </td>
-                            </tr>
+            {/* One block per screened day; each is a table on wide screens and cards on narrow ones */}
+            {loading && screened.length === 0 ? (
+              <p className="rounded-[14px] border border-[#E2E8F0] py-12 text-center text-sm text-black/46">Loading screened tenders...</p>
+            ) : visibleScreened.length === 0 ? (
+              <p className="rounded-[14px] border border-[#E2E8F0] py-12 text-center text-sm text-black/46">No matching records found.</p>
+            ) : (
+              screenedDays(visibleScreened).map(({ day, tenders }) => (
+                <section key={day} className="space-y-2">
+                  <h3 className="px-1 text-xs font-semibold uppercase tracking-wider text-black/46">{formatDate(day) || 'Unknown date'}</h3>
+                  <ResponsiveTable
+                    rows={tenders}
+                    rowKey={(t) => t.id}
+                    onDetails={(t) => openTender(t.ref_no)}
+                    columns={[
+                      { label: 'Reference No.', title: true, nowrap: true, render: (t) => <span className="font-mono text-xs">{t.ref_no}</span> },
+                      { label: 'First Screened', render: (t) => <span className="text-xs text-black/62">{formatInstant(t.created_at) || '—'}</span> },
+                      { label: 'Hospital / Procuring Entity', wide: true, render: (t) => t.procuring_entity || t.title },
+                      {
+                        label: 'Result',
+                        wide: true,
+                        render: (t) =>
+                          (t.matched_molecules || []).length ? (
+                            <ProductChips names={t.matched_molecules} />
+                          ) : (
+                            <span className="text-xs text-black/46">Screened out</span>
                           ),
-                          <tr
-                            key={t.id}
-                            onClick={() => openTender(t.ref_no)}
-                            className="hover:bg-[#1EA0DA]/6 transition-colors cursor-pointer"
-                          >
-                            <td className="py-3 px-4 text-xs text-black/62 whitespace-nowrap">{formatInstant(t.created_at) || '—'}</td>
-                            <td className="py-3 px-4 font-mono text-xs text-black whitespace-nowrap">{t.ref_no}</td>
-                            <td className="py-3 px-6 text-black max-w-xl">
-                              <div className="line-clamp-2">{t.procuring_entity || t.title}</div>
-                            </td>
-                            <td className="py-3 px-6">
-                              {molecules.length ? (
-                                <ProductChips names={molecules} />
-                              ) : (
-                                <span className="text-xs text-black/46">Screened out</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-xs text-black/62 whitespace-nowrap">{formatDate(t.publish_date) || '—'}</td>
-                          </tr>,
-                        ];
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                      },
+                      { label: 'Published', render: (t) => <span className="text-xs text-black/62">{formatDate(t.publish_date) || '—'}</span> },
+                    ]}
+                  />
+                </section>
+              ))
+            )}
 
             {filteredScreened.length > shown && (
               <div className="text-center">
@@ -505,4 +478,15 @@ export default function HistoryView({ site = 'philgeps' }) {
       {selectedBid && <TenderDetails bid={selectedBid} onClose={() => setSelectedBid(null)} />}
     </div>
   );
+}
+
+// Screened tenders grouped by the (Philippine) day they were first screened, in list order
+function screenedDays(tenders) {
+  const days = [];
+  for (const t of tenders) {
+    const day = instantDay(t.created_at);
+    if (days.at(-1)?.day !== day) days.push({ day, tenders: [] });
+    days.at(-1).tenders.push(t);
+  }
+  return days;
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { DetailsButton, StatusBadge } from '@/components/FilterControls';
+import { StatusBadge } from '@/components/FilterControls';
+import ResponsiveTable from '@/components/ResponsiveTable';
 
 // A PS-PhilGEPS list as read by ps-philgeps-sync.js ({ headers, rows: [{ cells, links }] }).
 // columns: the site's column names to show, in order (default: all but "Actions", PhilGEPS's Select
@@ -21,40 +22,33 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
   ];
   if (!rows.length) return <EmptyState>Nothing to show.</EmptyState>;
 
-  return (
-    <div className="bg-white rounded-[14px] border border-[#E2E8F0] overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
-          <tr>
-            {shown.map((col) => (
-              <th key={col.render ? col.label : col.i} className="px-3 py-2.5 font-semibold">{col.render ? col.label : col.h}</th>
-            ))}
-            {onDetails && <th className="px-3 py-2.5" aria-label="Details" />}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, r) => (
-            <tr key={r} className="border-t border-[#E2E8F0] align-top bg-white hover:bg-[#1EA0DA]/6 transition-colors">
-              {shown.map((col) =>
-                col.render ? (
-                  <td key={col.label} className="px-3 py-2.5">{col.render(row)}</td>
-                ) : (
-                  <td key={col.i} className="px-3 py-2.5">
-                    {STATUS_COLUMN.test(col.h) ? <StatusBadge text={row.cells[col.i]} /> : <Cell text={row.cells[col.i]} links={row.links} />}
-                  </td>
-                )
-              )}
-              {onDetails && (
-                <td className="px-3 py-2.5 text-right">
-                  <DetailsButton onClick={() => onDetails(row)} />
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+  // Cards on narrow screens: the first site column (the notice / award number) is the card's title and the
+  // first status column its badge
+  const firstStatus = shown.find((c) => !c.render && STATUS_COLUMN.test(c.h));
+  const tableColumns = shown.map((col, n) =>
+    col.render
+      ? { label: col.label, render: col.render, wide: /products|remarks/i.test(col.label), width: /products/i.test(col.label) ? undefined : '6.5rem' }
+      : {
+          label: col.h,
+          title: n === 0,
+          badge: col === firstStatus,
+          nowrap: /budget|amount/i.test(col.h),
+          width: columnWidth(col.h),
+          render: (row) =>
+            STATUS_COLUMN.test(col.h) ? <StatusBadge text={row.cells[col.i]} /> : <Cell text={row.cells[col.i]} links={row.links} />,
+        }
   );
+
+  return <ResponsiveTable columns={tableColumns} rows={rows} onDetails={onDetails} />;
+}
+
+// Table widths for the short columns; the rest (agency, title, products) share what is left
+function columnWidth(header) {
+  if (/budget|amount/i.test(header)) return '8rem';
+  if (/date/i.test(header)) return '6.5rem';
+  if (/status|acceptance|type|mode/i.test(header)) return '7rem';
+  if (/number|ref/i.test(header)) return '6.5rem';
+  return undefined;
 }
 
 // Status columns (Status, Status of Bid notice, Bid Submission Status, Award Acceptance) show a coloured pill
