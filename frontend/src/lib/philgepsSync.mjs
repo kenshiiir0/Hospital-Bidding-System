@@ -19,7 +19,10 @@ import { loadMatcher, readDocuments } from './psDocs.mjs';
 // and the next round continues with the rest.
 // Plain .mjs (no Next imports) so it can also be run directly with node for testing.
 
-const HOST = 'https://notices.philgeps.gov.ph';
+// PHILGEPS_TEST_HOST: the stand-in PhilGEPS of tools/check-sync-safety.mjs (this computer only; anything else
+// is ignored, so the real account can never be pointed elsewhere)
+const TEST_HOST = /^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(process.env.PHILGEPS_TEST_HOST || '') ? process.env.PHILGEPS_TEST_HOST : null;
+const HOST = TEST_HOST || 'https://notices.philgeps.gov.ph';
 const LOGIN_PAGE = `${HOST}/GEPS/log-in.aspx`;
 const LOGIN_ACTION = `${HOST}/GEPS/logInAction.aspx`;
 const LOGOUT_URL = `${HOST}/GEPS/LogoutRedirect.aspx`;
@@ -594,6 +597,19 @@ function logRun(job) {
   });
 }
 
+// The Sync's core is: log in, order and download, log out. Everything added around it (reading documents for
+// our products, History, ...) runs through optional(): a failure there is noted on the Sync (job.addonErrors)
+// and skipped, and never stops the Sync, its saving or its log-out. New add-ons go through it too.
+export async function optional(job, label, fn, fallback = null) {
+  try {
+    return await fn();
+  } catch (e) {
+    (job.addonErrors ??= []).push(`${label}: ${e.message}`.slice(0, 200));
+    console.error(`[philgeps-sync] ${label} skipped: ${e.message}`);
+    return fallback;
+  }
+}
+
 // ---------- the Sync (one round) ----------
 
 // Runs one round of the Sync (claimSync first). Returns { more } : true when tenders are left for another round.
@@ -609,20 +625,23 @@ export async function runSyncRound() {
   try {
     const { data, error } = await supabase.from('philgeps_opportunities').select('ref_no, publish_date, closing_date, matched_molecules, items_text, details');
     if (error) throw new PhilgepsSyncError('DB', error.message);
-    const matchProducts = await loadMatcher();
+    // Without the product list the documents are still downloaded, just not read
+    const matchProducts = await optional(job, 'Loading our product list', () => loadMatcher());
 
     // Documents already downloaded but not read for our products yet: read them first (no log-in)
-    if (job.round === 1) {
-      const unread = data.filter(needsReading);
-      for (const [i, o] of unread.entries()) {
-        if (Date.now() - roundStarted > ROUND_MS / 2) break;
-        job.stage = `Reading downloaded documents for our products (${i + 1} of ${unread.length})`;
-        await save();
-        const update = await readTenderDocuments(supabase, matchProducts, o, o.details).catch(() => null);
-        if (!update) continue;
-        await supabase.from('philgeps_opportunities').update(update).eq('ref_no', o.ref_no);
-        Object.assign(o, update);
-      }
+    if (job.round === 1 && matchProducts) {
+      await optional(job, 'Reading downloaded documents', async () => {
+        const unread = data.filter(needsReading);
+        for (const [i, o] of unread.entries()) {
+          if (Date.now() - roundStarted > ROUND_MS / 2) break;
+          job.stage = `Reading downloaded documents for our products (${i + 1} of ${unread.length})`;
+          await save();
+          const update = await readTenderDocuments(supabase, matchProducts, o, o.details).catch(() => null);
+          if (!update) continue;
+          await supabase.from('philgeps_opportunities').update(update).eq('ref_no', o.ref_no);
+          Object.assign(o, update);
+        }
+      });
     }
     // The dashboard's default order: newest published first, then highest reference number
     let pending = data
@@ -639,7 +658,7 @@ export async function runSyncRound() {
     if (!pending.length) {
       Object.assign(job, { status: 'success', percent: 100, stage: job.files ? `${job.files} new documents` : 'Everything is up to date — no new documents', finishedAt: Date.now() });
       await save();
-      await logRun(job);
+      await optional(job, 'History', () => logRun(job));
       return { more: false };
     }
 
@@ -698,10 +717,10 @@ export async function runSyncRound() {
       };
       // Our products are often only in the documents: read them now (PDF, Word, Excel)
       let matched = o.matched_molecules || [];
-      if (needsReading({ details })) {
+      if (matchProducts && needsReading({ details })) {
         job.stage = `Reading the documents of ${o.ref_no} for our products`;
         await save();
-        const update = await readTenderDocuments(supabase, matchProducts, o, details).catch(() => null);
+        const update = await optional(job, `Reading the documents of ${o.ref_no}`, () => readTenderDocuments(supabase, matchProducts, o, details));
         if (update) ({ details, matched_molecules: matched } = update);
       }
       if (matched.length > (o.matched_molecules || []).length) job.foundInDocuments = (job.foundInDocuments || 0) + 1;
@@ -727,12 +746,13 @@ export async function runSyncRound() {
     Object.assign(job, { status: 'failed', error: message, finishedAt: Date.now() });
     for (const ref of Object.keys(job.tenders || {})) if (['waiting', 'working'].includes(job.tenders[ref])) job.tenders[ref] = 'not-reached';
     await save();
-    await logRun(job);
+    await optional(job, 'History', () => logRun(job));
     return { more: false, failed: true };
   } finally {
+    // The log-out runs whatever happened above; nothing in here may throw
     if (loginSent && !more) {
       const loggedOut = await logout(session);
-      if (loggedOut) await markLoggedOut(supabase);
+      if (loggedOut) await optional(job, 'Recording the log-out', () => markLoggedOut(supabase));
       else {
         job.warning = 'The PhilGEPS log-out could not be confirmed; the 5-minute clean-up keeps trying.';
         await save();
@@ -756,7 +776,7 @@ export async function finishSync() {
     finishedAt: Date.now(),
   });
   await saveJob(supabase, job);
-  await logRun(job);
+  await optional(job, 'History', () => logRun(job));
 }
 
 // ---------- 5-minute clean-up ----------
