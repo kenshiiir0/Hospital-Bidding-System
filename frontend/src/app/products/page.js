@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import { matchName } from '@/lib/products.mjs';
 import ResponsiveTable from '@/components/ResponsiveTable';
+import Modal from '@/components/Modal';
 
 // Our product list (table products): the B2B price list and the team's PRODUCT LIST, plus molecules added here. The
 // only list tenders on PhilGEPS and PS-PhilGEPS are screened against: a tender counts when it asks for the molecule
@@ -72,6 +73,7 @@ export default function ProductsPage() {
         {added && <p className="rounded-[14px] border border-[#61A644]/30 bg-[#61A644]/8 px-4 py-3 text-sm text-[#2F5321]">{added}</p>}
         {adding && (
           <AddMolecule
+            products={products || []}
             onCancel={() => setAdding(false)}
             onAdded={(message) => {
               setAdding(false);
@@ -101,21 +103,29 @@ export default function ProductsPage() {
   );
 }
 
-// Generic Name, Brand Name and Dosage are required
-function AddMolecule({ onCancel, onAdded }) {
+const same = (a, b) => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
+
+// The Add Molecule window. Generic Name, Brand Name and Dosage are required. While typing it shows what the list
+// already has for that molecule (so a new dosage is easy to tell from a repeat) and how tenders will be matched.
+function AddMolecule({ products, onCancel, onAdded }) {
   const [form, setForm] = useState({ generic_name: '', brand_name: '', dosage: '' });
+  const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const fields = [
-    ['generic_name', 'Generic Name', 'e.g. Paclitaxel'],
-    ['brand_name', 'Brand Name', 'e.g. PacliGet 100mg'],
-    ['dosage', 'Dosage', 'e.g. 6 mg/ml (100 mg/16.7 ml)'],
+    ['generic_name', 'Generic Name', 'e.g. Paclitaxel', 'The molecule. Salts and brackets are dropped when matching.'],
+    ['brand_name', 'Brand Name', 'e.g. PacliGet 100mg', 'Our brand for this product.'],
+    ['dosage', 'Dosage', 'e.g. 6 mg/ml (100 mg/16.7 ml)', 'Tenders must ask for this exact strength.'],
   ];
   const missing = fields.filter(([key]) => !form[key].trim());
+  const molecule = form.generic_name.trim() ? matchName(form.generic_name) : '';
+  const onList = molecule ? products.filter((p) => matchName(p.generic_name) === molecule) : [];
+  const duplicate = onList.find((p) => same(p.generic_name, form.generic_name) && same(p.brand_name, form.brand_name) && same(p.dosage, form.dosage));
 
   const save = async (e) => {
     e.preventDefault();
-    if (missing.length) return setError(`Please fill in: ${missing.map(([, label]) => label).join(', ')}.`);
+    setTried(true);
+    if (missing.length || duplicate) return;
     setSaving(true);
     setError('');
     try {
@@ -130,39 +140,109 @@ function AddMolecule({ onCancel, onAdded }) {
   };
 
   return (
-    <form onSubmit={save} className="rounded-[14px] border border-[#E2E8F0] p-5 space-y-4">
-      <h2 className="text-base font-semibold">Add Molecule</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {fields.map(([key, label, placeholder]) => (
-          <label key={key} className="block text-sm">
-            <span className="text-black/62">
-              {label} <span className="text-[#B3312C]">*</span>
-            </span>
-            <input
-              required
-              value={form[key]}
-              placeholder={placeholder}
-              onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-              className="mt-1 w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25"
-            />
-          </label>
-        ))}
-      </div>
-      {form.generic_name.trim() && (
-        <p className="text-xs text-black/62">
-          Tenders asking for <b className="text-[#3F6F2C]">{matchName(form.generic_name)}</b>
-          {form.dosage.trim() ? ` ${form.dosage.trim()}` : ''} will count as ours (the dosage must match).
+    <Modal
+      title="Add Molecule"
+      subtitle="Add a product to our list so matching tenders on PhilGEPS and PS-PhilGEPS count as ours."
+      busy={saving}
+      onClose={onCancel}
+      icon={
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden>
+          <path d="m10.5 20.5-7-7a4.95 4.95 0 0 1 7-7l7 7a4.95 4.95 0 0 1-7 7Z" />
+          <path d="m7 10 7 7" />
+        </svg>
+      }
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="rounded-lg border border-[#CBD5E1] px-4 py-2 text-xs font-medium text-black/62 transition hover:bg-[#1EA0DA]/6 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="add-molecule"
+            disabled={saving || !!duplicate}
+            className="rounded-lg bg-[#1EA0DA] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1790C5] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? 'Adding…' : 'Add Molecule'}
+          </button>
+        </>
+      }
+    >
+      <form id="add-molecule" onSubmit={save} noValidate className="space-y-3.5">
+        {fields.map(([key, label, placeholder, hint]) => {
+          const invalid = tried && !form[key].trim();
+          return (
+            <label key={key} className="block">
+              <span className="text-xs font-semibold uppercase tracking-wider text-black/62">
+                {label} <span className="text-[#B3312C]">*</span>
+              </span>
+              <input
+                value={form[key]}
+                placeholder={placeholder}
+                maxLength={200}
+                aria-invalid={invalid}
+                aria-describedby={`${key}-hint`}
+                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                className={`mt-1.5 w-full rounded-full border bg-white px-4 py-2.5 text-sm text-black placeholder:text-black/46 transition focus:outline-none focus:ring-2 ${
+                  invalid ? 'border-[#B3312C] focus:ring-[#B3312C]/20' : 'border-[#CBD5E1] focus:border-[#1EA0DA] focus:ring-[#1EA0DA]/25'
+                }`}
+              />
+              <span id={`${key}-hint`} className={`mt-1 block px-4 text-xs ${invalid ? 'text-[#B3312C]' : 'text-black/46'}`}>
+                {invalid ? `${label} is required.` : hint}
+              </span>
+            </label>
+          );
+        })}
+      </form>
+
+      {/* Live preview: how tenders will be matched */}
+      <section className="rounded-[14px] border border-[#E2E8F0] bg-[#1EA0DA]/[0.02] p-4">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-black/62">How tenders will match</h3>
+        {molecule ? (
+          <p className="flex flex-wrap items-center gap-1.5 text-sm text-black/62">
+            A tender counts as ours when it asks for
+            <span className="rounded-full border border-[#61A644]/25 bg-[#61A644]/10 px-3 py-0.5 text-xs font-semibold text-[#3F6F2C]">{molecule}</span>
+            in
+            {form.dosage.trim() ? (
+              <span className="rounded-full border border-[#1EA0DA]/25 bg-[#1EA0DA]/8 px-3 py-0.5 text-xs font-semibold text-[#12769F]">{form.dosage.trim()}</span>
+            ) : (
+              <span className="rounded-full border border-dashed border-[#CBD5E1] px-3 py-0.5 text-xs text-black/46">this dosage</span>
+            )}
+          </p>
+        ) : (
+          <p className="text-sm text-black/46">Type a Generic Name to see the molecule tenders are matched by.</p>
+        )}
+
+        {onList.length > 0 && (
+          <div className="mt-3 border-t border-[#E2E8F0] pt-3">
+            <p className="text-xs text-black/62">
+              <b className="text-black">{molecule}</b> is already on the list in {onList.length === 1 ? '1 product' : `${onList.length} products`}. Adding a new dosage is fine.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {onList.map((p) => (
+                <span
+                  key={p.id}
+                  title={p.brand_name}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${p === duplicate ? 'border-[#B3312C]/40 bg-[#B3312C]/6 text-[#B3312C]' : 'border-[#CBD5E1] text-black/62'}`}
+                >
+                  {p.dosage}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {duplicate && (
+        <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">
+          This molecule with that brand and dosage is already on the list.
         </p>
       )}
-      {error && <p className="text-sm text-[#B3312C]">{error}</p>}
-      <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="bg-[#4A8033] hover:bg-[#3F6F2C] disabled:opacity-60 text-white px-4 py-2 rounded-full text-sm font-medium transition">
-          {saving ? 'Saving…' : 'Add Molecule'}
-        </button>
-        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-full text-sm text-black/62 hover:bg-[#1EA0DA]/6 transition">
-          Cancel
-        </button>
-      </div>
-    </form>
+      {error && <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">{error}</p>}
+    </Modal>
   );
 }
