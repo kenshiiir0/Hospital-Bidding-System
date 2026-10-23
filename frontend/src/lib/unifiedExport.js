@@ -60,10 +60,14 @@ async function loadPsTenders(search, from, to) {
   return psTenders(data, rows).filter((t) => inRange(t.published, from, to));
 }
 
-// from: 'philgeps' | 'ps' (the page with the button); shown: that page's tenders, already in export shape
-export async function exportBothPortals({ from, shown, search = '', publishedFrom = '', publishedTo = '' }) {
-  const other = from === 'philgeps' ? await loadPsTenders(search, publishedFrom, publishedTo) : await loadPhilgepsTenders(search, publishedFrom, publishedTo);
-  const tenders = oldestFirst([...shown, ...other]);
+// from: 'philgeps' | 'ps' (the page on screen, whose filtered list is `shown`, already in export shape),
+// or nothing: both portals in full
+export async function exportBothPortals({ from, shown = [], search = '', publishedFrom = '', publishedTo = '' } = {}) {
+  const [philgeps, ps] = await Promise.all([
+    from === 'philgeps' ? shown : loadPhilgepsTenders(search, publishedFrom, publishedTo),
+    from === 'ps' ? shown : loadPsTenders(search, publishedFrom, publishedTo),
+  ]);
+  const tenders = oldestFirst([...philgeps, ...ps]);
   await downloadOpportunityWorkbook(tenders);
   return tenders.length;
 }

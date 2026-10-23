@@ -10,7 +10,7 @@ import TenderDetails from '@/components/TenderDetails';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
 import { philgepsTender } from '@/lib/opportunityWorkbook';
-import { exportBothPortals } from '@/lib/unifiedExport';
+import { useExportScope } from '@/lib/exportScope';
 import { supabase } from '@/lib/supabase';
 import { authFetch } from '@/lib/authFetch';
 
@@ -117,9 +117,6 @@ function EmptyState({ children }) {
 
 const outlineButton =
   'inline-flex items-center justify-center gap-2 rounded-full border border-[#1EA0DA]/25 bg-white px-4 py-2 text-sm font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 disabled:text-black/46 disabled:border-[#E2E8F0] disabled:cursor-not-allowed transition';
-// Green call to action (Export)
-const greenButton =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/50 disabled:cursor-not-allowed transition';
 const fieldClass =
   'bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25';
 
@@ -143,7 +140,6 @@ export default function Home() {
   const [showExclusions, setShowExclusions] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [selectedBid, setSelectedBid] = useState(null);
-  const [exporting, setExporting] = useState(false);
   // Published-date range filter ("YYYY-MM-DD" from the date inputs; empty = no limit) and sort direction
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -261,24 +257,6 @@ export default function Home() {
     const timer = setTimeout(() => setDismissed((list) => [...list, finishedStartedAt]), DONE_SHOWN_MS);
     return () => clearTimeout(timer);
   }, [finishedCleanly, finishedStartedAt]);
-
-  // One Excel for both portals (lib/unifiedExport.js): the PhilGEPS tenders listed here (all filters applied)
-  // plus the PS-PhilGEPS Bid Match tenders matching the same search and published dates, oldest at the top
-  const exportBids = async () => {
-    setExporting(true);
-    try {
-      await exportBothPortals({
-        from: 'philgeps',
-        shown: filteredBids.map(philgepsTender),
-        search,
-        publishedFrom: dateFrom,
-        publishedTo: dateTo,
-      });
-    } catch (err) {
-      setScrapeError(`Export failed: ${err.message}`);
-    }
-    setExporting(false);
-  };
 
   // Today's Philippine date for the "added today" count, read in the browser and refreshed every minute
   // so it rolls over at midnight
@@ -446,6 +424,17 @@ export default function Home() {
       return oldestFirst ? byDate : -byDate;
     });
 
+  // The sidebar's Export Excel uses this list (all filters applied) plus the PS-PhilGEPS tenders matching the
+  // same search and published dates (lib/exportScope.js, lib/unifiedExport.js)
+  useExportScope('philgeps', () => ({
+    from: 'philgeps',
+    getShown: () => filteredBids.map(philgepsTender),
+    search,
+    publishedFrom: dateFrom,
+    publishedTo: dateTo,
+    summary: `${filteredBids.length} PhilGEPS listed here${search ? ` · search "${search}"` : ''}${dateFrom || dateTo ? ` · published ${dateFrom || '…'} to ${dateTo || '…'}` : ''}`,
+  }));
+
   // Only the current page is drawn; the page is clamped in case the list shrank (realtime, reload)
   const totalPages = Math.max(1, Math.ceil(filteredBids.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -469,14 +458,6 @@ export default function Home() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={exportBids}
-              disabled={exporting || loading}
-              title="One Excel with the PhilGEPS tenders listed here and the PS-PhilGEPS Bid Match tenders matching the same search, oldest at the top"
-              className={greenButton}
-            >
-              {exporting ? <>Exporting <WorkingDots /></> : '⬇ Export Excel (PhilGEPS + PS-PhilGEPS)'}
-            </button>
             <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={outlineButton}>
               {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
             </button>

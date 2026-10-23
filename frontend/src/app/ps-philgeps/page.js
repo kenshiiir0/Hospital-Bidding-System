@@ -7,13 +7,9 @@ import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import { usePsFilters } from '@/components/PsFilters';
 import { ProductChips as Products, SegmentedTabs } from '@/components/FilterControls';
-import WorkingDots from '@/components/WorkingDots';
 import { psRefOf } from '@/lib/opportunityWorkbook';
-import { exportBothPortals, psTenders } from '@/lib/unifiedExport';
-
-// Green call to action, as the Export button on the PhilGEPS page
-const greenButton =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/50 disabled:cursor-not-allowed transition';
+import { psTenders } from '@/lib/unifiedExport';
+import { useExportScope } from '@/lib/exportScope';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
@@ -54,20 +50,18 @@ export default function BidMatchPage() {
   });
   const rows = filters.apply((onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' '))));
 
-  // One Excel for both portals (lib/unifiedExport.js): the Bid Match rows shown here (all filters applied)
-  // plus the PhilGEPS tenders matching the same search, oldest at the top
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState('');
-  const exportExcel = async () => {
-    setExporting(true);
-    setExportError('');
-    try {
-      await exportBothPortals({ from: 'ps', shown: psTenders(data, rows), search });
-    } catch (err) {
-      setExportError(`Export failed: ${err.message}`);
-    }
-    setExporting(false);
-  };
+  // The sidebar's Export Excel uses these rows (all filters applied) plus the PhilGEPS tenders matching the
+  // same search (lib/exportScope.js, lib/unifiedExport.js). Until the data loads, it exports everything.
+  useExportScope('ps-bid-match', () =>
+    data
+      ? {
+          from: 'ps',
+          getShown: () => psTenders(data, rows),
+          search,
+          summary: `${rows.length} Bid Match listed here${search ? ` · search "${search}"` : ''}`,
+        }
+      : {}
+  );
 
   return (
     <section className="space-y-4">
@@ -81,28 +75,17 @@ export default function BidMatchPage() {
           )}
         </h2>
         {list && (
-          <div className="flex flex-wrap items-center gap-2">
-            <SegmentedTabs
-              label="Which tenders"
-              value={onlyOurs}
-              onChange={setOnlyOurs}
-              options={[
-                { value: true, label: 'Our products', count: ours.length },
-                { value: false, label: 'All', count: list.rows.length },
-              ]}
-            />
-            <button
-              onClick={exportExcel}
-              disabled={exporting}
-              title="One Excel with the Bid Match tenders listed here and the PhilGEPS tenders matching the same search, oldest at the top"
-              className={greenButton}
-            >
-              {exporting ? <>Exporting <WorkingDots /></> : '⬇ Export Excel (PhilGEPS + PS-PhilGEPS)'}
-            </button>
-          </div>
+          <SegmentedTabs
+            label="Which tenders"
+            value={onlyOurs}
+            onChange={setOnlyOurs}
+            options={[
+              { value: true, label: 'Our products', count: ours.length },
+              { value: false, label: 'All', count: list.rows.length },
+            ]}
+          />
         )}
       </div>
-      {exportError && <p role="alert" className="text-xs font-medium text-[#B3312C]">{exportError}</p>}
       {filters.bar}
       <PsListTable
         list={list}

@@ -2,8 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { displayName } from '@/lib/username';
+import { getExportScope, useExportSummary } from '@/lib/exportScope';
+import { exportBothPortals } from '@/lib/unifiedExport';
+import WorkingDots from '@/components/WorkingDots';
 
 // Two sources, each with its own pages and its own Sync: the old PhilGEPS (notices.philgeps.gov.ph)
 // and the new PS-PhilGEPS (philgeps.gov.ph)
@@ -32,6 +36,43 @@ async function signOut() {
     localStorage.removeItem('bidsCache');
   } catch {}
   await supabase.auth.signOut();
+}
+
+// One Excel for both portals (lib/unifiedExport.js), oldest at the top. Uses the filters and search of the
+// page on screen when it registered them (lib/exportScope.js), else exports everything.
+function ExportButton() {
+  const summary = useExportSummary();
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState('');
+
+  const run = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      const scope = getExportScope();
+      await exportBothPortals(scope?.getShown ? { ...scope, shown: scope.getShown() } : {});
+    } catch (err) {
+      setError(`Export failed: ${err.message}`);
+    }
+    setExporting(false);
+  };
+
+  return (
+    <div className="flex md:flex-col items-center md:items-stretch gap-1.5">
+      <button
+        onClick={run}
+        disabled={exporting}
+        title="One Excel with PhilGEPS and PS-PhilGEPS tenders, oldest at the top"
+        className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-3 py-2 text-xs font-semibold text-white hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/50 disabled:cursor-wait transition whitespace-nowrap"
+      >
+        {exporting ? <>Exporting <WorkingDots /></> : '⬇ Export Excel'}
+      </button>
+      <p className="hidden md:block text-[11px] leading-snug text-black/62">
+        PhilGEPS + PS-PhilGEPS, oldest first · {summary || 'everything (no filters on this page)'}
+      </p>
+      {error && <p role="alert" className="text-[11px] font-medium text-[#B3312C]">{error}</p>}
+    </div>
+  );
 }
 
 // Left navigation on wide screens, a top bar on phones
@@ -73,7 +114,8 @@ export default function Sidebar({ user }) {
           ))}
         </nav>
         <div className="ml-auto md:ml-0 md:mt-auto flex md:flex-col items-center md:items-stretch gap-2 md:pt-4 md:border-t md:border-[#E2E8F0]">
-          <div className="hidden md:block text-xs text-black/62 truncate" title={user?.email}>{displayName(user?.email)}</div>
+          <ExportButton />
+          <div className="hidden md:block text-xs text-black/62 truncate md:pt-2" title={user?.email}>{displayName(user?.email)}</div>
           <button
             onClick={signOut}
             className="rounded-lg px-3 py-2 text-sm font-medium text-black/62 hover:text-black hover:bg-[#1EA0DA]/6 transition text-left"
