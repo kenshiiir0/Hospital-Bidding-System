@@ -8,6 +8,7 @@ import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
 import { SearchPill } from '@/components/FilterControls';
+import ScrapeProgress from '@/components/ScrapeProgress';
 
 // Shared by the PS-PhilGEPS pages (Bid Match, My Opportunities, Award Notices), on the deployed dashboard
 // and on team computers alike:
@@ -59,6 +60,31 @@ export default function PsPhilgepsLayout({ children }) {
 
   const syncing = sync?.status === 'running';
   const connecting = connect?.status === 'connecting';
+
+  // Bottom-left progress ring, as on the PhilGEPS Dashboard: shown while a Sync runs (anyone's), then its
+  // result for the run this page watched; a success hides itself after 6 s, a failure stays until closed
+  const [watched, setWatched] = useState(null);
+  const [dismissed, setDismissed] = useState(null);
+  const startedAt = sync?.started_at;
+  useEffect(() => {
+    if (!syncing || !startedAt) return;
+    const t = setTimeout(() => setWatched(startedAt), 0);
+    return () => clearTimeout(t);
+  }, [syncing, startedAt]);
+  const finishedWatched = !syncing && watched && watched === startedAt && sync?.finished_at && dismissed !== watched;
+  const ringJob = syncing
+    ? { status: 'running', percent: sync.percent, stage: sync.stage || 'Starting' }
+    : finishedWatched
+      ? sync.status === 'success'
+        ? { status: 'success', percent: 100, stage: sync.stage }
+        : { status: 'failed', percent: sync.percent, stage: sync.stage, error: sync.error }
+      : null;
+  const ringDone = ringJob?.status === 'success';
+  useEffect(() => {
+    if (!ringDone) return;
+    const t = setTimeout(() => setDismissed(watched), 6000);
+    return () => clearTimeout(t);
+  }, [ringDone, watched]);
 
   // Sync status: every 3 s while something runs, else every 30 s
   useEffect(() => {
@@ -163,6 +189,7 @@ export default function PsPhilgepsLayout({ children }) {
           {children}
         </div>
       </div>
+      <ScrapeProgress job={ringJob} onDismiss={() => setDismissed(watched)} />
     </PsContext.Provider>
   );
 }
