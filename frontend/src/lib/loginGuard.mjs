@@ -5,16 +5,15 @@ import { createClient } from '@supabase/supabase-js';
 // (schema.sql); checkLogin() applies the rules below before a new log-in, from any computer or the server.
 // Plain .mjs so the scraper side (CommonJS) can import() it too.
 const RULES = {
-  // A refused password (or a locked/blocked account) is never retried automatically
-  pauseAfterRejectedMs: 6 * 60 * 60 * 1000,
-  // PS-PhilGEPS: a person may mistype; three refused log-ins within the hour pause it for an hour
+  // Three refused log-ins (a wrong password, not "account in use") within the hour pause it for an hour,
+  // before PhilGEPS would lock the account. A single refusal never blocks the Sync button.
   rejectedLimit: { count: 3, withinMs: 60 * 60 * 1000 },
   perHour: 6,
   perDay: 20,
   // Between two separate log-ins (the retries inside one log-in don't count)
   minGapMs: 60 * 1000,
-  // "Account in use": a schedule waits longer than a person pressing Sync
-  afterBusyMs: { schedule: 30 * 60 * 1000, person: 2 * 60 * 1000 },
+  // "Account in use": the 6 AM schedule waits before trying again; a person pressing Sync never waits
+  afterBusyMs: { schedule: 30 * 60 * 1000, person: 0 },
 };
 
 export class LoginGuardError extends Error {
@@ -47,11 +46,6 @@ export async function checkLogin(site, { trigger = 'person' } = {}) {
 
   const lastOk = times.find((r) => r.outcome === 'ok')?.ms || 0;
   const rejected = times.filter((r) => r.outcome === 'rejected' && r.ms > lastOk);
-  if (site === 'philgeps' && rejected.length && now - rejected[0].ms < RULES.pauseAfterRejectedMs) {
-    throw new LoginGuardError(
-      `${name} refused the log-in at ${at(rejected[0].ms)}${rejected[0].detail ? ` ("${rejected[0].detail}")` : ''}. To protect the account, automatic log-ins are paused until ${at(rejected[0].ms + RULES.pauseAfterRejectedMs)}. Check the password in the server settings, or log in once by hand on PhilGEPS.`
-    );
-  }
   const recentRejected = rejected.filter((r) => now - r.ms < RULES.rejectedLimit.withinMs);
   if (recentRejected.length >= RULES.rejectedLimit.count) {
     const until = recentRejected[RULES.rejectedLimit.count - 1].ms + RULES.rejectedLimit.withinMs;
