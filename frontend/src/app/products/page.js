@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import { matchName } from '@/lib/products.mjs';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
 import { SegmentedTabs } from '@/components/FilterControls';
+import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 
 // Our product list (table products): the B2B price list and the team's PRODUCT LIST, plus molecules added here. The
 // only list tenders on PhilGEPS and PS-PhilGEPS are screened against: a tender counts when it asks for the molecule
@@ -21,6 +22,15 @@ export default function ProductsPage() {
   const [view, setView] = useState('active');
   const [archiving, setArchiving] = useState(null);
   const [restoring, setRestoring] = useState(null);
+  // Page shown (1-based) and rows per page, as on the PhilGEPS list; a search or tab change goes back to page 1
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const listTop = useRef(null);
+
+  const goToPage = (next) => {
+    setPage(next);
+    listTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -69,6 +79,10 @@ export default function ProductsPage() {
   const query = search.trim().toLowerCase();
   const rows = shown.filter((p) => !query || `${p.generic_name} ${p.brand_name} ${p.dosage} ${p.classification || ''}`.toLowerCase().includes(query));
   const molecules = new Set(active.map((p) => matchName(p.generic_name))).size;
+  // Only the current page is drawn; clamped in case the list shrank (archive, restore, search)
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const actionButton = 'whitespace-nowrap rounded-lg px-3 py-1 text-xs font-semibold transition-all disabled:opacity-60';
   const columns = [
@@ -161,11 +175,14 @@ export default function ProductsPage() {
           />
         )}
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div ref={listTop} className="flex scroll-mt-4 flex-col gap-3 sm:flex-row sm:items-center">
           <SegmentedTabs
             label="Show"
             value={view}
-            onChange={setView}
+            onChange={(next) => {
+              setView(next);
+              setPage(1);
+            }}
             options={[
               { value: 'active', label: 'Active', count: active.length },
               { value: 'archived', label: 'Archived', count: archived.length },
@@ -175,7 +192,10 @@ export default function ProductsPage() {
             type="text"
             placeholder="Search by generic name, brand, dosage or classification..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="w-full flex-1 bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-[14px] px-4 py-3 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25 transition"
           />
         </div>
@@ -189,7 +209,22 @@ export default function ProductsPage() {
         {!products ? (
           <p className="py-12 text-center text-black/46">{error ? '' : 'Loading the product list...'}</p>
         ) : rows.length ? (
-          <ResponsiveTable columns={columns} rows={rows} rowKey={(p) => p.id} />
+          <>
+            <ResponsiveTable columns={columns} rows={pageRows} rowKey={(p) => p.id} />
+            {/* Pages once the list is longer than the smallest page */}
+            {rows.length > PAGE_SIZES[0] && (
+              <Pagination
+                page={currentPage}
+                pageSize={pageSize}
+                total={rows.length}
+                onPageChange={goToPage}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         ) : (
           <p className="py-12 text-center text-black/46">
             {query ? 'No product matches the search.' : view === 'archived' ? 'Nothing is archived. Archive a product from the Active list to stop screening for it.' : 'No active products.'}
