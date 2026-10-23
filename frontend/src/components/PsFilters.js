@@ -9,7 +9,8 @@ import { CustomSelect, DateRangePill, SegmentedTabs } from '@/components/FilterC
 //   tabs: true shows that one as a row of pill tabs with counts instead of a dropdown,
 // - dates: [{ label, column }] from / to ranges on date columns ("22-Oct-2026 12:00 AM", "28-Sep-2026"),
 // - sorts: [{ label, column, kind: 'date' | 'number', dir: 'asc' | 'desc' }], the first is the default.
-// Returns { apply(rows), bar } where bar is the filter rows to show above the list.
+// Returns { apply(rows), bar, chosen } where bar is the filter rows to show above the list and chosen the
+// selected value of each select, by label ('' or missing = All).
 export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
   const [chosen, setChosen] = useState({});
   const [ranges, setRanges] = useState({});
@@ -120,7 +121,7 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
     </div>
   ) : null;
 
-  return { apply, bar };
+  return { apply, bar, chosen };
 }
 
 

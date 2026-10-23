@@ -15,7 +15,8 @@ export default function MyOpportunitiesPage() {
   const list = data?.lists?.opportunities;
   const filters = usePsFilters(list, {
     selects: [
-      { label: 'Mode', column: 'Mode of Procurement' },
+      // ITB / RFQ from the mode of procurement (lib/tenderType.js), as in the Type column
+      { label: 'Type', valuesOf: (row) => [psType(row.cells[list.headers.indexOf('Mode of Procurement')]).code].filter(Boolean) },
       { label: 'Notice status', column: 'Status of Bid notice' },
       { label: 'Bid submission', column: 'Bid Submission Status' },
     ],

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { DateRangePill, DetailsButton, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import { CustomSelect, DateRangePill, DetailsButton, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
@@ -148,6 +148,8 @@ export default function Home() {
   const [oldestFirst, setOldestFirst] = useState(false);
   // Documents filter: 'all' | 'files' (downloaded) | 'pickup' (pick-up only) | 'none' (no documents yet)
   const [docFilter, setDocFilter] = useState('all');
+  // Tender type filter: '' = all, else a code from lib/tenderType.js (ITB, RFQ, RFP, Negotiated)
+  const [typeFilter, setTypeFilter] = useState('');
   const [today, setToday] = useState(''); // "YYYY-MM-DD" in Philippine time, set after mount
   // Page of the list shown (1-based) and rows per page; any filter or sort change goes back to page 1
   const [page, setPage] = useState(1);
@@ -406,7 +408,7 @@ export default function Home() {
   // Search the reference number, tender title, procuring entity (hospital) and matched products,
   // keep the published-date range, then order by published date (latest first unless reversed)
   const query = search.toLowerCase();
-  const searchedBids = visibleBids
+  const matchingBids = visibleBids
     .filter((bid) =>
       `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`
         .toLowerCase()
@@ -416,6 +418,14 @@ export default function Home() {
       const published = bid.publish_date || '';
       return (!dateFrom || published >= dateFrom) && (!dateTo || (published && published <= dateTo));
     });
+  // Type filter (ITB, RFQ...): options are the types in the searched list, most common first, with counts
+  const typeOf = (bid) => philgepsType(bid.details?.notice_type).code;
+  const typeCounts = {};
+  for (const bid of matchingBids) if (typeOf(bid)) typeCounts[typeOf(bid)] = (typeCounts[typeOf(bid)] || 0) + 1;
+  const typeOptions = Object.keys(typeCounts)
+    .sort((a, b) => typeCounts[b] - typeCounts[a])
+    .map((code) => ({ value: code, label: code, count: typeCounts[code] }));
+  const searchedBids = matchingBids.filter((bid) => !typeFilter || typeOf(bid) === typeFilter);
   // Counts for the documents filter follow the search and date filter
   const docCounts = { all: searchedBids.length, files: 0, pickup: 0, none: 0 };
   for (const bid of searchedBids) docCounts[docGroupOf(bid)]++;
@@ -434,7 +444,8 @@ export default function Home() {
     search,
     publishedFrom: dateFrom,
     publishedTo: dateTo,
-    summary: `${filteredBids.length} PhilGEPS listed here${search ? ` · search "${search}"` : ''}${dateFrom || dateTo ? ` · published ${dateFrom || '…'} to ${dateTo || '…'}` : ''}`,
+    type: typeFilter,
+    summary: `${filteredBids.length} PhilGEPS listed here${search ? ` · search "${search}"` : ''}${typeFilter ? ` · ${typeFilter} only` : ''}${dateFrom || dateTo ? ` · published ${dateFrom || '…'} to ${dateTo || '…'}` : ''}`,
   }));
 
   // Only the current page is drawn; the page is clamped in case the list shrank (realtime, reload)
@@ -532,6 +543,15 @@ export default function Home() {
                 setDateTo(value);
                 setPage(1);
               }}
+            />
+            <CustomSelect
+              label="Type"
+              value={typeFilter}
+              onChange={(value) => {
+                setTypeFilter(value);
+                setPage(1);
+              }}
+              options={[{ value: '', label: 'All' }, ...typeOptions]}
             />
             <button
               onClick={() => {

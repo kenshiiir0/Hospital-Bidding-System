@@ -18,7 +18,8 @@ export default function AwardNoticesPage() {
     selects: [
       { label: 'Acceptance', column: 'Award Acceptance' },
       { label: 'Status', column: 'Status' },
-      { label: 'Mode', column: 'Procurement Mode' },
+      // ITB / RFQ from the procurement mode (lib/tenderType.js), as in the Type column
+      { label: 'Type', valuesOf: (row) => [psType(row.cells[list.headers.indexOf('Procurement Mode')]).code].filter(Boolean) },
     ],
     dates: [{ label: 'Award date', column: 'Award Date' }],
     sorts: [

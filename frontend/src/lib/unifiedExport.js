@@ -61,11 +61,12 @@ async function loadPsTenders(search, from, to) {
 }
 
 // from: 'philgeps' | 'ps' (the page on screen, whose filtered list is `shown`, already in export shape),
-// or nothing: both portals in full
-export async function exportBothPortals({ from, shown = [], search = '', publishedFrom = '', publishedTo = '' } = {}) {
+// or nothing: both portals in full. type: the page's Type filter (ITB, RFQ...), applied to the other portal too.
+export async function exportBothPortals({ from, shown = [], search = '', publishedFrom = '', publishedTo = '', type = '' } = {}) {
+  const ofType = (tenders) => (type ? tenders.filter((t) => t.type === type) : tenders);
   const [philgeps, ps] = await Promise.all([
-    from === 'philgeps' ? shown : loadPhilgepsTenders(search, publishedFrom, publishedTo),
-    from === 'ps' ? shown : loadPsTenders(search, publishedFrom, publishedTo),
+    from === 'philgeps' ? shown : loadPhilgepsTenders(search, publishedFrom, publishedTo).then(ofType),
+    from === 'ps' ? shown : loadPsTenders(search, publishedFrom, publishedTo).then(ofType),
   ]);
   const tenders = oldestFirst([...philgeps, ...ps]);
   await downloadOpportunityWorkbook(tenders);

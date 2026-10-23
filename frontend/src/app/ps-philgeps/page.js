@@ -30,7 +30,8 @@ export default function BidMatchPage() {
   const filters = usePsFilters(list, {
     selects: [
       { label: 'Our product', valuesOf: productsOf },
-      { label: 'Mode', column: 'Mode of Procurement' },
+      // ITB / RFQ from the mode of procurement (lib/tenderType.js), as in the Type column
+      { label: 'Type', valuesOf: (row) => [psType(row.cells[list.headers.indexOf('Mode of Procurement')]).code].filter(Boolean) },
       { label: 'Status', column: 'Status' },
       // Whether the Sync found and downloaded the notice's documents
       {
@@ -60,7 +61,8 @@ export default function BidMatchPage() {
           from: 'ps',
           getShown: () => psTenders(data, rows),
           search,
-          summary: `${rows.length} Bid Match listed here${search ? ` · search "${search}"` : ''}`,
+          type: filters.chosen.Type || '',
+          summary: `${rows.length} Bid Match listed here${search ? ` · search "${search}"` : ''}${filters.chosen.Type ? ` · ${filters.chosen.Type} only` : ''}`,
         }
       : {}
   );
