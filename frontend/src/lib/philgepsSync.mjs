@@ -51,6 +51,9 @@ const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;
 // A saved session with no Sync progress for this long is logged out by sweepSession()
 const SESSION_IDLE_MS = 5 * 60 * 1000;
+// After a confirmed log-out the session's cookies are kept this long, and the 5-minute clean-up checks with
+// them that PhilGEPS really closed it (logging out again if not), so a wrong confirmation can still be undone
+const RECHECK_AFTER_LOGOUT_MS = 60 * 60 * 1000;
 
 const TYPES = { '.pdf': 'application/pdf', '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.zip': 'application/zip', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
 const storageName = (name) => name.replace(/[^A-Za-z0-9._()-]/g, '_');
@@ -641,12 +644,12 @@ export async function runSyncRound() {
     }
 
     // Later rounds continue in the log-in of the first (one log-in per Sync); a new log-in only if it ended
-    const saved = job.round > 1 ? (await supabase.from('philgeps_session').select('cookies').eq('id', 'current').maybeSingle()).data : null;
-    if (saved?.cookies?.length) {
+    const saved = job.round > 1 ? (await supabase.from('philgeps_session').select('cookies, logged_out_at').eq('id', 'current').maybeSingle()).data : null;
+    if (saved?.cookies?.length && !saved.logged_out_at) {
       session = new Session(saved.cookies);
       loginSent = true;
       if (await isLoggedOut(session).catch(() => false)) {
-        await supabase.from('philgeps_session').delete().eq('id', 'current');
+        await markLoggedOut(supabase);
         session = new Session();
         loginSent = false;
       }
@@ -658,7 +661,7 @@ export async function runSyncRound() {
         session,
         async (s) => {
           loginSent = true;
-          await supabase.from('philgeps_session').upsert({ id: 'current', cookies: s.cookies(), saved_at: new Date().toISOString() });
+          await supabase.from('philgeps_session').upsert({ id: 'current', cookies: s.cookies(), saved_at: new Date().toISOString(), logged_out_at: null });
         },
         { trigger: job.startedBy === 'schedule' ? 'schedule' : 'person' }
       );
@@ -713,7 +716,7 @@ export async function runSyncRound() {
     more = done < job.total;
     job.stage = more ? `Continuing (${done} of ${job.total} tenders done)` : 'Logging out of PhilGEPS';
     // The next round reuses this log-in: keep the newest cookies for it
-    if (more) await supabase.from('philgeps_session').upsert({ id: 'current', cookies: session.cookies(), saved_at: new Date().toISOString() });
+    if (more) await supabase.from('philgeps_session').upsert({ id: 'current', cookies: session.cookies(), saved_at: new Date().toISOString(), logged_out_at: null });
     await save();
     return { more, done };
   } catch (e) {
@@ -729,7 +732,7 @@ export async function runSyncRound() {
   } finally {
     if (loginSent && !more) {
       const loggedOut = await logout(session);
-      if (loggedOut) await supabase.from('philgeps_session').delete().eq('id', 'current');
+      if (loggedOut) await markLoggedOut(supabase);
       else {
         job.warning = 'The PhilGEPS log-out could not be confirmed; the 5-minute clean-up keeps trying.';
         await save();
@@ -758,13 +761,31 @@ export async function finishSync() {
 
 // ---------- 5-minute clean-up ----------
 
+// A confirmed log-out keeps the cookies (RECHECK_AFTER_LOGOUT_MS) for the clean-up's re-check
+function markLoggedOut(supabase) {
+  return supabase.from('philgeps_session').update({ logged_out_at: new Date().toISOString() }).eq('id', 'current');
+}
+
 // Logs out a PhilGEPS session left behind: a cut-off round, or a Sync whose progress hasn't moved for
-// SESSION_IDLE_MS (a running Sync saves progress every tender). Never throws.
+// SESSION_IDLE_MS (a running Sync saves progress every tender). A session already logged out is checked again
+// with its own cookies for RECHECK_AFTER_LOGOUT_MS (logged out again if PhilGEPS still has it), then forgotten.
+// Never throws.
 export async function sweepSession() {
   try {
     const supabase = admin();
-    const { data } = await supabase.from('philgeps_session').select('cookies, saved_at').eq('id', 'current').maybeSingle();
+    const { data } = await supabase.from('philgeps_session').select('cookies, saved_at, logged_out_at').eq('id', 'current').maybeSingle();
     if (!data?.cookies?.length) return { open: false };
+    if (data.logged_out_at) {
+      if (Date.now() - Date.parse(data.logged_out_at) > RECHECK_AFTER_LOGOUT_MS) {
+        await supabase.from('philgeps_session').delete().eq('id', 'current');
+        return { open: false, forgotten: true };
+      }
+      const session = new Session(data.cookies);
+      if (await isLoggedOut(session)) return { open: false, rechecked: true };
+      // PhilGEPS still has the session although its log-out was confirmed: log out again
+      const loggedOut = await logout(session);
+      return { open: !loggedOut, reopened: true, loggedOut };
+    }
     const current = await readJob(supabase);
     const busy = current.job?.status === 'running' && Date.now() - Math.max(Date.parse(current.updated_at), Date.parse(data.saved_at)) < SESSION_IDLE_MS;
     if (busy) return { open: true, skipped: 'sync running' };
@@ -781,7 +802,7 @@ export async function closeSession() {
     const { data } = await supabase.from('philgeps_session').select('cookies').eq('id', 'current').maybeSingle();
     if (!data?.cookies?.length) return true;
     const loggedOut = await logout(new Session(data.cookies));
-    if (loggedOut) await supabase.from('philgeps_session').delete().eq('id', 'current');
+    if (loggedOut) await markLoggedOut(supabase);
     return loggedOut;
   } catch {
     return false;

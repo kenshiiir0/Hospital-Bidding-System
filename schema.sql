@@ -179,6 +179,9 @@ CREATE TABLE IF NOT EXISTS philgeps_session (
 );
 ALTER TABLE philgeps_session ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON philgeps_session FROM anon, authenticated;
+-- Set when the log-out was confirmed: the row (cookies) is kept an hour so the 5-minute clean-up can check with
+-- the session's own cookies that PhilGEPS really closed it, and log out again if not
+ALTER TABLE philgeps_session ADD COLUMN IF NOT EXISTS logged_out_at TIMESTAMPTZ;
 
 -- Every log-in the system makes to PhilGEPS ('philgeps') and PS-PhilGEPS ('ps-philgeps'), read by
 -- frontend/src/lib/loginGuard.mjs to keep log-ins few (no lock-out for suspicious activity).
