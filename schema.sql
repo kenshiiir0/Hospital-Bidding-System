@@ -276,3 +276,29 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON hospital_postings FROM authenticated;
 -- page at the first check (the pages show no dates), so it never counts as new.
 ALTER TABLE hospital_postings ADD COLUMN IF NOT EXISTS page_order INT;
 ALTER TABLE hospital_postings ADD COLUMN IF NOT EXISTS baseline BOOLEAN NOT NULL DEFAULT false;
+
+-- Our products: the team's PRODUCT LIST (tab of PHILGEPS OPPORTUNITY.xlsx), the only source of what tenders are
+-- screened for (frontend/src/lib/products.mjs turns each generic name into the name matched in tenders). One row
+-- per generic / brand / dosage. Rows come from the list, or from the dashboard's Add Molecule (POST /api/products,
+-- secret key). Team members may read.
+CREATE TABLE IF NOT EXISTS products (
+    id BIGSERIAL PRIMARY KEY,
+    generic_name TEXT NOT NULL,
+    brand_name TEXT NOT NULL,
+    dosage TEXT NOT NULL,
+    account TEXT,
+    classification TEXT,
+    dosage_form TEXT,
+    unit TEXT,
+    pack_size TEXT,
+    source TEXT NOT NULL DEFAULT 'added',     -- product-list | added
+    added_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (generic_name, brand_name, dosage)
+);
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON products;
+CREATE POLICY "dashboard can read" ON products FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON products FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON products FROM authenticated;

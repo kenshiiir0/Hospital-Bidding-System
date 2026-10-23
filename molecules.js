@@ -1,5 +1,6 @@
 // Our registered products (from the CPR / CLIDP list), matched against tender text.
-// Edit molecules.json to add products; food supplements and teas are left out on purpose.
+// molecules.json is generated from table products (the team's PRODUCT LIST; add products with the dashboard's
+// Add Molecule). The deployed system reads the table itself (frontend/src/lib/products.mjs).
 const MOLECULES = require('./molecules.json');
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

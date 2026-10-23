@@ -28,6 +28,11 @@ const GROUPS = [
       { href: '/history/ps-philgeps', label: 'History', icon: '⟲' },
     ],
   },
+  // The one product list both sites' tenders are screened against
+  {
+    label: 'Our Products',
+    links: [{ href: '/products', label: 'Product List', icon: '✚' }],
+  },
 ];
 
 // Signing out also drops the tender list cached in this browser (see page.js)

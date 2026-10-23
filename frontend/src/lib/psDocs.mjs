@@ -1,6 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { loadMatcher } from './products.mjs';
 import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
 
@@ -8,7 +7,7 @@ import { extractText, getDocumentProxy } from 'unpdf';
 // reading and stores per tender in ps_tender_analysis:
 // - bid_data_sheet: the sentences giving the pre-bid conference, bid opening, submission deadline,
 //   delivery period, bid validity and bid security (as written in the documents),
-// - items (molecule tracker): every line that names one of our products (molecules.json), with item no.,
+// - items (molecule tracker): every line that names one of our products (table products), with item no.,
 //   quantity, unit, unit price and total where the line's layout allows (same rules as parseItemLine in
 //   scraper.js); the raw line is always kept.
 // PDFs, Word (.docx) and Excel (.xlsx) files are read; a table row of a Word or Excel file becomes one line.
@@ -16,8 +15,8 @@ import { extractText, getDocumentProxy } from 'unpdf';
 // A tender is read again only when its documents change or RULES_VERSION changes.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-4: also Word and Excel files, item codes like "DM14" (rules-2 read PDFs only)
-const RULES_VERSION = 'rules-4';
+// rules-6: our product list from table products (PRODUCT LIST tab + Add Molecule). rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-6';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -29,21 +28,10 @@ function admin() {
   return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-// ---------- our products (same rules as molecules.js in the repo root) ----------
+// ---------- our products ----------
 
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-export async function loadMatcher() {
-  // molecules.json sits in the repo root, outside what the bundler imports (as in /api/products)
-  const molecules = JSON.parse(await readFile(path.resolve(process.cwd(), '..', 'molecules.json'), 'utf8'));
-  const compiled = molecules.map(({ name, match }) => ({
-    name,
-    alternatives: match.map((alias) =>
-      alias.split('+').map((part) => new RegExp(`\\b${escapeRegex(part.trim()).replace(/\s+/g, '[\\s-]+')}\\b`, 'i'))
-    ),
-  }));
-  return (text) => (text ? compiled.filter(({ alternatives }) => alternatives.some((parts) => parts.every((re) => re.test(text)))).map(({ name }) => name) : []);
-}
+// The matcher for our product list (table products, lib/products.mjs: the PRODUCT LIST plus Add Molecule)
+export { loadMatcher };
 
 // ---------- item lines (ported from scraper.js parseItemLine / parseItemColumns; keep in step) ----------
 

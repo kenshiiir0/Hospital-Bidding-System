@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { loadMatcher } from './products.mjs';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
 import { analyzePending } from './psDocs.mjs';
@@ -9,7 +9,7 @@ import { analyzePending } from './psDocs.mjs';
 // PhilGEPS's lists, notices and document lists are plain HTML; they are fetched with the log-in session
 // a person made with `node ps-philgeps-session.js --connect` (table ps_philgeps_session). Same result as
 // ps-philgeps-sync.js: Bid Match, My Opportunities and Award Notices lists, each Bid Match notice's
-// products (molecules.json) and documents. New documents go to the Storage bucket ps-documents, the
+// products (table products) and documents. New documents go to the Storage bucket ps-documents, the
 // result to ps_philgeps_snapshot, progress to ps_sync_status (read by every dashboard).
 // Reads only: never opens Accept / Refuse / Feedback or anything that changes data on PhilGEPS.
 // Plain .mjs (no Next imports) so it can also be run directly with node for testing.
@@ -177,21 +177,9 @@ export function refOf(row) {
   return /^\d+$/.test(row.cells[0]) ? row.cells[0] : null;
 }
 
-// ---------- our products (same rules as molecules.js in the repo root) ----------
+// ---------- our products ----------
 
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-async function loadMatcher() {
-  // molecules.json sits in the repo root, outside what the bundler imports (as in /api/products)
-  const molecules = JSON.parse(await readFile(path.resolve(process.cwd(), '..', 'molecules.json'), 'utf8'));
-  const compiled = molecules.map(({ name, match }) => ({
-    name,
-    alternatives: match.map((alias) =>
-      alias.split('+').map((part) => new RegExp(`\\b${escapeRegex(part.trim()).replace(/\s+/g, '[\\s-]+')}\\b`, 'i'))
-    ),
-  }));
-  return (text) => (text ? compiled.filter(({ alternatives }) => alternatives.some((parts) => parts.every((re) => re.test(text)))).map(({ name }) => name) : []);
-}
+// The matcher for our product list (table products, lib/products.mjs: the PRODUCT LIST plus Add Molecule)
 
 // ---------- documents ----------
 
