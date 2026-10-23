@@ -156,7 +156,7 @@ export default function PsPhilgepsLayout({ children }) {
           </header>
 
           {requestError && <Notice tone="error">{requestError}</Notice>}
-          <ConnectNotice connect={connect} connected={connected} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
+          <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
           <SyncNotice sync={sync} />
           <div className="flex items-center gap-2">
             <input
@@ -188,7 +188,8 @@ const switchToLive = () =>
     body: JSON.stringify({ switch: true }),
   }).catch(() => {});
 
-function ConnectNotice({ connect, connected, waiting, onCancel }) {
+// known: the Sync status has loaded (until then "not connected" isn't known yet)
+function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
   if (connect?.status === 'connecting' && connect.view === 'live') {
     return (
       <div className="space-y-3">
@@ -224,6 +225,17 @@ function ConnectNotice({ connect, connected, waiting, onCancel }) {
           <code>node tools/register-connect-link.js</code> (or double-click <b>Connect PS-PhilGEPS</b> there).{' '}
           <button onClick={onCancel} className="underline underline-offset-2">Cancel</button>
         </span>
+      </Notice>
+    );
+  }
+  // PhilGEPS ended the shared log-in (the 5-minute keep-alive noticed): nothing new comes in until someone
+  // reconnects, which needs a person for the captcha
+  if (known && !connected) {
+    return (
+      <Notice tone="error">
+        <b>Reconnect PS-PhilGEPS:</b> PhilGEPS ended the log-in, so no new PS-PhilGEPS data comes in and the lists below
+        are from the last Sync. On a team laptop, press <b>Sync PS-PhilGEPS</b> and tick &ldquo;I&rsquo;m not a
+        robot&rdquo;; everything continues by itself after that.
       </Notice>
     );
   }
