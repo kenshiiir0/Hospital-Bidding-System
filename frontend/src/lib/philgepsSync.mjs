@@ -25,6 +25,10 @@ const LOGIN_ACTION = `${HOST}/GEPS/logInAction.aspx`;
 const LOGOUT_URL = `${HOST}/GEPS/LogoutRedirect.aspx`;
 // Members-only page: answers with a redirect to log-in.aspx once the session is closed
 const MEMBERS_URL = `${HOST}/GEPS/Tender/PendingTaskUI.aspx?EPSSubMenuID=45`;
+// The logged-in user's id ("<id>-<role>-<org>-..."; a redirect script when logged out), and the call PhilGEPS's
+// Log-out button makes before leaving (clears its record of the logged-in user)
+const USER_DETAILS_URL = `${HOST}/GEPS/responsewrite.aspx`;
+const CLEAR_LOCK_URL = (userId) => `${HOST}/p4_webservices/GEPSR3_Common_Service.asmx/ClearPassPhraseCached?userID=${userId}`;
 const NOTICE_URL = (ref) => `${HOST}/GEPS/Tender/BidNoticeAbstractUI.aspx?refID=${ref}&DirectFrom=OpenOpp&Type=category&BusCatID=99`;
 const ORDERED_URL = (ref) => `${HOST}/GEPS/Tender/ViewOrderAssocCompUI.aspx?directFrom=MyOpportunitiesUI&EPSSubMenuID=32&refID=${ref}`;
 const BASKET_URL = `${HOST}/GEPS/Tender/OrderBasketUI.aspx?ClickFrom=OpenOpp&OrginFrom=PendTask`;
@@ -303,19 +307,43 @@ async function refusalReason(session, url) {
   }
 }
 
-// Is the session closed? (the members page answers with a redirect to the log-in page)
+// One GET with exactly these cookies; the answer's cookies are NOT kept. The log-out and its check must use the
+// session's own cookies: following the log-out page to log-in.aspx hands out a fresh anonymous session, and a
+// check made with that one always looks logged out, even when PhilGEPS still holds our session.
+function fetchAs(cookie, url, headers = {}) {
+  return fetch(url, { redirect: 'manual', headers: { cookie, 'user-agent': USER_AGENT, ...headers }, signal: AbortSignal.timeout(30000) });
+}
+
+// The account's user id while these cookies are logged in (PhilGEPS's own pages read it from
+// responsewrite.aspx: "<user id>-<role>-<org>-..."), else null
+async function loggedInUserId(cookie) {
+  const res = await fetchAs(cookie, USER_DETAILS_URL);
+  if (/ErrorPage/i.test(res.headers.get('location') || '')) throw new Error('PhilGEPS showed its error page');
+  if (res.status !== 200) return null;
+  return /^\s*(\d+)-\d+-/.exec(await res.text())?.[1] || null;
+}
+
+// Is the session closed? Both with the session's own cookies: no user id any more, and the members page
+// answers with a redirect to the log-in page
 async function isLoggedOut(session) {
-  const res = await fetch(MEMBERS_URL, { redirect: 'manual', headers: { cookie: session.header(), 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(30000) });
+  const cookie = session.header();
+  if (await loggedInUserId(cookie)) return false;
+  const res = await fetchAs(cookie, MEMBERS_URL);
   const location = res.headers.get('location') || '';
   if (/ErrorPage/i.test(location)) throw new Error('PhilGEPS showed its error page');
   return /log-in\.aspx/i.test(location) || (res.status === 200 && /id="userName"/.test(await res.text()));
 }
 
-// Logs out and confirms it (5 tries, 5 s apart). Returns true when confirmed. Never throws.
+// Logs out the way PhilGEPS's own Log-out button does (logOut() in its pages): first
+// ClearPassPhraseCached for the user id (PhilGEPS's record of the logged-in user), then LogoutRedirect.aspx,
+// and confirms it with the session's own cookies (5 tries, 5 s apart). Returns true when confirmed. Never throws.
 export async function logout(session) {
+  const cookie = session.header();
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
-      await request(session, LOGOUT_URL).catch(() => {});
+      const userId = await loggedInUserId(cookie);
+      if (userId) await fetchAs(cookie, CLEAR_LOCK_URL(userId), { accept: 'application/json', 'content-type': 'application/json;charset=utf-8' }).catch(() => {});
+      await fetchAs(cookie, LOGOUT_URL).catch(() => {});
       if (await isLoggedOut(session)) return true;
     } catch {
       // PhilGEPS flickering: try again
