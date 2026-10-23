@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 // The dashboard's filter controls, shared by the PhilGEPS and PS-PhilGEPS pages (and every page added later),
 // so all filter bars look and behave the same. Never use a bare <select>, date or search input on a page:
-// use these.
+// use these. Dates use our own calendar (DatePicker), never the browser's date picker.
 
 const OPEN_EVENT = 'customselect:open';
 
@@ -221,21 +221,264 @@ export function CustomSelect({ label, value, onChange, options, defaultValue = '
   );
 }
 
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const CALENDAR_WIDTH = 288;
+
+// Dates are "YYYY-MM-DD" strings throughout (what the filters compare), built from local calendar days
+const pad = (n) => String(n).padStart(2, '0');
+const isoOf = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const dateOf = (iso) => new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+const addDays = (iso, n) => {
+  const d = dateOf(iso);
+  d.setDate(d.getDate() + n);
+  return isoOf(d);
+};
+const addMonths = (iso, n) => {
+  const d = dateOf(iso);
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + n);
+  // Stay on the same day, or the month's last day (Jan 31 + 1 month = Feb 28)
+  d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  return isoOf(d);
+};
+const todayIso = () => isoOf(new Date());
+const shortDate = (iso) => {
+  const d = dateOf(iso);
+  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+};
+
+function Arrow({ dir, double = false }) {
+  const path = dir === 'left' ? (double ? 'm11 5-5 5 5 5M16 5l-5 5 5 5' : 'm12.5 5-5 5 5 5') : double ? 'm9 5 5 5-5 5M4 5l5 5-5 5' : 'm7.5 5 5 5-5 5';
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+      <path d={path} />
+    </svg>
+  );
+}
+
 /**
- * "📅 Published from [date] to [date]" in one white pill. from / to are "YYYY-MM-DD" ('' = no limit).
- * The date fields themselves stay the browser's (its calendar and typing work everywhere).
+ * One date, picked on our own calendar (no browser date picker).
+ * @param {string} props.label           Read by screen readers ("Published from")
+ * @param {string} props.value           "YYYY-MM-DD" or '' (no limit)
+ * @param {(value: string) => void} props.onChange
+ * @param {string} [props.min] [props.max]  Days outside are greyed out and can't be picked
+ * @param {string} [props.rangeStart] [props.rangeEnd]  Shades the days between (the other end of a range)
+ */
+export function DatePicker({ label, value, onChange, min, max, rangeStart, rangeEnd, placeholder = 'Any date' }) {
+  const [open, setOpen] = useState(false);
+  // The day the keyboard is on; its month is the month shown (set when the calendar opens, in the browser:
+  // today's date must not be read while the page renders on the server)
+  const [cursor, setCursor] = useState(value);
+  const [place, setPlace] = useState({ up: false, left: 0 });
+  const root = useRef(null);
+  const trigger = useRef(null);
+  const id = useId();
+
+  const allowed = (iso) => (!min || iso >= min) && (!max || iso <= max);
+  const close = (refocus = true) => {
+    setOpen(false);
+    if (refocus) trigger.current?.focus();
+  };
+  const pick = (iso) => {
+    if (!allowed(iso)) return;
+    onChange(iso);
+    close();
+  };
+  const openCalendar = () => {
+    const start = value || (allowed(todayIso()) ? todayIso() : min || max || todayIso());
+    setCursor(start);
+    // Keep the calendar on screen: open upwards near the bottom, shift left near the right edge
+    const box = trigger.current?.getBoundingClientRect();
+    if (box) {
+      const overflowRight = box.left + CALENDAR_WIDTH - (window.innerWidth - 12);
+      setPlace({
+        up: window.innerHeight - box.bottom < 380 && box.top > 380,
+        left: overflowRight > 0 ? -Math.min(overflowRight, box.left - 12) : 0,
+      });
+    }
+    setOpen(true);
+    window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: id }));
+  };
+
+  // A click elsewhere, or another menu / calendar opening, closes this one
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => !root.current?.contains(e.target) && setOpen(false);
+    const onOther = (e) => e.detail !== id && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener(OPEN_EVENT, onOther);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener(OPEN_EVENT, onOther);
+    };
+  }, [open, id]);
+
+  // Keyboard focus follows the cursor day
+  useEffect(() => {
+    if (open) document.getElementById(`${id}-${cursor}`)?.focus();
+  }, [open, cursor, id]);
+
+  const onKeyDown = (e) => {
+    const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+    if (e.key in moves) setCursor((c) => addDays(c, moves[e.key]));
+    else if (e.key === 'PageUp' || e.key === 'PageDown') setCursor((c) => addMonths(c, (e.key === 'PageUp' ? -1 : 1) * (e.shiftKey ? 12 : 1)));
+    else if (e.key === 'Home') setCursor((c) => addDays(c, -dateOf(c).getDay()));
+    else if (e.key === 'End') setCursor((c) => addDays(c, 6 - dateOf(c).getDay()));
+    else if (e.key === 'Escape') close();
+    else return;
+    e.preventDefault();
+  };
+
+  // The six weeks shown (only while open): from the Sunday on or before the 1st of the cursor's month
+  const showing = open && cursor;
+  const shown = showing ? dateOf(cursor) : null;
+  const first = showing ? new Date(shown.getFullYear(), shown.getMonth(), 1) : null;
+  const days = showing ? Array.from({ length: 42 }, (_, i) => addDays(isoOf(first), i - first.getDay())) : [];
+  const month = shown?.getMonth();
+  const today = showing ? todayIso() : '';
+  const lo = rangeStart || value;
+  const hi = rangeEnd || value;
+
+  const navButton = 'flex h-7 w-7 items-center justify-center rounded-lg text-[#12769F] transition hover:bg-[#1EA0DA]/8';
+
+  return (
+    <span
+      ref={root}
+      className="relative inline-flex"
+      onBlur={(e) => !root.current?.contains(e.relatedTarget) && setOpen(false)}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        onClick={() => (open ? close() : openCalendar())}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`${label}: ${value ? shortDate(value) : placeholder}`}
+        className={`rounded-full px-2 py-0.5 text-xs font-medium transition hover:bg-[#1EA0DA]/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30 ${
+          open ? 'bg-[#1EA0DA]/10 text-[#12769F]' : value ? 'text-black' : 'text-black/46'
+        }`}
+      >
+        {value ? shortDate(value) : placeholder}
+      </button>
+
+      {showing && (
+        <div
+          role="dialog"
+          aria-label={label}
+          onKeyDown={onKeyDown}
+          style={{ left: place.left, width: CALENDAR_WIDTH }}
+          className={`absolute z-50 max-w-[calc(100vw-1.5rem)] rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl shadow-black/5 ${
+            place.up ? 'bottom-full mb-2' : 'top-full mt-2'
+          }`}
+        >
+          {/* Month and year */}
+          <div className="mb-2 flex items-center gap-1">
+            <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, -12))} aria-label="Previous year">
+              <Arrow dir="left" double />
+            </button>
+            <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, -1))} aria-label="Previous month">
+              <Arrow dir="left" />
+            </button>
+            <div className="flex-1 text-center text-sm font-semibold text-black" aria-live="polite">
+              {MONTHS_LONG[month]} {shown.getFullYear()}
+            </div>
+            <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, 1))} aria-label="Next month">
+              <Arrow dir="right" />
+            </button>
+            <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, 12))} aria-label="Next year">
+              <Arrow dir="right" double />
+            </button>
+          </div>
+
+          {/* Days */}
+          <div className="grid grid-cols-7 gap-y-0.5 text-center" role="grid">
+            {WEEKDAYS.map((w) => (
+              <div key={w} className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-black/46" role="columnheader">
+                {w}
+              </div>
+            ))}
+            {days.map((iso) => {
+              const d = dateOf(iso);
+              const inMonth = d.getMonth() === month;
+              const ok = allowed(iso);
+              const selected = iso === value;
+              const inRange = lo && hi && iso > lo && iso < hi;
+              const isToday = iso === today;
+              return (
+                <button
+                  key={iso}
+                  id={`${id}-${iso}`}
+                  type="button"
+                  role="gridcell"
+                  tabIndex={iso === cursor ? 0 : -1}
+                  aria-selected={selected}
+                  aria-disabled={!ok}
+                  aria-label={`${shortDate(iso)}${isToday ? ', today' : ''}`}
+                  onClick={() => pick(iso)}
+                  className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-xs transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA] ${
+                    selected
+                      ? 'bg-[#1EA0DA] font-semibold text-white'
+                      : !ok
+                        ? 'cursor-not-allowed text-black/20'
+                        : inRange
+                          ? 'bg-[#1EA0DA]/10 text-[#12769F] hover:bg-[#1EA0DA]/20'
+                          : isToday
+                            ? 'font-semibold text-[#12769F] ring-1 ring-inset ring-[#1EA0DA]/40 hover:bg-[#1EA0DA]/8'
+                            : inMonth
+                              ? 'text-black hover:bg-[#1EA0DA]/8'
+                              : 'text-black/30 hover:bg-[#1EA0DA]/8'
+                  }`}
+                >
+                  {d.getDate()}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Clear / Today */}
+          <div className="mt-2 flex items-center justify-between border-t border-[#E2E8F0] pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                onChange('');
+                close();
+              }}
+              className="rounded-lg px-2.5 py-1 text-xs font-medium text-black/62 transition hover:bg-[#1EA0DA]/6 hover:text-black"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => pick(today)}
+              disabled={!allowed(today)}
+              className="rounded-lg border border-[#1EA0DA]/25 px-2.5 py-1 text-xs font-semibold text-[#12769F] transition hover:bg-[#1EA0DA]/8 disabled:cursor-not-allowed disabled:border-[#E2E8F0] disabled:text-black/36"
+            >
+              Today
+            </button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
+ * "📅 Published  [Any date] to [Any date] ✕" in one pill; each date opens our calendar.
+ * from / to are "YYYY-MM-DD" ('' = no limit).
  */
 export function DateRangePill({ label, from, to, onFrom, onTo, className = '' }) {
-  const input = 'bg-transparent text-xs text-black focus:outline-none focus:text-[#12769F] cursor-pointer';
   const set = Boolean(from || to);
   return (
     <span
-      className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-[14px] border px-3.5 py-1.5 text-xs text-black transition focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 sm:inline-flex sm:rounded-full ${className} ${
+      className={`flex flex-wrap items-center gap-x-1 gap-y-1 rounded-[14px] border px-3.5 py-1 text-xs text-black transition focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 sm:inline-flex sm:rounded-full ${className} ${
         set ? 'border-[#1EA0DA] bg-[#1EA0DA]/5' : 'border-[#CBD5E1] bg-white hover:border-[#1EA0DA]'
       }`}
     >
       {/* Phones: "📅 Published" on its own line, then "from … to …" */}
-      <span className="flex basis-full items-center gap-1.5 sm:basis-auto">
+      <span className="flex basis-full items-center gap-1.5 sm:basis-auto sm:pr-1">
         <svg viewBox="0 0 20 20" fill="none" stroke="#12769F" strokeWidth="1.8" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
           <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
           <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
@@ -243,9 +486,9 @@ export function DateRangePill({ label, from, to, onFrom, onTo, className = '' })
         <span className="font-medium text-black/62">{label}</span>
       </span>
       <span className="text-black/46">from</span>
-      <input type="date" aria-label={`${label} from`} value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} className={input} />
+      <DatePicker label={`${label} from`} value={from} onChange={onFrom} max={to || undefined} rangeEnd={to || undefined} />
       <span className="text-black/46">to</span>
-      <input type="date" aria-label={`${label} to`} value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} className={input} />
+      <DatePicker label={`${label} to`} value={to} onChange={onTo} min={from || undefined} rangeStart={from || undefined} />
       {set && (
         <button
           type="button"

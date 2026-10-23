@@ -135,7 +135,7 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
 
 const MONTHS = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
 
-// "22-Oct-2026 12:00 AM" / "28-Sep-2026" -> "2026-10-22", comparable with <input type="date"> values
+// "22-Oct-2026 12:00 AM" / "28-Sep-2026" -> "2026-10-22", the format DatePicker gives
 function isoDay(text = '') {
   const m = /(\d{1,2})-([A-Za-z]{3})-(\d{4})/.exec(text);
   return m && MONTHS[m[2].toLowerCase()] ? `${m[3]}-${MONTHS[m[2].toLowerCase()]}-${m[1].padStart(2, '0')}` : null;
