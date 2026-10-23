@@ -10,6 +10,7 @@ import ScrapeProgress from '@/components/ScrapeProgress';
 import TenderDetails from '@/components/TenderDetails';
 import TypeBadge from '@/components/TypeBadge';
 import { philgepsType } from '@/lib/tenderType';
+import { activeTenders } from '@/lib/activeProducts';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
 import { philgepsTender } from '@/lib/opportunityWorkbook';
@@ -388,8 +389,10 @@ export default function Home() {
     };
   }, []);
 
+  // Only molecules still on the Product List (an archived one shows nowhere, before the stored matches catch up)
+  const ourBids = activeTenders(bids, products.length ? new Set(products) : null);
   // Drop every tender that requests an excluded product
-  const visibleBids = bids.filter(
+  const visibleBids = ourBids.filter(
     (bid) => !(bid.matched_molecules || []).some((name) => excluded.includes(name))
   );
 
@@ -403,7 +406,7 @@ export default function Home() {
 
   // How many loaded tenders request each product, shown next to it in the filter
   const tendersPerProduct = {};
-  for (const bid of bids) {
+  for (const bid of ourBids) {
     for (const name of bid.matched_molecules || []) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
   }
   const productQuery = productSearch.toLowerCase();
@@ -611,7 +614,7 @@ export default function Home() {
 
           {excluded.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-black/62">Leaving out ({bids.length - visibleBids.length} tenders hidden):</span>
+              <span className="text-black/62">Leaving out ({ourBids.length - visibleBids.length} tenders hidden):</span>
               {excluded.map((name) => (
                 <button
                   key={name}
@@ -673,7 +676,7 @@ export default function Home() {
 
       {selectedBid && (
         // The freshest copy of the open tender (the list reloads while a Sync saves each result)
-        <TenderDetails bid={bids.find((b) => b.id === selectedBid.id) || selectedBid} onClose={() => setSelectedBid(null)} />
+        <TenderDetails bid={ourBids.find((b) => b.id === selectedBid.id) || selectedBid} onClose={() => setSelectedBid(null)} />
       )}
       <ScrapeProgress job={syncView} raised={Boolean(autoView)} onDismiss={() => (localSync ? setLocalSync(null) : dismissFetch())} />
       <AutoFetchBar job={autoView} onDismiss={dismissFetch} />

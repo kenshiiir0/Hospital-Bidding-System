@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { matchesSearch } from '@/lib/psContext';
 import { downloadOpportunityWorkbook, oldestFirst, philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
+import { activePsData, activeTenders, loadActiveNames } from '@/lib/activeProducts';
 
 // One Excel export for both portals (PhilGEPS and PS-PhilGEPS), in the team's Opportunity sheet layout,
 // oldest published at the top and latest at the bottom.
@@ -20,7 +21,8 @@ const inRange = (published, from, to) => (!from || published >= from) && (!to ||
 async function loadPhilgepsTenders(search, from, to) {
   const { data, error } = await supabase.from('philgeps_opportunities').select('*').not('matched_molecules', 'eq', '{}');
   if (error) throw new Error(`Could not load PhilGEPS tenders: ${error.message}`);
-  return data.filter((bid) => philgepsMatchesSearch(search, bid)).map(philgepsTender).filter((t) => inRange(t.published, from, to));
+  const active = await loadActiveNames().catch(() => null);
+  return activeTenders(data, active).filter((bid) => philgepsMatchesSearch(search, bid)).map(philgepsTender).filter((t) => inRange(t.published, from, to));
 }
 
 // PS-PhilGEPS Bid Match: the last Sync's list, notices and document readings (as app/ps-philgeps/layout.js loads them)
@@ -30,7 +32,8 @@ export async function loadPsData() {
     supabase.from('ps_tender_analysis').select('ref, status, result'),
   ]);
   if (error) throw new Error(`Could not load PS-PhilGEPS data: ${error.message}`);
-  return { lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) };
+  const active = await loadActiveNames().catch(() => null);
+  return activePsData({ lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) }, active);
 }
 
 // Bid Match rows as export tenders; `rows` defaults to the rows that mention our products

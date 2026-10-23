@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
 import { SearchPill } from '@/components/FilterControls';
 import ScrapeProgress from '@/components/ScrapeProgress';
+import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 
 // Shared by the PS-PhilGEPS pages (Bid Match, My Opportunities, Award Notices), on the deployed dashboard
 // and on team computers alike:
@@ -33,14 +34,16 @@ export default function PsPhilgepsLayout({ children }) {
   const loadData = useCallback(async () => {
     // The lists + notices, and what was read in each tender's documents (ps_tender_analysis, filled by
     // the keep-alive call every 5 minutes, see lib/psDocs.mjs)
-    const [{ data: row, error }, { data: readings }] = await Promise.all([
+    const [{ data: row, error }, { data: readings }, active] = await Promise.all([
       supabase.from('ps_philgeps_snapshot').select('synced_at, lists, notices').eq('id', 'latest').maybeSingle(),
       supabase.from('ps_tender_analysis').select('ref, status, result, documents_read, error, analyzed_at'),
+      // Archived products show nowhere, even before the next Sync re-matches the notices
+      loadActiveNames().catch(() => null),
     ]);
     if (error) setRequestError(`Could not load PS-PhilGEPS data: ${error.message}`);
     else if (row) {
       const analysis = Object.fromEntries((readings || []).map((r) => [r.ref, r]));
-      setData({ syncedAt: row.synced_at, lists: row.lists, notices: row.notices, analysis });
+      setData(activePsData({ syncedAt: row.synced_at, lists: row.lists, notices: row.notices, analysis }, active));
     }
   }, []);
 

@@ -224,6 +224,9 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
   await saveStatus(supabase, job);
   try {
     const matchProducts = await loadMatcher();
+    // Products found in the documents count only while still on the list (archived ones drop out at once;
+    // the documents are read again at the next Sync, philgepsSync readKey)
+    const onList = (names) => (names || []).filter((name) => matchProducts.names.includes(name));
 
     // 1. The tender list: 5% to 40%
     const { tenders, complete, expectedPages } = await readTenderList(async (pageNo, pages, count) => {
@@ -268,7 +271,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
       const s = stored.get(t.ref_no);
       if (t.items_text == null && s) Object.assign(t, { items_text: s.items_text, abc_amount: s.abc_amount, details: s.details });
       const found = matchProducts.details(`${t.title}\n${t.items_text || ''}`);
-      t.matched_molecules = [...new Set([...found.matched, ...(t.details?.documents_products || [])])];
+      t.matched_molecules = [...new Set([...found.matched, ...onList(t.details?.documents_products)])];
       if (t.details) {
         const lines = (t.items_text || '')
           .split('\n')
@@ -336,7 +339,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
         items_text: t.items_text ?? null,
         abc_amount: t.abc_amount ?? null,
         details,
-        matched_molecules: [...new Set([...t.matched_molecules, ...(details?.documents_products || [])])],
+        matched_molecules: [...new Set([...t.matched_molecules, ...onList(details?.documents_products)])],
       };
     });
     for (let i = 0; i < rows.length; i += 200) {
