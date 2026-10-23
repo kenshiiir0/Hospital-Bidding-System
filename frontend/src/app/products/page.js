@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/authFetch';
 import { matchName } from '@/lib/products.mjs';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
+import { SegmentedTabs } from '@/components/FilterControls';
 
 // Our product list (table products): the B2B price list and the team's PRODUCT LIST, plus molecules added here. The
 // only list tenders on PhilGEPS and PS-PhilGEPS are screened against: a tender counts when it asks for the molecule
@@ -17,6 +18,9 @@ export default function ProductsPage() {
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState('');
   const [added, setAdded] = useState('');
+  const [view, setView] = useState('active');
+  const [archiving, setArchiving] = useState(null);
+  const [restoring, setRestoring] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -34,17 +38,79 @@ export default function ProductsPage() {
     Promise.resolve().then(load);
   }, [load]);
 
-  const query = search.trim().toLowerCase();
-  const rows = (products || []).filter((p) => !query || `${p.generic_name} ${p.brand_name} ${p.dosage} ${p.classification || ''}`.toLowerCase().includes(query));
-  const molecules = new Set((products || []).map((p) => matchName(p.generic_name))).size;
+  // Archive (after the confirmation window) or Restore one product
+  const setArchived = async (product, archived) => {
+    const res = await authFetch('/api/products', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: product.id, archived }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    const label = `${product.generic_name} (${product.brand_name}, ${product.dosage})`;
+    setAdded(
+      archived
+        ? `${label} was archived. From the next update and Sync on, tenders asking for it no longer count as ours. Restore it from Archived any time.`
+        : `${label} was restored. From the next update and Sync on, tenders asking for "${data.matchedAs}" ${product.dosage} count as ours again.`,
+    );
+    await load();
+  };
 
+  const restore = async (product) => {
+    setRestoring(product.id);
+    setError('');
+    try {
+      await setArchived(product, false);
+    } catch (e) {
+      setError(`Could not restore ${product.generic_name}: ${e.message}`);
+    }
+    setRestoring(null);
+  };
+
+  const active = (products || []).filter((p) => !p.archived_at);
+  const archived = (products || []).filter((p) => p.archived_at);
+  const shown = view === 'archived' ? archived : active;
+  const query = search.trim().toLowerCase();
+  const rows = shown.filter((p) => !query || `${p.generic_name} ${p.brand_name} ${p.dosage} ${p.classification || ''}`.toLowerCase().includes(query));
+  const molecules = new Set(active.map((p) => matchName(p.generic_name))).size;
+
+  const actionButton = 'whitespace-nowrap rounded-lg px-3 py-1 text-xs font-semibold transition-all disabled:opacity-60';
   const columns = [
     { label: 'Generic Name', title: true, render: (p) => p.generic_name },
     { label: 'Brand Name', render: (p) => p.brand_name },
     { label: 'Dosage', width: '10rem', render: (p) => p.dosage },
     { label: 'Dosage Form', render: (p) => p.dosage_form || '—' },
-    { label: 'Matched as', width: '9rem', render: (p) => <span className="rounded-full bg-[#61A644]/10 text-[#3F6F2C] px-2 py-0.5 text-xs">{matchName(p.generic_name)}</span> },
-    { label: 'Source', width: '7rem', render: (p) => SOURCES[p.source] || `Added${p.added_by ? ` by ${p.added_by.split('@')[0]}` : ''}` },
+    {
+      label: 'Matched as',
+      width: '9rem',
+      render: (p) => (
+        <span className={`rounded-full px-2 py-0.5 text-xs ${p.archived_at ? 'bg-[#E2E8F0]/60 text-black/46 line-through' : 'bg-[#61A644]/10 text-[#3F6F2C]'}`}>{matchName(p.generic_name)}</span>
+      ),
+    },
+    view === 'archived'
+      ? {
+          label: 'Archived',
+          width: '9rem',
+          render: (p) => (
+            <span className="text-xs text-black/62">
+              {new Date(p.archived_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {p.archived_by && <span className="block text-black/46">by {p.archived_by.split('@')[0]}</span>}
+            </span>
+          ),
+        }
+      : { label: 'Source', width: '7rem', render: (p) => SOURCES[p.source] || `Added${p.added_by ? ` by ${p.added_by.split('@')[0]}` : ''}` },
+    {
+      label: 'Actions',
+      width: '7rem',
+      nowrap: true,
+      render: (p) =>
+        p.archived_at ? (
+          <button type="button" onClick={() => restore(p)} disabled={restoring === p.id} className={`${actionButton} text-[#3F6F2C] hover:bg-[#61A644]/10`}>
+            {restoring === p.id ? 'Restoring…' : '↺ Restore'}
+          </button>
+        ) : (
+          <button type="button" onClick={() => setArchiving(p)} className={`${actionButton} text-black/62 hover:bg-[#1EA0DA]/8 hover:text-[#12769F]`}>
+            <ArchiveIcon className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
+            Archive
+          </button>
+        ),
+    },
   ];
 
   return (
@@ -55,7 +121,7 @@ export default function ProductsPage() {
             <h1 className="text-xl font-bold tracking-tight text-black">Product List</h1>
             <p className="text-xs text-black/62 mt-1">
               PhilGEPS and PS-PhilGEPS tenders count when they ask for one of these molecules in one of these dosages
-              {products ? ` · ${molecules} molecules, ${products.length} products` : ''}
+              {products ? ` · ${molecules} molecules, ${active.length} products` : ''}
             </p>
           </div>
           <button
@@ -78,28 +144,152 @@ export default function ProductsPage() {
             onAdded={(message) => {
               setAdding(false);
               setAdded(message);
+              setView('active');
               load();
             }}
           />
         )}
+        {archiving && (
+          <ArchiveProduct
+            product={archiving}
+            others={active.filter((p) => p.id !== archiving.id && matchName(p.generic_name) === matchName(archiving.generic_name))}
+            onCancel={() => setArchiving(null)}
+            onArchive={async () => {
+              await setArchived(archiving, true);
+              setArchiving(null);
+            }}
+          />
+        )}
 
-        <input
-          type="text"
-          placeholder="Search by generic name, brand, dosage or classification..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-[14px] px-4 py-3 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25 transition"
-        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SegmentedTabs
+            label="Show"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'active', label: 'Active', count: active.length },
+              { value: 'archived', label: 'Archived', count: archived.length },
+            ]}
+          />
+          <input
+            type="text"
+            placeholder="Search by generic name, brand, dosage or classification..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full flex-1 bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-[14px] px-4 py-3 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25 transition"
+          />
+        </div>
+
+        {view === 'archived' && archived.length > 0 && (
+          <p className="rounded-xl border border-[#E2E8F0] bg-[#1EA0DA]/[0.02] p-3.5 text-xs font-medium text-black/62">
+            Archived products are kept here but tenders are not screened for them. Restore one to count its tenders again.
+          </p>
+        )}
 
         {!products ? (
           <p className="py-12 text-center text-black/46">{error ? '' : 'Loading the product list...'}</p>
         ) : rows.length ? (
           <ResponsiveTable columns={columns} rows={rows} rowKey={(p) => p.id} />
         ) : (
-          <p className="py-12 text-center text-black/46">No product matches the search.</p>
+          <p className="py-12 text-center text-black/46">
+            {query ? 'No product matches the search.' : view === 'archived' ? 'Nothing is archived. Archive a product from the Active list to stop screening for it.' : 'No active products.'}
+          </p>
         )}
       </div>
     </div>
+  );
+}
+
+function ArchiveIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <rect x="3" y="4" width="18" height="5" rx="1.5" />
+      <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" />
+    </svg>
+  );
+}
+
+// The Archive confirmation window: what stops being screened for, and whether other dosages of the molecule stay
+function ArchiveProduct({ product, others, onCancel, onArchive }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const molecule = matchName(product.generic_name);
+
+  const archive = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await onArchive();
+    } catch (e) {
+      setError(e.message);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Archive product?"
+      subtitle="It stays on the list under Archived and can be restored any time."
+      busy={saving}
+      onClose={onCancel}
+      icon={<ArchiveIcon className="h-5 w-5" />}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="rounded-lg border border-[#CBD5E1] px-4 py-2 text-xs font-medium text-black/62 transition hover:bg-[#1EA0DA]/6 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button type="button" onClick={archive} disabled={saving} className="rounded-lg bg-[#1EA0DA] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1790C5] disabled:opacity-60">
+            {saving ? 'Archiving…' : 'Archive'}
+          </button>
+        </>
+      }
+    >
+      <section className="rounded-[14px] border border-[#E2E8F0] p-4">
+        <p className="text-base font-semibold text-black">{product.generic_name}</p>
+        <dl className="mt-2 grid grid-cols-[minmax(0,6.5rem)_1fr] gap-x-3 gap-y-1.5 text-xs">
+          <dt className="text-black/62">Brand Name</dt>
+          <dd className="font-medium text-black">{product.brand_name}</dd>
+          <dt className="text-black/62">Dosage</dt>
+          <dd className="font-medium text-black">{product.dosage}</dd>
+          {product.dosage_form && (
+            <>
+              <dt className="text-black/62">Dosage Form</dt>
+              <dd className="font-medium text-black">{product.dosage_form}</dd>
+            </>
+          )}
+        </dl>
+      </section>
+
+      <section className="rounded-[14px] border border-[#E2E8F0] bg-[#1EA0DA]/[0.02] p-4">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-black/62">What changes</h3>
+        <p className="flex flex-wrap items-center gap-1.5 text-sm text-black/62">
+          From the next update and Sync on, tenders asking for
+          <span className="rounded-full border border-[#61A644]/25 bg-[#61A644]/10 px-3 py-0.5 text-xs font-semibold text-[#3F6F2C]">{molecule}</span>
+          in
+          <span className="rounded-full border border-[#1EA0DA]/25 bg-[#1EA0DA]/8 px-3 py-0.5 text-xs font-semibold text-[#12769F]">{product.dosage}</span>
+          no longer count as ours.
+        </p>
+        <p className="mt-3 border-t border-[#E2E8F0] pt-3 text-xs text-black/62">
+          {others.length ? (
+            <>
+              <b className="text-black">{molecule}</b> stays on the list in {others.length === 1 ? '1 other product' : `${others.length} other products`}:{' '}
+              {others.map((p) => p.dosage).join(' · ')}
+            </>
+          ) : (
+            <>
+              This is the only active <b className="text-black">{molecule}</b> product, so {molecule} tenders will no longer be ours at all.
+            </>
+          )}
+        </p>
+      </section>
+
+      {error && <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">{error}</p>}
+    </Modal>
   );
 }
 
@@ -119,8 +309,8 @@ function AddMolecule({ products, onCancel, onAdded }) {
   ];
   const missing = fields.filter(([key]) => !form[key].trim());
   const molecule = form.generic_name.trim() ? matchName(form.generic_name) : '';
-  const onList = molecule ? products.filter((p) => matchName(p.generic_name) === molecule) : [];
-  const duplicate = onList.find((p) => same(p.generic_name, form.generic_name) && same(p.brand_name, form.brand_name) && same(p.dosage, form.dosage));
+  const onList = molecule ? products.filter((p) => !p.archived_at && matchName(p.generic_name) === molecule) : [];
+  const duplicate = products.find((p) => same(p.generic_name, form.generic_name) && same(p.brand_name, form.brand_name) && same(p.dosage, form.dosage));
 
   const save = async (e) => {
     e.preventDefault();
@@ -239,7 +429,9 @@ function AddMolecule({ products, onCancel, onAdded }) {
 
       {duplicate && (
         <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">
-          This molecule with that brand and dosage is already on the list.
+          {duplicate.archived_at
+            ? 'This molecule with that brand and dosage is archived. Restore it from the Archived tab instead.'
+            : 'This molecule with that brand and dosage is already on the list.'}
         </p>
       )}
       {error && <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">{error}</p>}

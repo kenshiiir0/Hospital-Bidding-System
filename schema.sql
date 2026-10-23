@@ -303,3 +303,7 @@ CREATE POLICY "dashboard can read" ON products FOR SELECT TO authenticated
     USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
 REVOKE ALL ON products FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON products FROM authenticated;
+-- Archive (Product List page, PATCH /api/products): an archived product is kept but no longer screened for;
+-- Restore brings it back. The matcher only reads rows with archived_at NULL (loadProducts).
+ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_by TEXT;

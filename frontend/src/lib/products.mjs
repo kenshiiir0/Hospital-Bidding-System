@@ -209,9 +209,12 @@ function admin() {
   return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-// Every product row, sorted by generic name
-export async function loadProducts(supabase = admin()) {
-  const { data, error } = await supabase.from('products').select('*').order('generic_name').order('brand_name');
+// Every product row, sorted by generic name. Archived products are left out (never screened for) unless
+// includeArchived (the Product List page's Archived tab).
+export async function loadProducts(supabase = admin(), { includeArchived = false } = {}) {
+  let query = supabase.from('products').select('*');
+  if (!includeArchived) query = query.is('archived_at', null);
+  const { data, error } = await query.order('generic_name').order('brand_name');
   if (error) throw new Error(`Our product list could not be loaded: ${error.message}`);
   return data;
 }

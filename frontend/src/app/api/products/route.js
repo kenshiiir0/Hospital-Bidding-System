@@ -8,15 +8,16 @@ function admin() {
 }
 
 // Our products (table products: the PRODUCT LIST plus Add Molecule). Default: the molecule names tenders are
-// matched by (the dashboard's exclusion filter, as before); ?rows=1: every row, for signed-in team members.
+// matched by (the dashboard's exclusion filter, as before); ?rows=1: every row, archived ones too, for signed-in
+// team members.
 export async function GET(request) {
   try {
-    const products = await loadProducts(admin());
     if (new URL(request.url).searchParams.get('rows')) {
       const { response } = await requireUser(request);
       if (response) return response;
-      return Response.json(products);
+      return Response.json(await loadProducts(admin(), { includeArchived: true }));
     }
+    const products = await loadProducts(admin());
     return Response.json([...new Set(products.map((p) => matchName(p.generic_name)))].sort((a, b) => a.localeCompare(b)));
   } catch (e) {
     return Response.json({ ok: false, error: e.message }, { status: 500 });
@@ -41,7 +42,30 @@ export async function POST(request) {
     .single();
   if (error) {
     const duplicate = error.code === '23505';
-    return Response.json({ ok: false, error: duplicate ? 'This molecule with that brand and dosage is already on the list.' : error.message }, { status: duplicate ? 409 : 500 });
+    const message = 'This molecule with that brand and dosage is already on the list (look in Archived too; Restore brings it back).';
+    return Response.json({ ok: false, error: duplicate ? message : error.message }, { status: duplicate ? 409 : 500 });
   }
   return Response.json({ ok: true, product: data, matchedAs: matchName(row.generic_name) }, { status: 201 });
+}
+
+// Archive / Restore: { id, archived: true | false }. An archived product stays in the table but tenders are no
+// longer screened for it from the next update and Sync on. The last active product can't be archived (the
+// matcher never screens against an empty list).
+export async function PATCH(request) {
+  const { user, response } = await requireUser(request);
+  if (response) return response;
+  const body = await request.json().catch(() => ({}));
+  const id = Number(body.id);
+  if (!Number.isInteger(id) || typeof body.archived !== 'boolean') return Response.json({ ok: false, error: 'Send { id, archived: true | false }.' }, { status: 400 });
+  const supabase = admin();
+  if (body.archived) {
+    const { count, error } = await supabase.from('products').select('id', { count: 'exact', head: true }).is('archived_at', null).neq('id', id);
+    if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+    if (!count) return Response.json({ ok: false, error: 'This is the last active product; add another before archiving it.' }, { status: 409 });
+  }
+  const change = body.archived ? { archived_at: new Date().toISOString(), archived_by: user.email } : { archived_at: null, archived_by: null };
+  const { data, error } = await supabase.from('products').update(change).eq('id', id).select().maybeSingle();
+  if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+  if (!data) return Response.json({ ok: false, error: 'That product is no longer on the list.' }, { status: 404 });
+  return Response.json({ ok: true, product: data, matchedAs: matchName(data.generic_name) });
 }
