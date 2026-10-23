@@ -2,6 +2,7 @@
 
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 
@@ -160,11 +161,11 @@ export default function TenderDetails({ bid, onClose }) {
             {/* The description first, else what the bid documents say (PhilGEPS's notice page has no schedule) */}
             <KeyValueList
               items={[
-                ['Pre-bid conference', d.pre_bid || fromDocs(bds.prebid_conference)],
-                ['Bid opening', d.bid_opening || fromDocs(bds.bid_opening)],
-                ['Submission deadline', fromDocs(bds.bid_submission_deadline)],
+                ['Pre-bid conference', d.pre_bid || fromDocs(bidDateText(bds.prebid_conference))],
+                ['Bid opening', d.bid_opening || fromDocs(bidDateText(bds.bid_opening))],
+                ['Submission deadline', fromDocs(bidDateText(bds.bid_submission_deadline))],
                 ['Closing', formatDateTime(bid.closing_date)],
-                ['Delivery period', d.delivery_period || fromDocs(bds.delivery_period)],
+                ['Delivery period', d.delivery_period || fromDocs(deliveryText(bds.delivery_period))],
                 ['Last updated', d.last_updated],
               ]}
               missing={documents.length ? 'Not in the notice or its documents' : 'Not on the notice page'}

@@ -9,6 +9,7 @@ import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, 
 import { usePsFilters } from '@/components/PsFilters';
 import { ProductChips as Products, SegmentedTabs } from '@/components/FilterControls';
 import { psRefOf } from '@/lib/opportunityWorkbook';
+import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { psTenders } from '@/lib/unifiedExport';
 import { useExportScope } from '@/lib/exportScope';
 import TypeBadge from '@/components/TypeBadge';
@@ -146,12 +147,12 @@ function ScheduleList({ schedule, reading }) {
     <KeyValueList
       missing="Not found"
       items={[
-        ['Pre-bid conference', pick(schedule?.prebid && [schedule.prebid, schedule.prebidVenue].filter(Boolean).join(' · '), bds.prebid_conference)],
+        ['Pre-bid conference', pick(schedule?.prebid && [schedule.prebid, schedule.prebidVenue].filter(Boolean).join(' · '), bidDateText(bds.prebid_conference))],
         ['Request for clarification', pick(schedule?.clarification)],
-        ['Bid opening', pick(schedule?.bidOpening, bds.bid_opening)],
-        ['Submission deadline', pick(schedule?.deadline, bds.bid_submission_deadline)],
+        ['Bid opening', pick(schedule?.bidOpening, bidDateText(bds.bid_opening))],
+        ['Submission deadline', pick(schedule?.deadline, bidDateText(bds.bid_submission_deadline))],
         ['Closing', pick(schedule?.closing)],
-        ['Delivery period', pick(null, bds.delivery_period)],
+        ['Delivery period', pick(null, deliveryText(bds.delivery_period))],
         ['Bid validity', pick(null, bds.bid_validity)],
         ['Bid security', pick(null, bds.bid_security)],
         ['Last updated', pick(schedule?.lastUpdated)],

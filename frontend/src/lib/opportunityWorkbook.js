@@ -8,6 +8,8 @@
 
 // Same Type as the dashboards' Type column
 import { philgepsType, psType } from './tenderType';
+// Bid dates and delivery period read in the bid documents, cut to the value alone
+import { bidDateText, deliveryText } from './bidDates';
 
 const COLUMNS = [
   // header, width, header font size
@@ -157,6 +159,7 @@ function moleculeRows(noticeItems, documentItems, productNames) {
 // A PhilGEPS tender (philgeps_opportunities row)
 export function philgepsTender(bid) {
   const d = bid.details || {};
+  const bds = d.documents_bid_data_sheet || {};
   const contact = splitContact(d.contact_info);
   return {
     type: philgepsType(d.notice_type).code,
@@ -165,9 +168,10 @@ export function philgepsTender(bid) {
     hospital: bid.procuring_entity || '',
     ref: bid.ref_no || '',
     molecules: moleculeRows(d.matched_items, d.documents_items, bid.matched_molecules || []),
-    preBid: d.pre_bid || '',
-    bidOpening: d.bid_opening || '',
-    deliveryPeriod: d.delivery_period || '',
+    // The notice's own dates, else what the bid documents say (as in View details)
+    preBid: d.pre_bid || bidDateText(bds.prebid_conference) || '',
+    bidOpening: d.bid_opening || bidDateText(bds.bid_opening) || '',
+    deliveryPeriod: d.delivery_period || deliveryText(bds.delivery_period) || '',
     lastUpdated: dmyTime(d.last_updated),
     closing: isoDateTime(bid.closing_date),
     contactName: d.contact_name || '',
@@ -186,9 +190,6 @@ function psDate(text) {
   const hour = m[4] ? (+m[4] % 12) + (m[6].toUpperCase() === 'PM' ? 12 : 0) : 0;
   return { iso: `${m[3]}-${String(MONTHS[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`, date: new Date(Date.UTC(+m[3], MONTHS[m[2].toLowerCase()] - 1, +m[1], hour, +(m[5] || 0))) };
 }
-// Text read from bid documents can run on (a whole delivery schedule); keep the cell to a readable hint
-const clip = (text, max = 200) => (text && text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text || '');
-
 
 // The PS-PhilGEPS notice number of a Bid Match row: its link to the notice page, else a numeric first cell
 export function psRefOf(row) {
@@ -214,9 +215,10 @@ export function psTender(row, headers, notice, reading) {
     hospital: cell('Agency name'),
     ref: psRefOf(row) || '',
     molecules: moleculeRows(null, done?.items, products),
-    preBid: [schedule.prebid, schedule.prebidVenue].filter(Boolean).join(' · ') || clip(bds.prebid_conference),
-    bidOpening: schedule.bidOpening || clip(bds.bid_opening),
-    deliveryPeriod: clip(bds.delivery_period),
+    // Date and time only, like the team's sheet (the venue is in View details)
+    preBid: schedule.prebid || bidDateText(bds.prebid_conference) || '',
+    bidOpening: schedule.bidOpening || bidDateText(bds.bid_opening) || '',
+    deliveryPeriod: deliveryText(bds.delivery_period) || '',
     lastUpdated: lastUpdated?.date || null,
     closing: psDate(cell('Closing Date'))?.date || null,
     contactName: '',
