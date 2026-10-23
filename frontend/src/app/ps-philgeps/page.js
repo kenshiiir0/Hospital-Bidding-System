@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsListTable from '@/components/PsListTable';
-import PsDetailsPanel, { PanelSection } from '@/components/PsDetailsPanel';
+import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import { usePsFilters } from '@/components/PsFilters';
+import { ProductChips as Products, SegmentedTabs } from '@/components/FilterControls';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
@@ -29,6 +30,7 @@ export default function BidMatchPage() {
       // Whether the Sync found and downloaded the notice's documents
       {
         label: 'Documents',
+        tabs: true,
         options: ['With documents', 'Without documents'],
         valuesOf: (row) => [noticeOf(row)?.documents?.length ? 'With documents' : 'Without documents'],
       },
@@ -57,25 +59,15 @@ export default function BidMatchPage() {
           )}
         </h2>
         {list && (
-          <div className="flex gap-2 text-xs font-medium">
-            {[
-              [true, `Our products (${ours.length})`],
-              [false, `All (${list.rows.length})`],
-            ].map(([value, label]) => (
-              <button
-                key={label}
-                onClick={() => setOnlyOurs(value)}
-                aria-pressed={onlyOurs === value}
-                className={`rounded-full border px-3.5 py-1.5 transition ${
-                  onlyOurs === value
-                    ? 'bg-[#1EA0DA] border-[#1EA0DA] text-white'
-                    : 'bg-white border-[#CBD5E1] text-black/62 hover:bg-[#1EA0DA]/6 hover:text-black'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedTabs
+            label="Which tenders"
+            value={onlyOurs}
+            onChange={setOnlyOurs}
+            options={[
+              { value: true, label: 'Our products', count: ours.length },
+              { value: false, label: 'All', count: list.rows.length },
+            ]}
+          />
         )}
       </div>
       {filters.bar}
@@ -100,13 +92,13 @@ export default function BidMatchPage() {
           wide
           onClose={() => setSelected(null)}
           lead={
-            <PanelSection title="Bidding dates">
+            <PanelSection title="Bidding dates" tone="blue">
               <ScheduleList schedule={noticeOf(selected)?.schedule} />
             </PanelSection>
           }
         >
-          <PanelSection title="Our products">
-            <Products names={productsOf(selected)} />
+          <PanelSection title="Our products" count={productsOf(selected).length} plain>
+            <ProductPills names={productsOf(selected)} />
           </PanelSection>
           <FromDocuments reading={readingOf(selected)} />
           <PanelSection title="Documents">
@@ -124,23 +116,18 @@ const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget 
 // Bidding dates read from the notice page by the Sync (psSync.mjs readSchedule); a missing one is
 // usually only in the bid documents (see "Bid data sheet")
 function ScheduleList({ schedule }) {
-  if (!schedule) return <span className="text-sm text-black/46">Not read yet (Sync again).</span>;
-  const items = [
-    ['Pre-bid conference', schedule.prebid],
-    ['Pre-bid venue', schedule.prebidVenue],
-    ['Bid opening', schedule.bidOpening],
-    ['Closing', schedule.closing],
-    ['Last updated', schedule.lastUpdated],
-  ];
+  if (!schedule) return <MissingTag>Not read yet (Sync again)</MissingTag>;
   return (
-    <dl className="grid grid-cols-[minmax(0,10rem)_1fr] gap-x-4 gap-y-2 text-sm">
-      {items.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-black/62">{label}</dt>
-          <dd className={value ? 'text-black break-words' : 'text-black/46'}>{value || 'Not on the notice page'}</dd>
-        </div>
-      ))}
-    </dl>
+    <KeyValueList
+      missing="Not on the notice page"
+      items={[
+        ['Pre-bid conference', schedule.prebid],
+        ['Pre-bid venue', schedule.prebidVenue],
+        ['Bid opening', schedule.bidOpening],
+        ['Closing', schedule.closing],
+        ['Last updated', schedule.lastUpdated],
+      ]}
+    />
   );
 }
 
@@ -161,20 +148,11 @@ function FromDocuments({ reading }) {
     <>
       <PanelSection title="Bid data sheet (from the documents)">
         {!reading ? (
-          <p className="text-sm text-black/46">The documents haven&rsquo;t been read yet (this happens within a few minutes of a Sync).</p>
+          <p className="text-xs text-black/46">The documents haven&rsquo;t been read yet (this happens within a few minutes of a Sync).</p>
         ) : reading.status !== 'done' ? (
-          <p className="text-sm text-black/46">{reading.error || 'Not read.'}</p>
+          <MissingTag>{reading.error || 'Not read'}</MissingTag>
         ) : (
-          <dl className="grid grid-cols-[minmax(0,10rem)_1fr] gap-x-4 gap-y-2 text-sm">
-            {BDS_FIELDS.map(([label, key]) => (
-              <div key={key} className="contents">
-                <dt className="text-black/62">{label}</dt>
-                <dd className={reading.result.bid_data_sheet[key] ? 'text-black break-words' : 'text-black/46'}>
-                  {reading.result.bid_data_sheet[key] || 'Not found'}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <ChecklistList items={BDS_FIELDS.map(([label, key]) => [label, reading.result.bid_data_sheet[key]])} />
         )}
         {scanned.length > 0 && (
           <p className="text-xs text-black/46 mt-2">
@@ -233,16 +211,6 @@ function refOf(row) {
   return /^\d+$/.test(row.cells[0]) ? row.cells[0] : null;
 }
 
-function Products({ names }) {
-  if (!names?.length) return <span className="text-black/46">—</span>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {names.map((n) => (
-        <span key={n} className="rounded-full bg-[#61A644]/10 text-[#3F6F2C] px-2 py-0.5 text-xs">{n}</span>
-      ))}
-    </div>
-  );
-}
 
 function Documents({ ref_, notice }) {
   if (!notice) return <span className="text-black/46">—</span>;

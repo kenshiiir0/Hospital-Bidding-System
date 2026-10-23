@@ -1,6 +1,6 @@
 'use client';
 
-import { SelectPill } from '@/components/FilterControls';
+import { CustomSelect } from '@/components/FilterControls';
 
 export const PAGE_SIZES = [25, 50, 100];
 
@@ -29,14 +29,17 @@ export default function Pagination({ page, pageSize, total, onPageChange, onPage
           Showing <span className="font-semibold text-black tabular-nums">{first}–{last}</span> of{' '}
           <span className="font-semibold text-black tabular-nums">{total}</span>
         </span>
-        <label className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           Rows per page
-          <SelectPill value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))}>
-            {PAGE_SIZES.map((size) => (
-              <option key={size} value={size}>{size}</option>
-            ))}
-          </SelectPill>
-        </label>
+          <CustomSelect
+            label="Rows per page"
+            showLabel={false}
+            value={pageSize}
+            defaultValue={pageSize}
+            onChange={onPageSizeChange}
+            options={PAGE_SIZES.map((size) => ({ value: size, label: String(size) }))}
+          />
+        </div>
       </div>
       {totalPages > 1 && (
         <nav aria-label="Pages" className="flex flex-wrap items-center gap-1.5">

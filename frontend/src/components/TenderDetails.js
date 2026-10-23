@@ -2,7 +2,7 @@
 
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
-import PsDetailsPanel, { PanelSection } from '@/components/PsDetailsPanel';
+import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -153,8 +153,8 @@ export default function TenderDetails({ bid, onClose }) {
               Full notice details have not been captured for this tender yet. The next automatic update (hourly, 6 AM–5 PM) reads them from PhilGEPS.
             </p>
           )}
-          <PanelSection title="Bidding dates">
-            <FactList
+          <PanelSection title="Bidding dates" tone="blue">
+            <KeyValueList
               items={[
                 ['Pre-bid conference', d.pre_bid],
                 ['Bid opening', d.bid_opening],
@@ -167,16 +167,8 @@ export default function TenderDetails({ bid, onClose }) {
         </>
       }
     >
-      <PanelSection title="Our products">
-        {matched.length ? (
-          <div className="flex flex-wrap gap-1">
-            {matched.map((name) => (
-              <span key={name} className="rounded-full bg-[#61A644]/10 text-[#3F6F2C] px-2 py-0.5 text-xs">{name}</span>
-            ))}
-          </div>
-        ) : (
-          <span className="text-black/46">—</span>
-        )}
+      <PanelSection title="Our products" count={matched.length} plain>
+        <ProductPills names={matched} />
       </PanelSection>
 
       {/* Only the item lines that request our products */}

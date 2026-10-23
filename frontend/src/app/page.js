@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { DateRangePill } from '@/components/FilterControls';
+import { DateRangePill, DetailsButton, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
@@ -47,7 +47,7 @@ const SAVED_CIRCLE_STATES = new Set(['pick-up', 'closed', 'needs-payment', 'orde
 // Documents filter groups, by what the Sync found for the tender
 const DOC_GROUPS = [
   { key: 'all', label: 'All' },
-  { key: 'files', label: '📎 With documents' },
+  { key: 'files', label: 'With documents' },
   { key: 'pickup', label: 'Pick-up only' },
   { key: 'none', label: 'No documents yet' },
 ];
@@ -70,16 +70,6 @@ function readStoredExcluded() {
 // Pieces of a list row, in the PS-PhilGEPS pages' style (PsListTable): plain table cells, green product
 // pills, a documents count and an outlined "View details" button. The long tender title is in View details.
 
-function Products({ names }) {
-  if (!names?.length) return <span className="text-black/46">—</span>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {names.map((n) => (
-        <span key={n} className="rounded-full bg-[#61A644]/10 text-[#3F6F2C] px-2 py-0.5 text-xs">{n}</span>
-      ))}
-    </div>
-  );
-}
 
 
 function DocumentCount({ bid }) {
@@ -103,16 +93,6 @@ function RefLink({ bid }) {
   );
 }
 
-function DetailsButton({ onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="whitespace-nowrap rounded-md px-3 py-1 text-xs font-semibold text-[#12769F] hover:bg-[#1EA0DA]/6 hover:text-[#0E5C7C] transition"
-    >
-      View details
-    </button>
-  );
-}
 
 function Notice({ tone = 'info', children }) {
   const tones = {
@@ -136,6 +116,9 @@ function EmptyState({ children }) {
 
 const outlineButton =
   'inline-flex items-center justify-center gap-2 rounded-full border border-[#1EA0DA]/25 bg-white px-4 py-2 text-sm font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 disabled:text-black/46 disabled:border-[#E2E8F0] disabled:cursor-not-allowed transition';
+// Green call to action (Export)
+const greenButton =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/50 disabled:cursor-not-allowed transition';
 const fieldClass =
   'bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25';
 
@@ -479,7 +462,7 @@ export default function Home() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={exportBids} disabled={exporting || loading || filteredBids.length === 0} className={outlineButton}>
+            <button onClick={exportBids} disabled={exporting || loading || filteredBids.length === 0} className={greenButton}>
               {exporting ? <>Exporting <WorkingDots /></> : `⬇ Export to Excel (${filteredBids.length})`}
             </button>
             <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={outlineButton}>
@@ -513,41 +496,31 @@ export default function Home() {
                 · {visibleBids.length} mention our products · {productCount} of our products requested
               </span>
             </h2>
-            <div className="flex flex-wrap gap-1 rounded-full border border-[#CBD5E1] p-0.5 text-sm" role="tablist" aria-label="Documents">
-              {DOC_GROUPS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  role="tab"
-                  aria-selected={docFilter === key}
-                  onClick={() => {
-                    setDocFilter(key);
-                    setPage(1);
-                  }}
-                  className={`rounded-full px-3 py-1 transition ${docFilter === key ? 'bg-[#1EA0DA] text-white' : 'text-black/62 hover:text-black'}`}
-                >
-                  {label} <span className={`text-xs tabular-nums ${docFilter === key ? 'text-white/80' : 'text-black/46'}`}>{docCounts[key]}</span>
-                </button>
-              ))}
-            </div>
+            <SegmentedTabs
+              label="Documents"
+              value={docFilter}
+              onChange={(key) => {
+                setDocFilter(key);
+                setPage(1);
+              }}
+              options={DOC_GROUPS.map(({ key, label }) => ({ value: key, label, count: docCounts[key] }))}
+            />
           </div>
 
           {/* Search, products to leave out, published dates and order */}
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <input
-              type="text"
-              placeholder="Search reference no., title, hospital or molecule…"
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
+            <SearchPill
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
+              onChange={(value) => {
+                setSearch(value);
                 setPage(1);
               }}
-              className={`${fieldClass} flex-1 min-w-[16rem]`}
             />
             <button
               onClick={() => setShowExclusions(!showExclusions)}
               aria-expanded={showExclusions}
-              className={`rounded-full px-3 py-1.5 border transition ${
-                excluded.length ? 'bg-[#1EA0DA]/8 border-[#1EA0DA]/25 text-[#12769F]' : 'bg-white border-[#CBD5E1] text-black hover:bg-[#1EA0DA]/6'
+              className={`rounded-full px-3.5 py-1.5 border text-xs font-medium transition ${
+                excluded.length ? 'bg-[#1EA0DA]/5 border-[#1EA0DA] text-[#12769F] ring-2 ring-[#1EA0DA]/20' : 'bg-white border-[#CBD5E1] text-black hover:border-[#1EA0DA]'
               }`}
             >
               Exclude products{excluded.length ? ` (${excluded.length})` : ''} {showExclusions ? '▴' : '▾'}
@@ -571,22 +544,10 @@ export default function Home() {
                 setPage(1);
               }}
               title="Reverse the order of the list"
-              className="rounded-full px-3 py-1.5 border border-[#CBD5E1] bg-white text-black hover:bg-[#1EA0DA]/6 transition"
+              className="rounded-full px-3.5 py-1.5 border border-[#CBD5E1] bg-white text-xs font-medium text-black hover:border-[#1EA0DA] transition"
             >
               ⇅ {oldestFirst ? 'Oldest first' : 'Latest first'}
             </button>
-            {(dateFrom || dateTo) && (
-              <button
-                onClick={() => {
-                  setDateFrom('');
-                  setDateTo('');
-                  setPage(1);
-                }}
-                className="text-[#12769F] hover:text-[#0E5C7C] px-2 py-1.5 transition"
-              >
-                Clear dates
-              </button>
-            )}
           </div>
 
           {/* Products to leave out */}
@@ -659,7 +620,7 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {pageBids.map((bid, index) => (
-                    <tr key={bid.id || index} className="border-t border-[#E2E8F0] align-top">
+                    <tr key={bid.id || index} className="border-t border-[#E2E8F0] align-top bg-white hover:bg-[#1EA0DA]/6 transition-colors">
                       <td className="px-3 py-2">
                         <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
                       </td>

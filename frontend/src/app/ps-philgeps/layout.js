@@ -7,6 +7,7 @@ import WorkingDots from '@/components/WorkingDots';
 import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
+import { SearchPill } from '@/components/FilterControls';
 
 // Shared by the PS-PhilGEPS pages (Bid Match, My Opportunities, Award Notices), on the deployed dashboard
 // and on team computers alike:
@@ -158,21 +159,7 @@ export default function PsPhilgepsLayout({ children }) {
           {requestError && <Notice tone="error">{requestError}</Notice>}
           <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
           <SyncNotice sync={sync} />
-          <div className="flex items-center gap-2">
-            <input
-              type="search"
-              placeholder="Search reference no., title, hospital or molecule…"
-              aria-label="Search PS-PhilGEPS"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25"
-            />
-            {search && (
-              <button onClick={() => setSearch('')} className="rounded-full px-3 py-2 text-sm text-black/62 hover:text-black">
-                Clear
-              </button>
-            )}
-          </div>
+          <SearchPill value={search} onChange={setSearch} label="Search PS-PhilGEPS" />
           {children}
         </div>
       </div>

@@ -1,5 +1,7 @@
 'use client';
 
+import { DetailsButton, StatusBadge } from '@/components/FilterControls';
+
 // A PS-PhilGEPS list as read by ps-philgeps-sync.js ({ headers, rows: [{ cells, links }] }).
 // columns: the site's column names to show, in order (default: all but "Actions", PhilGEPS's Select
 // menu); the rest, like the long notice title, are in the details panel (onDetails). Links in a cell
@@ -28,10 +30,10 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
         </thead>
         <tbody>
           {rows.map((row, r) => (
-            <tr key={r} className="border-t border-[#E2E8F0] align-top">
-              {shown.map(({ i }) => (
+            <tr key={r} className="border-t border-[#E2E8F0] align-top bg-white hover:bg-[#1EA0DA]/6 transition-colors">
+              {shown.map(({ h, i }) => (
                 <td key={i} className="px-3 py-2.5">
-                  <Cell text={row.cells[i]} links={row.links} />
+                  {STATUS_COLUMN.test(h) ? <StatusBadge text={row.cells[i]} /> : <Cell text={row.cells[i]} links={row.links} />}
                 </td>
               ))}
               {extraColumns.map((c) => (
@@ -39,12 +41,7 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
               ))}
               {onDetails && (
                 <td className="px-3 py-2.5 text-right">
-                  <button
-                    onClick={() => onDetails(row)}
-                    className="whitespace-nowrap rounded-md px-3 py-1 text-xs font-semibold text-[#12769F] hover:bg-[#1EA0DA]/6 hover:text-[#0E5C7C] transition"
-                  >
-                    View details
-                  </button>
+                  <DetailsButton onClick={() => onDetails(row)} />
                 </td>
               )}
             </tr>
@@ -54,6 +51,9 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
     </div>
   );
 }
+
+// Status columns (Status, Status of Bid notice, Bid Submission Status, Award Acceptance) show a coloured pill
+const STATUS_COLUMN = /status|acceptance/i;
 
 // A cell whose whole text is one of the row's links (e.g. the notice number) becomes that link
 function Cell({ text = '', links = [] }) {
