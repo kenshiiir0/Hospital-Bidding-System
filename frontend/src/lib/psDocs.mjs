@@ -52,7 +52,7 @@ const num = (s) => Number(s.replace(/,/g, ''));
 // A delivery period after the amounts ("... 78,120.00 15 calendar days") is not part of the item
 const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
 
-function parseItemLine(fullLine) {
+export function parseItemLine(fullLine) {
   const line = fullLine.replace(DELIVERY_TAIL, '');
   const parsed = parseItemColumns(line);
   if (parsed.unit_price != null) return parsed;
