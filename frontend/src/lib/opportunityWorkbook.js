@@ -193,7 +193,8 @@ export function psTender(row, headers, notice, reading) {
 }
 
 export function buildOpportunitySheet(workbook, tenders) {
-  const ws = workbook.addWorksheet('Opportunity', { views: [{ state: 'frozen', ySplit: 2 }] });
+  // Opens at 64% like the team's Opportunity tab; at Excel's default 100% the large fonts look zoomed in
+  const ws = workbook.addWorksheet('Opportunity', { views: [{ state: 'frozen', ySplit: 2, zoomScale: 64, zoomScaleNormal: 64 }] });
   ws.columns = COLUMNS.map(([, width]) => ({ width }));
 
   // Row 1: title over D:G
