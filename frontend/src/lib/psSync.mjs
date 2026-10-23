@@ -209,23 +209,63 @@ function readSchedule(root) {
   };
 }
 
+// The notice's "View all activity" pop-up: PhilGEPS's own Schedule of activity, on every notice (pre-bid meeting
+// date or "Not Required", venue, clarification deadline, submission deadline, bid opening). Label -> value.
+async function readActivity(session, ref) {
+  const root = parse(await getPage(session, `${HOST}/Tenders/tender_shedule/${ref}`, { ajax: true }));
+  const rows = {};
+  for (const row of root.querySelectorAll('.table-row')) {
+    const [label, value] = row.querySelectorAll('.table-col-label, .table-col-value').map((c) => clean(c.text));
+    if (label && value) rows[label.replace(/\s*:$/, '')] = value;
+  }
+  return rows;
+}
+
+// The schedule fields shown on the dashboard, from the Schedule of activity (preferred) and the notice page
+function scheduleFrom(activity, page) {
+  const pick = (re) => Object.entries(activity).find(([label]) => re.test(label))?.[1] || null;
+  const prebidMeeting = pick(/^Pre-Bid Meeting$/i);
+  return {
+    ...page,
+    prebid: /not required/i.test(prebidMeeting || '') ? 'Not required' : pick(/^Pre-Bid Meeting Start/i) || page.prebid,
+    prebidVenue: pick(/^Pre-Bid Venue/i) || page.prebidVenue,
+    clarification: pick(/clarification/i),
+    deadline: pick(/Submission Deadline/i),
+    bidOpening: pick(/^Bid Opening Start/i) || page.bidOpening,
+    closing: page.closing || pick(/Submission Deadline/i),
+    published: pick(/Published Date/i),
+    activity,
+  };
+}
+
 async function readNotice(session, supabase, ref, matchMolecules) {
   const root = parse(await getPage(session, `${HOST}/tenders/viewBidNotice/${ref}`));
   // Line by line: our molecule in one of our dosages (products.mjs)
   const matched = matchMolecules(root.structuredText);
-  const schedule = readSchedule(root);
+  const activity = await readActivity(session, ref).catch((e) => {
+    if (e.code === 'NOT_CONNECTED') throw e;
+    return {};
+  });
+  const schedule = scheduleFrom(activity, readSchedule(root));
+  const errors = [];
 
-  // Documents "Preview" pop-up: its list is loaded from href_path
+  // Documents "Preview" pop-up: its list is loaded from href_path. An empty answer is asked again once (PhilGEPS
+  // sometimes answers empty while busy); still empty is noted, and the next Sync asks again.
   const links = new Set(root.querySelectorAll('a[href*="/portal_documents/"]').map((a) => absolute(a.getAttribute('href'))));
   for (const preview of root.querySelectorAll('a[href_path*="tender_doc_view"]')) {
-    const list = parse(await getPage(session, absolute(preview.getAttribute('href_path')), { ajax: true }));
-    for (const a of list.querySelectorAll('a[href*="/portal_documents/"]')) links.add(absolute(a.getAttribute('href')));
+    let found = [];
+    for (let attempt = 1; attempt <= 2 && !found.length; attempt++) {
+      if (attempt > 1) await new Promise((r) => setTimeout(r, 2000));
+      const list = parse(await getPage(session, absolute(preview.getAttribute('href_path')), { ajax: true }));
+      found = list.querySelectorAll('a[href*="/portal_documents/"]').map((a) => absolute(a.getAttribute('href')));
+    }
+    if (!found.length) errors.push('The Document Preview showed no files (asked twice); the next Sync asks again.');
+    for (const url of found) links.add(url);
   }
 
   const { data: stored } = await supabase.storage.from(BUCKET).list(ref, { limit: 1000 });
   const have = new Map((stored || []).map((f) => [f.name, f.metadata?.size]));
   const documents = [];
-  const errors = [];
   for (const url of links) {
     const name = decodeURIComponent(new URL(url).pathname.split('/').pop()).replace(/[<>:"/\\|?*]/g, '_');
     const key = storageName(name);

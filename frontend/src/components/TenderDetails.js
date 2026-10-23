@@ -102,6 +102,8 @@ function highlight(text, names) {
 // Documents, and the sections only PhilGEPS has (full description, supplements, contact person)
 export default function TenderDetails({ bid, onClose }) {
   const d = bid.details || {};
+  // Bid data sheet read from the downloaded documents (philgepsSync.mjs)
+  const bds = d.documents_bid_data_sheet || {};
   const matched = bid.matched_molecules || [];
   // Lines naming our products: from the notice's item list (scraper; missing until the next update) and from
   // the downloaded documents (Sync, philgepsSync.mjs), as in the PS-PhilGEPS molecule tracker
@@ -155,14 +157,17 @@ export default function TenderDetails({ bid, onClose }) {
             </p>
           )}
           <PanelSection title="Bidding dates" tone="blue">
+            {/* The description first, else what the bid documents say (PhilGEPS's notice page has no schedule) */}
             <KeyValueList
               items={[
-                ['Pre-bid conference', d.pre_bid],
-                ['Bid opening', d.bid_opening],
+                ['Pre-bid conference', d.pre_bid || fromDocs(bds.prebid_conference)],
+                ['Bid opening', d.bid_opening || fromDocs(bds.bid_opening)],
+                ['Submission deadline', fromDocs(bds.bid_submission_deadline)],
                 ['Closing', formatDateTime(bid.closing_date)],
+                ['Delivery period', d.delivery_period || fromDocs(bds.delivery_period)],
                 ['Last updated', d.last_updated],
               ]}
-              missing="Not on the notice page"
+              missing={documents.length ? 'Not in the notice or its documents' : 'Not on the notice page'}
             />
           </PanelSection>
         </>
@@ -303,5 +308,15 @@ function FactList({ items, missing }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+// A value read from the bid documents, marked as such (same marker as the PS-PhilGEPS panel)
+function fromDocs(text) {
+  if (!text) return null;
+  return (
+    <>
+      {text} <span className="ml-1 whitespace-nowrap rounded bg-[#61A644]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#3F6F2C]">from documents</span>
+    </>
   );
 }

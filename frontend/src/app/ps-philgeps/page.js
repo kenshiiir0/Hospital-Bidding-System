@@ -147,8 +147,9 @@ function ScheduleList({ schedule, reading }) {
       missing="Not found"
       items={[
         ['Pre-bid conference', pick(schedule?.prebid && [schedule.prebid, schedule.prebidVenue].filter(Boolean).join(' · '), bds.prebid_conference)],
+        ['Request for clarification', pick(schedule?.clarification)],
         ['Bid opening', pick(schedule?.bidOpening, bds.bid_opening)],
-        ['Submission deadline', pick(null, bds.bid_submission_deadline)],
+        ['Submission deadline', pick(schedule?.deadline, bds.bid_submission_deadline)],
         ['Closing', pick(schedule?.closing)],
         ['Delivery period', pick(null, bds.delivery_period)],
         ['Bid validity', pick(null, bds.bid_validity)],
