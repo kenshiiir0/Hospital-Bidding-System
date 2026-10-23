@@ -400,7 +400,10 @@ async function downloadItems(session, supabase, page, ref, orderNo, trail) {
 // Already-ordered route: null when PhilGEPS lists no order for this tender
 async function fromOrdered(session, supabase, ref, trail, step) {
   const list = await getPage(session, ORDERED_URL(ref));
-  const orders = postbackLinks(list.html).filter((l) => /dgOrderDoc/.test(l.target) && /^\d+$/.test(l.text));
+  // The grid links each order number more than once: open every order once
+  const orders = postbackLinks(list.html)
+    .filter((l) => /dgOrderDoc/.test(l.target) && /^\d+$/.test(l.text))
+    .filter((l, i, all) => all.findIndex((o) => o.text === l.text) === i);
   trail.push(`orders: ${orders.map((o) => o.text).join(', ') || 'none'}`);
   if (!orders.length) return null;
   step(40);
@@ -713,6 +716,8 @@ export async function runSyncRound() {
         continue;
       }
       const previous = o.details?.documents || [];
+      // One entry per stored file (the same file may come from more than one order)
+      result.documents = result.documents.filter((d, i, all) => all.findIndex((x) => x.path === d.path) === i);
       const names = new Set(result.documents.map((d) => d.name));
       let details = {
         ...(o.details || {}),
