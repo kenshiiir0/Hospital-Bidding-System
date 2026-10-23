@@ -5,6 +5,8 @@ import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel from '@/components/PsDetailsPanel';
 import { usePsFilters } from '@/components/PsFilters';
+import TypeBadge from '@/components/TypeBadge';
+import { psType } from '@/lib/tenderType';
 
 // My Opportunities: the notices the team already took up on PS-PhilGEPS, with their bid submission status
 export default function MyOpportunitiesPage() {
@@ -34,7 +36,16 @@ export default function MyOpportunitiesPage() {
         My Opportunities {list && <span className="text-sm font-normal text-black/62">· {rows.length} of {list.rows.length} shown</span>}
       </h2>
       {filters.bar}
-      <PsListTable list={list} rows={rows} empty="No My Opportunities data yet. Press Sync PS-PhilGEPS above." columns={COLUMNS} onDetails={setSelected} />
+      <PsListTable
+        list={list}
+        rows={rows}
+        empty="No My Opportunities data yet. Press Sync PS-PhilGEPS above."
+        columns={COLUMNS}
+        extraColumns={[
+          { label: 'Type', after: 'Notice Reference Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Mode of Procurement')])} /> },
+        ]}
+        onDetails={setSelected}
+      />
       {selected && (
         <PsDetailsPanel
           list={list}

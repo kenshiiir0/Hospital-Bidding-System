@@ -7,6 +7,8 @@ import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import ScrapeProgress from '@/components/ScrapeProgress';
 import TenderDetails from '@/components/TenderDetails';
+import TypeBadge from '@/components/TypeBadge';
+import { philgepsType } from '@/lib/tenderType';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
 import { philgepsTender } from '@/lib/opportunityWorkbook';
@@ -605,7 +607,7 @@ export default function Home() {
               <table className="w-full text-sm">
                 <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
                   <tr>
-                    {['#', 'Reference Number', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Our products', 'Remarks'].map((h) => (
+                    {['#', 'Reference Number', 'Type', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Our products', 'Remarks'].map((h) => (
                       <th key={h} className="px-3 py-2.5 font-semibold whitespace-nowrap">{h}</th>
                     ))}
                     <th className="px-3 py-2.5" aria-label="Details" />
@@ -618,6 +620,7 @@ export default function Home() {
                         <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap"><RefLink bid={bid} /></td>
+                      <td className="px-3 py-2.5"><TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} /></td>
                       <td className="px-3 py-2.5 min-w-[11rem]">{bid.procuring_entity || bid.title}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</td>
                       <td className="px-3 py-2.5">{formatDate(bid.publish_date) || '—'}</td>

@@ -6,6 +6,9 @@
 //     preBid, bidOpening, deliveryPeriod, lastUpdated: Date|text, closing: Date, contactName, designation,
 //     phone, email, address }
 
+// Same Type as the dashboards' Type column
+import { philgepsType, psType } from './tenderType';
+
 const COLUMNS = [
   // header, width, header font size
   ['Type', 9.5, 11],
@@ -60,8 +63,6 @@ const DATE_TIME_FORMAT = 'm/d/yy h:mm';
 const EMAIL = /^[^\s@<>"'()]+@[^\s@<>"'()]+\.[a-z]{2,}$/i;
 const PHONE = /^[\d\s()+\-/.,]{7,}(?:ext\.?\s*\d+)?$/i;
 
-// "Invitation to Bid (ITB)" -> "ITB"
-const noticeType = (type) => (type && (/\(([^)]+)\)\s*$/.exec(type)?.[1] || type)) || '';
 
 // "2026-10-20" -> "20/10/2026", written as text like the original sheet
 function dmy(value) {
@@ -123,7 +124,7 @@ export function philgepsTender(bid) {
   const d = bid.details || {};
   const contact = splitContact(d.contact_info);
   return {
-    type: noticeType(d.notice_type),
+    type: philgepsType(d.notice_type).code,
     solicitationNo: d.solicitation_no || '',
     published: bid.publish_date || '',
     hospital: bid.procuring_entity || '',
@@ -153,8 +154,6 @@ function psDate(text) {
 // Text read from bid documents can run on (a whole delivery schedule); keep the cell to a readable hint
 const clip = (text, max = 200) => (text && text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text || '');
 
-// PS mode of procurement -> the sheet's Type
-const psType = (mode = '') => (/public bidding/i.test(mode) ? 'ITB' : /small value|shopping|negotiated/i.test(mode) ? 'RFQ' : mode);
 
 // The PS-PhilGEPS notice number of a Bid Match row: its link to the notice page, else a numeric first cell
 export function psRefOf(row) {
@@ -174,7 +173,7 @@ export function psTender(row, headers, notice, reading) {
   // The notice's "closing" text sometimes runs on into "Date Last updated: 14-Oct-2026 09:11 AM ..."
   const lastUpdated = psDate(schedule.lastUpdated) || psDate(/Last updated:\s*([^\n]+)/i.exec(schedule.closing || '')?.[1]);
   return {
-    type: psType(cell('Mode of Procurement')),
+    type: psType(cell('Mode of Procurement')).code,
     solicitationNo: '',
     published: psDate(cell('Publish Date'))?.iso || '',
     hospital: cell('Agency name'),

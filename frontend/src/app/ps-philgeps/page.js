@@ -10,6 +10,8 @@ import { ProductChips as Products, SegmentedTabs } from '@/components/FilterCont
 import { psRefOf } from '@/lib/opportunityWorkbook';
 import { psTenders } from '@/lib/unifiedExport';
 import { useExportScope } from '@/lib/exportScope';
+import TypeBadge from '@/components/TypeBadge';
+import { psType } from '@/lib/tenderType';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
@@ -93,6 +95,7 @@ export default function BidMatchPage() {
         empty="No Bid Match data yet. Press Sync PS-PhilGEPS above."
         columns={LIST_COLUMNS}
         extraColumns={[
+          { label: 'Type', after: 'Notice Reference Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Mode of Procurement')])} /> },
           { label: 'Our products', render: (row) => <Products names={productsOf(row)} /> },
           { label: 'Remarks', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
         ]}

@@ -5,6 +5,8 @@ import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel from '@/components/PsDetailsPanel';
 import { usePsFilters } from '@/components/PsFilters';
+import TypeBadge from '@/components/TypeBadge';
+import { psType } from '@/lib/tenderType';
 
 // My Award Notices: awards the hospitals posted for us, with their acceptance status. Read only for now;
 // Accept / Refuse from here comes later, behind a confirmation step.
@@ -31,7 +33,16 @@ export default function AwardNoticesPage() {
         Award Notices {list && <span className="text-sm font-normal text-black/62">· {rows.length} of {list.rows.length} shown</span>}
       </h2>
       {filters.bar}
-      <PsListTable list={list} rows={rows} empty="No Award Notices data yet. Press Sync PS-PhilGEPS above." columns={COLUMNS} onDetails={setSelected} />
+      <PsListTable
+        list={list}
+        rows={rows}
+        empty="No Award Notices data yet. Press Sync PS-PhilGEPS above."
+        columns={COLUMNS}
+        extraColumns={[
+          { label: 'Type', after: 'Award Notice Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Procurement Mode')])} /> },
+        ]}
+        onDetails={setSelected}
+      />
       {selected && (
         <PsDetailsPanel
           list={list}

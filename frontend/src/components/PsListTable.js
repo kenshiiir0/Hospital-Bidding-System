@@ -5,13 +5,20 @@ import { DetailsButton, StatusBadge } from '@/components/FilterControls';
 // A PS-PhilGEPS list as read by ps-philgeps-sync.js ({ headers, rows: [{ cells, links }] }).
 // columns: the site's column names to show, in order (default: all but "Actions", PhilGEPS's Select
 // menu); the rest, like the long notice title, are in the details panel (onDetails). Links in a cell
-// open PhilGEPS in a new tab. extraColumns: [{ label, render(row) }] added after the site's columns.
+// open PhilGEPS in a new tab. extraColumns: [{ label, render(row), after? }] added after the site's columns,
+// or right after the site column named in `after`.
 export default function PsListTable({ list, rows = list?.rows || [], columns, extraColumns = [], onDetails, empty }) {
   if (!list) return <EmptyState>{empty}</EmptyState>;
   const indexOf = (name) => list.headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
-  const shown = (columns || list.headers.filter((h) => !/^actions?$/i.test(h)))
+  const siteColumns = (columns || list.headers.filter((h) => !/^actions?$/i.test(h)))
     .map((h) => ({ h, i: indexOf(h) }))
     .filter(({ i }) => i >= 0);
+  // One ordered list: site columns { h, i } with any extra column placed after its `after` column
+  const placed = (h) => extraColumns.filter((c) => c.after && c.after.toLowerCase() === h.toLowerCase());
+  const shown = [
+    ...siteColumns.flatMap((col) => [col, ...placed(col.h)]),
+    ...extraColumns.filter((c) => !c.after || !siteColumns.some(({ h }) => h.toLowerCase() === c.after.toLowerCase())),
+  ];
   if (!rows.length) return <EmptyState>Nothing to show.</EmptyState>;
 
   return (
@@ -19,11 +26,8 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
       <table className="w-full text-sm">
         <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
           <tr>
-            {shown.map(({ h, i }) => (
-              <th key={i} className="px-3 py-2.5 font-semibold">{h}</th>
-            ))}
-            {extraColumns.map((c) => (
-              <th key={c.label} className="px-3 py-2.5 font-semibold">{c.label}</th>
+            {shown.map((col) => (
+              <th key={col.render ? col.label : col.i} className="px-3 py-2.5 font-semibold">{col.render ? col.label : col.h}</th>
             ))}
             {onDetails && <th className="px-3 py-2.5" aria-label="Details" />}
           </tr>
@@ -31,14 +35,15 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
         <tbody>
           {rows.map((row, r) => (
             <tr key={r} className="border-t border-[#E2E8F0] align-top bg-white hover:bg-[#1EA0DA]/6 transition-colors">
-              {shown.map(({ h, i }) => (
-                <td key={i} className="px-3 py-2.5">
-                  {STATUS_COLUMN.test(h) ? <StatusBadge text={row.cells[i]} /> : <Cell text={row.cells[i]} links={row.links} />}
-                </td>
-              ))}
-              {extraColumns.map((c) => (
-                <td key={c.label} className="px-3 py-2.5">{c.render(row)}</td>
-              ))}
+              {shown.map((col) =>
+                col.render ? (
+                  <td key={col.label} className="px-3 py-2.5">{col.render(row)}</td>
+                ) : (
+                  <td key={col.i} className="px-3 py-2.5">
+                    {STATUS_COLUMN.test(col.h) ? <StatusBadge text={row.cells[col.i]} /> : <Cell text={row.cells[col.i]} links={row.links} />}
+                  </td>
+                )
+              )}
               {onDetails && (
                 <td className="px-3 py-2.5 text-right">
                   <DetailsButton onClick={() => onDetails(row)} />
