@@ -544,19 +544,20 @@ export function wantsDocuments(o) {
   );
 }
 
-const readKey = (documents) => `${READ_RULES}|${(documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
+// listKey: the product list's fingerprint (matcher.key), so a changed product list reads the documents again
+const readKey = (documents, listKey = '') => `${READ_RULES}|${listKey}|${(documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
 
 // Downloaded documents not read yet (or changed since): no PhilGEPS log-in needed
-export const needsReading = (o) => (o.details?.documents || []).some((d) => d.path) && o.details?.documents_read_key !== readKey(o.details.documents);
+export const needsReading = (o, listKey) => (o.details?.documents || []).some((d) => d.path) && o.details?.documents_read_key !== readKey(o.details.documents, listKey);
 
 // Reads a tender's downloaded documents (PDF, Word, Excel) for our products and returns the details fields
-// to store, plus matched_molecules (description matches + products found in the documents)
+// to store, plus matched_molecules (description matches with today's list + products found in the documents)
 export async function readTenderDocuments(supabase, matchProducts, o, details) {
   const outcome = await readDocuments(supabase, BUCKET, details.documents, matchProducts);
   const items = outcome.result?.items || [];
   const products = [...new Set(items.flatMap((i) => i.our_products))];
   return {
-    matched_molecules: [...new Set([...(o.matched_molecules || []), ...products])],
+    matched_molecules: [...new Set([...matchProducts(`${o.title || ''}\n${o.items_text || ''}`), ...products])],
     details: {
       ...details,
       documents_products: products,
@@ -565,7 +566,7 @@ export async function readTenderDocuments(supabase, matchProducts, o, details) {
       documents_read_note: outcome.status === 'done' ? null : outcome.error,
       // Pre-bid, bid opening, submission deadline, ... as written in the documents (the notice page has no schedule)
       documents_bid_data_sheet: outcome.result?.bid_data_sheet || null,
-      documents_read_key: readKey(details.documents),
+      documents_read_key: readKey(details.documents, matchProducts.key),
     },
   };
 }
@@ -633,7 +634,7 @@ export async function runSyncRound() {
   let loginSent = false;
   let more = false;
   try {
-    const { data, error } = await supabase.from('philgeps_opportunities').select('ref_no, publish_date, closing_date, matched_molecules, items_text, details');
+    const { data, error } = await supabase.from('philgeps_opportunities').select('ref_no, title, publish_date, closing_date, matched_molecules, items_text, details');
     if (error) throw new PhilgepsSyncError('DB', error.message);
     // Without the product list the documents are still downloaded, just not read
     const matchProducts = await optional(job, 'Loading our product list', () => loadMatcher());
@@ -641,7 +642,7 @@ export async function runSyncRound() {
     // Documents already downloaded but not read for our products yet: read them first (no log-in)
     if (job.round === 1 && matchProducts) {
       await optional(job, 'Reading downloaded documents', async () => {
-        const unread = data.filter(needsReading);
+        const unread = data.filter((o) => needsReading(o, matchProducts.key));
         for (const [i, o] of unread.entries()) {
           if (Date.now() - roundStarted > ROUND_MS / 2) break;
           job.stage = `Reading downloaded documents for our products (${i + 1} of ${unread.length})`;
@@ -729,7 +730,7 @@ export async function runSyncRound() {
       };
       // Our products are often only in the documents: read them now (PDF, Word, Excel)
       let matched = o.matched_molecules || [];
-      if (matchProducts && needsReading({ details })) {
+      if (matchProducts && needsReading({ details }, matchProducts.key)) {
         job.stage = `Reading the documents of ${o.ref_no} for our products`;
         await save();
         const update = await optional(job, `Reading the documents of ${o.ref_no}`, () => readTenderDocuments(supabase, matchProducts, o, details));

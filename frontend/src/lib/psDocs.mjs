@@ -12,7 +12,7 @@ import { extractText, getDocumentProxy } from 'unpdf';
 //   scraper.js); the raw line is always kept.
 // PDFs, Word (.docx) and Excel (.xlsx) files are read; a table row of a Word or Excel file becomes one line.
 // Scanned PDFs (no text layer) can't be read this way; they are listed in documents_read as "scanned".
-// A tender is read again only when its documents change or RULES_VERSION changes.
+// A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
 // rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
@@ -161,8 +161,8 @@ async function fileText(name, bytes) {
 
 // ---------- one tender ----------
 
-// Which documents changed since the last reading (and which rules read them)
-export const documentsKey = (notice) => `${RULES_VERSION}|${(notice.documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
+// Which documents changed since the last reading (and which rules and product list read them)
+export const documentsKey = (notice, listKey = '') => `${RULES_VERSION}|${listKey}|${(notice.documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
 
 function readTender(supabase, matchProducts, notice) {
   return readDocuments(supabase, BUCKET, notice.documents, matchProducts);
@@ -235,7 +235,7 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
   const known = new Map((done || []).map((r) => [r.ref, r.documents_key]));
   const queue = Object.entries(snap?.notices || {})
     .filter(([ref, n]) => (!only || only.includes(ref)) && n.documents?.some((d) => d.path))
-    .filter(([ref, n]) => known.get(ref) !== documentsKey(n))
+    .filter(([ref, n]) => known.get(ref) !== documentsKey(n, matchProducts.key))
     // Tenders that mention our products first
     .sort(([, a], [, b]) => (b.matched?.length || 0) - (a.matched?.length || 0));
 
@@ -259,7 +259,7 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
         result: outcome.result || null,
         documents_read: outcome.read || null,
         // A failed reading keeps no key, so the next run tries again
-        documents_key: outcome.status === 'failed' ? null : documentsKey(notice),
+        documents_key: outcome.status === 'failed' ? null : documentsKey(notice, matchProducts.key),
         error: outcome.error || null,
         model: RULES_VERSION,
         analyzed_at: new Date().toISOString(),

@@ -200,7 +200,17 @@ export function buildMatcher(products) {
   match.details = details;
   match.line = line;
   match.names = compiled.map((p) => p.name);
+  // Fingerprint of what is screened for (molecules and dosages). Saved document readings carry it, so adding,
+  // archiving or restoring a product has the documents read again (psDocs documentsKey, philgepsSync readKey).
+  match.key = fingerprint(JSON.stringify([...byName.values()].map((e) => [e.name, e.dosages.map((d) => JSON.stringify(d)).sort(), e.nameOnly]).sort()));
   return match;
+}
+
+// Short FNV-1a hash (no node:crypto: this file also runs in the browser)
+function fingerprint(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return `list-${(h >>> 0).toString(16)}`;
 }
 
 function admin() {
