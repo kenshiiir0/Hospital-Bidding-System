@@ -1,5 +1,7 @@
 'use client';
 
+import { SelectPill } from '@/components/FilterControls';
+
 export const PAGE_SIZES = [25, 50, 100];
 
 // Page numbers to show: always the first and last, the current one and its neighbours, '…' for the gaps
@@ -29,15 +31,11 @@ export default function Pagination({ page, pageSize, total, onPageChange, onPage
         </span>
         <label className="flex items-center gap-2">
           Rows per page
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="bg-white border border-[#CBD5E1] text-black rounded-full px-2.5 py-1 focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25"
-          >
+          <SelectPill value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))}>
             {PAGE_SIZES.map((size) => (
               <option key={size} value={size}>{size}</option>
             ))}
-          </select>
+          </SelectPill>
         </label>
       </div>
       {totalPages > 1 && (

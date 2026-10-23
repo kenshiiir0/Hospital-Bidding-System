@@ -13,9 +13,9 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
   if (!rows.length) return <EmptyState>Nothing to show.</EmptyState>;
 
   return (
-    <div className="rounded-[14px] border border-[#E2E8F0] overflow-x-auto">
+    <div className="bg-white rounded-[14px] border border-[#E2E8F0] overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="bg-[#1EA0DA]/5 text-left text-xs text-black/62">
+        <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
           <tr>
             {shown.map(({ h, i }) => (
               <th key={i} className="px-3 py-2.5 font-semibold">{h}</th>
@@ -41,7 +41,7 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
                 <td className="px-3 py-2.5 text-right">
                   <button
                     onClick={() => onDetails(row)}
-                    className="whitespace-nowrap rounded-full border border-[#1EA0DA]/25 px-3 py-1 text-xs font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 transition"
+                    className="whitespace-nowrap rounded-md px-3 py-1 text-xs font-semibold text-[#12769F] hover:bg-[#1EA0DA]/6 hover:text-[#0E5C7C] transition"
                   >
                     View details
                   </button>

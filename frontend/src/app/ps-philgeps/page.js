@@ -57,15 +57,20 @@ export default function BidMatchPage() {
           )}
         </h2>
         {list && (
-          <div className="flex gap-1 rounded-full border border-[#CBD5E1] p-0.5 text-sm">
+          <div className="flex gap-2 text-xs font-medium">
             {[
-              [true, 'Our products'],
-              [false, 'All'],
+              [true, `Our products (${ours.length})`],
+              [false, `All (${list.rows.length})`],
             ].map(([value, label]) => (
               <button
                 key={label}
                 onClick={() => setOnlyOurs(value)}
-                className={`rounded-full px-3 py-1 transition ${onlyOurs === value ? 'bg-[#1EA0DA] text-white' : 'text-black/62 hover:text-black'}`}
+                aria-pressed={onlyOurs === value}
+                className={`rounded-full border px-3.5 py-1.5 transition ${
+                  onlyOurs === value
+                    ? 'bg-[#1EA0DA] border-[#1EA0DA] text-white'
+                    : 'bg-white border-[#CBD5E1] text-black/62 hover:bg-[#1EA0DA]/6 hover:text-black'
+                }`}
               >
                 {label}
               </button>

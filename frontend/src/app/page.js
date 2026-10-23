@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { DateRangePill } from '@/components/FilterControls';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
@@ -106,7 +107,7 @@ function DetailsButton({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="whitespace-nowrap rounded-full border border-[#1EA0DA]/25 px-3 py-1 text-xs font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 transition"
+      className="whitespace-nowrap rounded-md px-3 py-1 text-xs font-semibold text-[#12769F] hover:bg-[#1EA0DA]/6 hover:text-[#0E5C7C] transition"
     >
       View details
     </button>
@@ -119,7 +120,7 @@ function Notice({ tone = 'info', children }) {
     error: 'border-[#B3312C]/25 bg-[#B3312C]/6 text-[#B3312C]',
   };
   return (
-    <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-[14px] border px-4 py-3 text-sm ${tones[tone]}`}>
+    <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-xl border p-3.5 text-xs font-medium ${tones[tone]}`}>
       {children}
     </div>
   );
@@ -488,7 +489,7 @@ export default function Home() {
               onClick={triggerSync}
               disabled={syncing}
               title="Log in to PhilGEPS and download the documents of the screened tenders (runs on the team computer). Public data updates by itself every hour, 6 AM to 5 PM."
-              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2 rounded-full text-sm font-medium transition"
+              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#1790C5] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2.5 rounded-lg text-xs font-semibold transition"
             >
               {syncView?.status === 'checking'
                 ? <>Checking PhilGEPS <WorkingDots /></>
@@ -551,32 +552,19 @@ export default function Home() {
             >
               Exclude products{excluded.length ? ` (${excluded.length})` : ''} {showExclusions ? '▴' : '▾'}
             </button>
-            <label className="flex items-center gap-1.5 text-black/62">
-              Published from
-              <input
-                type="date"
-                value={dateFrom}
-                max={dateTo || undefined}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  setPage(1);
-                }}
-                className={fieldClass}
-              />
-            </label>
-            <label className="flex items-center gap-1.5 text-black/62">
-              to
-              <input
-                type="date"
-                value={dateTo}
-                min={dateFrom || undefined}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  setPage(1);
-                }}
-                className={fieldClass}
-              />
-            </label>
+            <DateRangePill
+              label="Published"
+              from={dateFrom}
+              to={dateTo}
+              onFrom={(value) => {
+                setDateFrom(value);
+                setPage(1);
+              }}
+              onTo={(value) => {
+                setDateTo(value);
+                setPage(1);
+              }}
+            />
             <button
               onClick={() => {
                 setOldestFirst(!oldestFirst);
@@ -659,9 +647,9 @@ export default function Home() {
           ) : filteredBids.length === 0 ? (
             <EmptyState>Nothing to show.</EmptyState>
           ) : (
-            <div className="rounded-[14px] border border-[#E2E8F0] overflow-x-auto">
+            <div className="bg-white rounded-[14px] border border-[#E2E8F0] overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-[#1EA0DA]/5 text-left text-xs text-black/62">
+                <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
                   <tr>
                     {['#', 'Reference Number', 'Agency name', 'Approved Budget', 'Publish Date', 'Closing Date', 'Our products', 'Remarks'].map((h) => (
                       <th key={h} className="px-3 py-2.5 font-semibold whitespace-nowrap">{h}</th>

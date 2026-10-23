@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { DateRangePill, SelectPill } from '@/components/FilterControls';
 
 // Filters for a PS-PhilGEPS list (used with the search box from the layout):
 // - selects: [{ label, column }] picks one value of a PhilGEPS column (options = the values in the list),
@@ -54,18 +55,15 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
   };
 
   const active = Object.values(chosen).some(Boolean) || Object.values(ranges).some((r) => r.from || r.to);
-  const field =
-    'bg-white border border-[#CBD5E1] text-black rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25';
-
   const bar = list ? (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
+    <div className="flex flex-wrap items-center gap-2.5 text-xs">
       {selects.map((s, n) => (
-        <select
+        <SelectPill
           key={s.label}
           aria-label={s.label}
           value={chosen[s.label] || ''}
           onChange={(e) => setChosen((c) => ({ ...c, [s.label]: e.target.value }))}
-          className={`${field} max-w-[16rem]`}
+          className="max-w-[16rem]"
         >
           <option value="">{s.label}: all</option>
           {options[n].map((o) => (
@@ -73,36 +71,26 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
               {o}
             </option>
           ))}
-        </select>
+        </SelectPill>
       ))}
       {dates.map((d) => (
-        <span key={d.label} className="inline-flex items-center gap-1.5 text-black/62">
-          {d.label}
-          <input
-            type="date"
-            aria-label={`${d.label} from`}
-            value={ranges[d.label]?.from || ''}
-            onChange={(e) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], from: e.target.value } }))}
-            className={field}
-          />
-          to
-          <input
-            type="date"
-            aria-label={`${d.label} to`}
-            value={ranges[d.label]?.to || ''}
-            onChange={(e) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], to: e.target.value } }))}
-            className={field}
-          />
-        </span>
+        <DateRangePill
+          key={d.label}
+          label={d.label}
+          from={ranges[d.label]?.from || ''}
+          to={ranges[d.label]?.to || ''}
+          onFrom={(from) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], from } }))}
+          onTo={(to) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], to } }))}
+        />
       ))}
       {sorts.length > 0 && (
-        <select aria-label="Sort" value={sortIndex} onChange={(e) => setSortIndex(Number(e.target.value))} className={field}>
+        <SelectPill aria-label="Sort" value={sortIndex} onChange={(e) => setSortIndex(Number(e.target.value))}>
           {sorts.map((s, i) => (
             <option key={s.label} value={i}>
               ⇅ {s.label}
             </option>
           ))}
-        </select>
+        </SelectPill>
       )}
       {active && (
         <button
@@ -110,7 +98,7 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
             setChosen({});
             setRanges({});
           }}
-          className="rounded-full px-3 py-1.5 text-black/62 hover:text-black"
+          className="rounded-full px-3 py-2 font-medium text-[#12769F] hover:bg-[#1EA0DA]/6"
         >
           Clear filters
         </button>

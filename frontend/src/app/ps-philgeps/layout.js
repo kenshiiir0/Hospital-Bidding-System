@@ -143,7 +143,7 @@ export default function PsPhilgepsLayout({ children }) {
               onClick={pressSync}
               disabled={!sync || syncing || connecting || (syncAfterConnect && !connected)}
               title="Reads Bid Match (with notice details and documents), My Opportunities and Award Notices. Opens the PhilGEPS log-in first when it has ended."
-              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#12769F] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2 rounded-full text-sm font-medium transition"
+              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#1790C5] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2.5 rounded-lg text-xs font-semibold transition"
             >
               {syncing ? (
                 <>Syncing {sync.percent || 0}% <WorkingDots /></>
@@ -252,11 +252,11 @@ function SyncNotice({ sync }) {
 function Notice({ tone = 'info', children }) {
   const tones = {
     info: 'border-[#1EA0DA]/25 bg-[#1EA0DA]/6 text-[#12769F]',
-    success: 'border-[#61A644]/25 bg-[#61A644]/10 text-[#3F6F2C]',
+    success: 'border-[#61A644]/25 bg-[#61A644]/8 text-[#3F6F2C]',
     error: 'border-[#B3312C]/25 bg-[#B3312C]/6 text-[#B3312C]',
   };
   return (
-    <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-[14px] border px-4 py-3 text-sm ${tones[tone]}`}>
+    <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-xl border p-3.5 text-xs font-medium ${tones[tone]}`}>
       {children}
     </div>
   );
