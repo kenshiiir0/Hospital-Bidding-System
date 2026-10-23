@@ -261,11 +261,14 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
       await saveStatus(supabase, job);
     });
 
-    // 4. Our products: the description, plus what the Sync found in the documents
+    // 4. Our products: our molecule in one of our dosages, in the description (products.mjs), plus what the Sync
+    // found in the documents. A molecule named without our dosage (e.g. only in the title) is kept as
+    // named_without_dosage, so the Sync orders the documents to check the dosage there.
     for (const t of tenders) {
       const s = stored.get(t.ref_no);
       if (t.items_text == null && s) Object.assign(t, { items_text: s.items_text, abc_amount: s.abc_amount, details: s.details });
-      t.matched_molecules = [...new Set([...matchProducts(`${t.title}\n${t.items_text || ''}`), ...(t.details?.documents_products || [])])];
+      const found = matchProducts.details(`${t.title}\n${t.items_text || ''}`);
+      t.matched_molecules = [...new Set([...found.matched, ...(t.details?.documents_products || [])])];
       if (t.details) {
         const lines = (t.items_text || '')
           .split('\n')
@@ -273,10 +276,11 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
           .filter(Boolean);
         t.details = {
           ...t.details,
-          matched_items: lines.flatMap((line) => {
-            const products = matchProducts(line);
+          matched_items: lines.flatMap((line, i) => {
+            const products = matchProducts.line(line, lines.slice(i + 1, i + 3).join('\n'));
             return products.length ? [{ line, products, ...parseItemLine(line) }] : [];
           }),
+          named_without_dosage: found.undosed.filter((name) => !t.matched_molecules.includes(name)),
           ...extractSchedule(t.items_text),
         };
       }

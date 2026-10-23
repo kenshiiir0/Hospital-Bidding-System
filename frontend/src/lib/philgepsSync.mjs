@@ -48,7 +48,7 @@ const RECHECK_MS = 24 * 60 * 60 * 1000;
 // tender that doesn't name our products there gets its documents ordered and read too
 const DESCRIPTION_ITEMS_MIN = 1500;
 // Version of the document reading stored per tender (documents_read_key); a change reads them again
-const READ_RULES = 'read-3';
+const READ_RULES = 'read-4';
 // Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;
@@ -530,10 +530,15 @@ export function needsDocuments(o, now = Date.now()) {
 }
 export { RECHECK_MS };
 
-// Tenders whose documents the Sync orders: those naming our products, and those whose description has no
-// item list (our products can only be in the documents)
+// Tenders whose documents the Sync orders: those asking for our products, those naming one of our molecules
+// without our dosage in the description (the documents may give the dosage), and those whose description has
+// no item list (our products can only be in the documents)
 export function wantsDocuments(o) {
-  return (o.matched_molecules || []).length > 0 || (o.items_text || '').length < DESCRIPTION_ITEMS_MIN;
+  return (
+    (o.matched_molecules || []).length > 0 ||
+    (o.details?.named_without_dosage || []).length > 0 ||
+    (o.items_text || '').length < DESCRIPTION_ITEMS_MIN
+  );
 }
 
 const readKey = (documents) => `${READ_RULES}|${(documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;

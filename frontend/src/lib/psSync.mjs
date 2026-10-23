@@ -211,7 +211,8 @@ function readSchedule(root) {
 
 async function readNotice(session, supabase, ref, matchMolecules) {
   const root = parse(await getPage(session, `${HOST}/tenders/viewBidNotice/${ref}`));
-  const matched = matchMolecules(root.text);
+  // Line by line: our molecule in one of our dosages (products.mjs)
+  const matched = matchMolecules(root.structuredText);
   const schedule = readSchedule(root);
 
   // Documents "Preview" pop-up: its list is loaded from href_path

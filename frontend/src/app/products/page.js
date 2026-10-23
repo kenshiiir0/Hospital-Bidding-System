@@ -5,8 +5,11 @@ import { authFetch } from '@/lib/authFetch';
 import { matchName } from '@/lib/products.mjs';
 import ResponsiveTable from '@/components/ResponsiveTable';
 
-// Our product list (table products): the team's PRODUCT LIST plus molecules added here. The only list tenders on
-// PhilGEPS and PS-PhilGEPS are screened against; "Matched as" is the name the system looks for in tender text.
+// Our product list (table products): the B2B price list and the team's PRODUCT LIST, plus molecules added here. The
+// only list tenders on PhilGEPS and PS-PhilGEPS are screened against: a tender counts when it asks for the molecule
+// ("Matched as") in one of these dosages (lib/products.mjs).
+const SOURCES = { 'b2b-pricelist': 'B2B price list', 'product-list': 'Product list' };
+
 export default function ProductsPage() {
   const [products, setProducts] = useState(null);
   const [error, setError] = useState('');
@@ -40,7 +43,7 @@ export default function ProductsPage() {
     { label: 'Dosage', width: '10rem', render: (p) => p.dosage },
     { label: 'Dosage Form', render: (p) => p.dosage_form || '—' },
     { label: 'Matched as', width: '9rem', render: (p) => <span className="rounded-full bg-[#61A644]/10 text-[#3F6F2C] px-2 py-0.5 text-xs">{matchName(p.generic_name)}</span> },
-    { label: 'Source', width: '7rem', render: (p) => (p.source === 'product-list' ? 'Product list' : `Added${p.added_by ? ` by ${p.added_by.split('@')[0]}` : ''}`) },
+    { label: 'Source', width: '7rem', render: (p) => SOURCES[p.source] || `Added${p.added_by ? ` by ${p.added_by.split('@')[0]}` : ''}` },
   ];
 
   return (
@@ -50,7 +53,8 @@ export default function ProductsPage() {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-black">Product List</h1>
             <p className="text-xs text-black/62 mt-1">
-              The molecules PhilGEPS and PS-PhilGEPS tenders are screened for{products ? ` · ${molecules} molecules, ${products.length} products` : ''}
+              PhilGEPS and PS-PhilGEPS tenders count when they ask for one of these molecules in one of these dosages
+              {products ? ` · ${molecules} molecules, ${products.length} products` : ''}
             </p>
           </div>
           <button
@@ -118,7 +122,7 @@ function AddMolecule({ onCancel, onAdded }) {
       const res = await authFetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      onAdded(`${form.generic_name.trim()} (${form.brand_name.trim()}, ${form.dosage.trim()}) was added. Tenders are screened for "${data.matchedAs}" from the next update and Sync on.`);
+      onAdded(`${form.generic_name.trim()} (${form.brand_name.trim()}, ${form.dosage.trim()}) was added. From the next update and Sync on, tenders asking for "${data.matchedAs}" ${form.dosage.trim()} count as ours.`);
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -146,7 +150,8 @@ function AddMolecule({ onCancel, onAdded }) {
       </div>
       {form.generic_name.trim() && (
         <p className="text-xs text-black/62">
-          Tenders will be screened for <b className="text-[#3F6F2C]">{matchName(form.generic_name)}</b>.
+          Tenders asking for <b className="text-[#3F6F2C]">{matchName(form.generic_name)}</b>
+          {form.dosage.trim() ? ` ${form.dosage.trim()}` : ''} will count as ours (the dosage must match).
         </p>
       )}
       {error && <p className="text-sm text-[#B3312C]">{error}</p>}

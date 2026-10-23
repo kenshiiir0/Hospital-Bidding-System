@@ -15,8 +15,8 @@ import { extractText, getDocumentProxy } from 'unpdf';
 // A tender is read again only when its documents change or RULES_VERSION changes.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-6: our product list from table products (PRODUCT LIST tab + Add Molecule). rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-6';
+// rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-7';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -201,7 +201,8 @@ export async function readDocuments(supabase, bucket, documents, matchProducts) 
     pages.forEach((page, i) => {
       const lines = page.split('\n').map(clean);
       lines.forEach((line, n) => {
-        const products = matchProducts(line);
+        // Our molecule on this line in one of our dosages (the dosage may be on the next two lines)
+        const products = matchProducts.line(line, lines.slice(n + 1, n + 3).join('\n'));
         if (!products.length || line.length > 400) return;
         const key = line.toLowerCase();
         if (seen.has(key)) return;

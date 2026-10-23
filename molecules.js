@@ -1,4 +1,4 @@
-// Our registered products (from the CPR / CLIDP list), matched against tender text.
+// Our products by name only, for the office-PC scraper (the deployed system also checks the dosage: lib/products.mjs).
 // molecules.json is generated from table products (the team's PRODUCT LIST; add products with the dashboard's
 // Add Molecule). The deployed system reads the table itself (frontend/src/lib/products.mjs).
 const MOLECULES = require('./molecules.json');

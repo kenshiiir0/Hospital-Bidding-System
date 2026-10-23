@@ -277,8 +277,9 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON hospital_postings FROM authenticated;
 ALTER TABLE hospital_postings ADD COLUMN IF NOT EXISTS page_order INT;
 ALTER TABLE hospital_postings ADD COLUMN IF NOT EXISTS baseline BOOLEAN NOT NULL DEFAULT false;
 
--- Our products: the team's PRODUCT LIST (tab of PHILGEPS OPPORTUNITY.xlsx), the only source of what tenders are
--- screened for (frontend/src/lib/products.mjs turns each generic name into the name matched in tenders). One row
+-- Our products: the B2B price list (B2B PRICELIST AS OF 10_10_2026.xlsx) and the team's PRODUCT LIST (tab of
+-- PHILGEPS OPPORTUNITY.xlsx), the only source of what tenders are screened for: molecule AND dosage
+-- (frontend/src/lib/products.mjs). One row
 -- per generic / brand / dosage. Rows come from the list, or from the dashboard's Add Molecule (POST /api/products,
 -- secret key). Team members may read.
 CREATE TABLE IF NOT EXISTS products (
@@ -291,7 +292,7 @@ CREATE TABLE IF NOT EXISTS products (
     dosage_form TEXT,
     unit TEXT,
     pack_size TEXT,
-    source TEXT NOT NULL DEFAULT 'added',     -- product-list | added
+    source TEXT NOT NULL DEFAULT 'added',     -- b2b-pricelist | product-list | added
     added_by TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (generic_name, brand_name, dosage)
