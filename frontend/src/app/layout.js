@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Hospital Opportunity Radar",
+  title: "Hospital Opportunity System",
   description: "PhilGEPS Drugs and Medicines tenders for hospital bidding",
 };
 
