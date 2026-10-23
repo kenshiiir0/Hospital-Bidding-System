@@ -266,8 +266,9 @@ function Arrow({ dir, double = false }) {
  * @param {(value: string) => void} props.onChange
  * @param {string} [props.min] [props.max]  Days outside are greyed out and can't be picked
  * @param {string} [props.rangeStart] [props.rangeEnd]  Shades the days between (the other end of a range)
+ * @param {string} [props.prefix]        Shown before the date in its pill ("From")
  */
-export function DatePicker({ label, value, onChange, min, max, rangeStart, rangeEnd, placeholder = 'Any date' }) {
+export function DatePicker({ label, value, onChange, min, max, rangeStart, rangeEnd, prefix, placeholder = 'Any date', className = '' }) {
   const [open, setOpen] = useState(false);
   // The day the keyboard is on; its month is the month shown (set when the calendar opens, in the browser:
   // today's date must not be read while the page renders on the server)
@@ -358,9 +359,10 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
   return (
     <span
       ref={root}
-      className="relative inline-flex"
+      className={`relative inline-flex max-w-full ${className}`}
       onBlur={(e) => !root.current?.contains(e.relatedTarget) && setOpen(false)}
     >
+      {/* Its own pill, like the dropdowns: "📅 From: Any date ▾" */}
       <button
         ref={trigger}
         type="button"
@@ -368,11 +370,21 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`${label}: ${value ? shortDate(value) : placeholder}`}
-        className={`rounded-full px-2.5 py-1 text-xs font-medium transition hover:bg-[#1EA0DA]/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30 ${
-          open ? 'bg-[#1EA0DA]/10 text-[#12769F]' : value ? 'text-black' : 'text-black/46'
-        }`}
+        className={`inline-flex w-full min-w-0 items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium text-black transition ${
+          open || value
+            ? 'border-[#1EA0DA] bg-[#1EA0DA]/5 ring-2 ring-[#1EA0DA]/20'
+            : 'border-[#CBD5E1] bg-white hover:border-[#1EA0DA]'
+        } focus:outline-none focus-visible:border-[#1EA0DA] focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/20`}
       >
-        {value ? shortDate(value) : placeholder}
+        {/* Phones: no icon, so "To: Oct 17, 2026" fits half the row */}
+        <span className="hidden sm:inline-flex">
+          <CalendarIcon />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-left">
+          {prefix && <span className={value ? 'text-[#12769F]' : 'text-black/62'}>{prefix}: </span>}
+          <span className={value ? 'text-black' : 'text-black/46'}>{value ? shortDate(value) : placeholder}</span>
+        </span>
+        <Chevron open={open} />
       </button>
 
       {showing && (
@@ -522,30 +534,29 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
   );
 }
 
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="#12769F" strokeWidth="1.8" strokeLinecap="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
+      <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
+      <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
+    </svg>
+  );
+}
+
 /**
- * "📅 Published  [Any date] to [Any date] ✕" in one pill; each date opens our calendar.
- * from / to are "YYYY-MM-DD" ('' = no limit).
+ * "Published  [📅 From: Any date ▾] [📅 To: Any date ▾] Clear": a label and two separate date pills, each
+ * opening our calendar. from / to are "YYYY-MM-DD" ('' = no limit).
  */
 export function DateRangePill({ label, from, to, onFrom, onTo, className = '' }) {
   const set = Boolean(from || to);
   return (
-    <span
-      className={`flex flex-wrap items-center gap-x-1 gap-y-1 rounded-[14px] border px-3.5 py-1 text-xs text-black transition focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 sm:inline-flex sm:rounded-full ${className} ${
-        set ? 'border-[#1EA0DA] bg-[#1EA0DA]/5' : 'border-[#CBD5E1] bg-white hover:border-[#1EA0DA]'
-      }`}
-    >
-      {/* Phones: "📅 Published" on its own line, then "from … to …" */}
-      <span className="flex basis-full items-center gap-1.5 sm:basis-auto sm:pr-1">
-        <svg viewBox="0 0 20 20" fill="none" stroke="#12769F" strokeWidth="1.8" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
-          <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
-          <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
-        </svg>
-        <span className="font-medium text-black/62">{label}</span>
+    <span role="group" aria-label={`${label} dates`} className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs sm:inline-flex sm:flex-nowrap ${className}`}>
+      {/* Phones: the label (and ✕) on its own line, then the two pills side by side */}
+      <span className="flex-1 pl-1 font-medium text-black/62 sm:flex-none sm:pl-0">{label}</span>
+      <span className="order-last grid min-w-0 basis-full grid-cols-2 gap-2 sm:order-none sm:flex sm:basis-auto">
+        <DatePicker label={`${label} from`} prefix="From" value={from} onChange={onFrom} max={to || undefined} rangeEnd={to || undefined} />
+        <DatePicker label={`${label} to`} prefix="To" value={to} onChange={onTo} min={from || undefined} rangeStart={from || undefined} />
       </span>
-      <span className="text-black/46">from</span>
-      <DatePicker label={`${label} from`} value={from} onChange={onFrom} max={to || undefined} rangeEnd={to || undefined} />
-      <span className="text-black/46">to</span>
-      <DatePicker label={`${label} to`} value={to} onChange={onTo} min={from || undefined} rangeStart={from || undefined} />
       {set && (
         <button
           type="button"
@@ -554,7 +565,7 @@ export function DateRangePill({ label, from, to, onFrom, onTo, className = '' })
             onTo('');
           }}
           aria-label={`Clear ${label.toLowerCase()} dates`}
-          className="ml-0.5 rounded-full px-1 text-black/46 hover:text-[#12769F]"
+          className="rounded-full px-1.5 py-1 font-medium text-[#12769F] hover:bg-[#1EA0DA]/6"
         >
           ✕
         </button>
