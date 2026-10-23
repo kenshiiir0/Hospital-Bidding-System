@@ -183,7 +183,7 @@ export default function Home() {
   };
 
   // Initial load uses this directly after showing the cached list.
-  // Only tenders that mention our products (matched by the scraper from molecules.json).
+  // Only tenders that ask for our products in our dosages (matched_molecules, lib/products.mjs).
   const loadBids = async () => {
     const { data, error } = await supabase
       .from('philgeps_opportunities')
@@ -368,12 +368,15 @@ export default function Home() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'philgeps_opportunities' },
         (payload) => {
-          // A Sync saving a tender's documents: swap in the new row so its circle and details update at once
-          setBids((prevBids) =>
-            prevBids.some((bid) => bid.id === payload.new.id)
-              ? prevBids.map((bid) => (bid.id === payload.new.id ? payload.new : bid))
-              : prevBids
-          );
+          // A Sync saving a tender's documents: swap in the new row so its circle and details update at once.
+          // A tender that no longer asks for our products in our dosages (products.mjs) leaves the list, and one
+          // that newly does (e.g. found in its documents) joins it.
+          const ours = (payload.new.matched_molecules || []).length > 0;
+          setBids((prevBids) => {
+            const listed = prevBids.some((bid) => bid.id === payload.new.id);
+            if (!ours) return listed ? prevBids.filter((bid) => bid.id !== payload.new.id) : prevBids;
+            return listed ? prevBids.map((bid) => (bid.id === payload.new.id ? payload.new : bid)) : [payload.new, ...prevBids];
+          });
         }
       )
       .subscribe();
