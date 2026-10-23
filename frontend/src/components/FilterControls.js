@@ -272,6 +272,8 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
   // The day the keyboard is on; its month is the month shown (set when the calendar opens, in the browser:
   // today's date must not be read while the page renders on the server)
   const [cursor, setCursor] = useState(value);
+  // 'days', or 'months' after a click on the month name (jump to any month and year)
+  const [view, setView] = useState('days');
   const [place, setPlace] = useState({ up: false, left: 0 });
   const root = useRef(null);
   const trigger = useRef(null);
@@ -288,8 +290,10 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
     close();
   };
   const openCalendar = () => {
-    const start = value || (allowed(todayIso()) ? todayIso() : min || max || todayIso());
+    // An empty "to" opens on the "from" month (and the other way round), else on today
+    const start = value || rangeStart || rangeEnd || (allowed(todayIso()) ? todayIso() : min || max || todayIso());
     setCursor(start);
+    setView('days');
     // Keep the calendar on screen: open upwards near the bottom, shift left near the right edge
     const box = trigger.current?.getBoundingClientRect();
     if (box) {
@@ -318,10 +322,17 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
 
   // Keyboard focus follows the cursor day
   useEffect(() => {
-    if (open) document.getElementById(`${id}-${cursor}`)?.focus();
-  }, [open, cursor, id]);
+    if (open && view === 'days') document.getElementById(`${id}-${cursor}`)?.focus();
+  }, [open, cursor, view, id]);
 
   const onKeyDown = (e) => {
+    if (view === 'months') {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setView('days');
+      }
+      return;
+    }
     const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
     if (e.key in moves) setCursor((c) => addDays(c, moves[e.key]));
     else if (e.key === 'PageUp' || e.key === 'PageDown') setCursor((c) => addMonths(c, (e.key === 'PageUp' ? -1 : 1) * (e.shiftKey ? 12 : 1)));
@@ -357,7 +368,7 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`${label}: ${value ? shortDate(value) : placeholder}`}
-        className={`rounded-full px-2 py-0.5 text-xs font-medium transition hover:bg-[#1EA0DA]/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30 ${
+        className={`rounded-full px-2.5 py-1 text-xs font-medium transition hover:bg-[#1EA0DA]/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30 ${
           open ? 'bg-[#1EA0DA]/10 text-[#12769F]' : value ? 'text-black' : 'text-black/46'
         }`}
       >
@@ -369,32 +380,77 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
           role="dialog"
           aria-label={label}
           onKeyDown={onKeyDown}
+          // Focusable, so a click on an empty spot (month name, weekday row, gaps) keeps the calendar open
+          tabIndex={-1}
           style={{ left: place.left, width: CALENDAR_WIDTH }}
-          className={`absolute z-50 max-w-[calc(100vw-1.5rem)] rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl shadow-black/5 ${
+          className={`absolute z-50 max-w-[calc(100vw-1.5rem)] rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl shadow-black/5 focus:outline-none ${
             place.up ? 'bottom-full mb-2' : 'top-full mt-2'
           }`}
         >
-          {/* Month and year */}
+          {/* Month and year; the name opens the month / year chooser */}
           <div className="mb-2 flex items-center gap-1">
-            <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, -12))} aria-label="Previous year">
+            <button
+              type="button"
+              className={navButton}
+              onClick={() => setCursor((c) => addMonths(c, -12))}
+              aria-label="Previous year"
+            >
               <Arrow dir="left" double />
             </button>
-            <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, -1))} aria-label="Previous month">
-              <Arrow dir="left" />
+            {view === 'days' && (
+              <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, -1))} aria-label="Previous month">
+                <Arrow dir="left" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setView(view === 'days' ? 'months' : 'days')}
+              aria-label={view === 'days' ? 'Choose month and year' : 'Back to days'}
+              className="flex flex-1 items-center justify-center gap-1 rounded-lg py-1 text-sm font-semibold text-black transition hover:bg-[#1EA0DA]/8 hover:text-[#12769F]"
+            >
+              <span aria-live="polite">{view === 'days' ? `${MONTHS_LONG[month]} ${shown.getFullYear()}` : shown.getFullYear()}</span>
+              <Chevron open={view === 'months'} />
             </button>
-            <div className="flex-1 text-center text-sm font-semibold text-black" aria-live="polite">
-              {MONTHS_LONG[month]} {shown.getFullYear()}
-            </div>
-            <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, 1))} aria-label="Next month">
-              <Arrow dir="right" />
-            </button>
+            {view === 'days' && (
+              <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, 1))} aria-label="Next month">
+                <Arrow dir="right" />
+              </button>
+            )}
             <button type="button" className={navButton} onClick={() => setCursor((c) => addMonths(c, 12))} aria-label="Next year">
               <Arrow dir="right" double />
             </button>
           </div>
 
+          {/* Months of the shown year: pick one to see its days */}
+          {view === 'months' && (
+            <div className="grid grid-cols-3 gap-1.5 py-1">
+              {MONTHS_SHORT.map((name, m) => {
+                const firstDay = isoOf(new Date(shown.getFullYear(), m, 1));
+                const lastDay = isoOf(new Date(shown.getFullYear(), m + 1, 0));
+                const ok = (!min || lastDay >= min) && (!max || firstDay <= max);
+                const current = m === month;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    disabled={!ok}
+                    onClick={() => {
+                      setCursor((c) => addMonths(c, m - dateOf(c).getMonth()));
+                      setView('days');
+                    }}
+                    className={`rounded-lg py-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:text-black/20 ${
+                      current ? 'bg-[#1EA0DA] font-semibold text-white' : 'text-black hover:bg-[#1EA0DA]/8 hover:text-[#12769F]'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Days */}
-          <div className="grid grid-cols-7 gap-y-0.5 text-center" role="grid">
+          <div className={`${view === 'days' ? 'grid' : 'hidden'} grid-cols-7 gap-y-0.5 text-center`} role="grid">
             {WEEKDAYS.map((w) => (
               <div key={w} className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-black/46" role="columnheader">
                 {w}
@@ -405,7 +461,8 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
               const inMonth = d.getMonth() === month;
               const ok = allowed(iso);
               const selected = iso === value;
-              const inRange = lo && hi && iso > lo && iso < hi;
+              // The other end of the range counts too, so "to" shows where "from" is
+              const inRange = lo && hi && iso >= lo && iso <= hi;
               const isToday = iso === today;
               return (
                 <button
