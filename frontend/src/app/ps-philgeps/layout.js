@@ -184,7 +184,7 @@ export default function PsPhilgepsLayout({ children }) {
 
           {requestError && <Notice tone="error">{requestError}</Notice>}
           <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
-          <SyncNotice sync={sync} />
+          <SyncNotice sync={sync} ringShowing={Boolean(ringJob)} />
           <SearchPill value={search} onChange={setSearch} label="Search PS-PhilGEPS" />
           {children}
         </div>
@@ -256,11 +256,11 @@ function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
   return null;
 }
 
-function SyncNotice({ sync }) {
-  if (!sync || sync.status === 'idle') return null;
-  if (sync.status === 'running') return <Notice>{sync.stage || 'Starting'}</Notice>;
-  if (sync.status === 'failed') return <Notice tone="error">Sync failed: {sync.error}</Notice>;
-  return <Notice tone="success">{sync.stage}</Notice>;
+// Progress and results show in the bottom-left ring; this banner is only for a failed Sync the ring isn't
+// showing (e.g. it failed before this page was opened)
+function SyncNotice({ sync, ringShowing }) {
+  if (sync?.status !== 'failed' || ringShowing) return null;
+  return <Notice tone="error">Sync failed: {sync.error}</Notice>;
 }
 
 function Notice({ tone = 'info', children }) {
