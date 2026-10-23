@@ -199,29 +199,25 @@ const TYPES = { '.pdf': 'application/pdf', '.doc': 'application/msword', '.docx'
 // Same Storage key rule as tools/ps-publish.js
 const storageName = (name) => name.replace(/[^A-Za-z0-9._()-]/g, '_');
 
-// Key dates from a notice page. The right-hand column has labelled fields ("Prebid Conference:" then
-// "Date:" / "Venue:", "Closing Date:", "Date Last updated:"); the bid opening is usually only in the
+// Key dates from a notice page. The right-hand column has labelled fields ("Prebid Conference: Date: ...
+// Venue: ...", "Closing Date: ...", "Date Last updated: ..."); the bid opening is usually only in the
 // description ("BID OPENING : November 17, 2026", "Bid opening shall be on ..."), so it's taken from there.
+// The page writes its line breaks as "</br>", which the HTML parser doesn't treat as breaks, so all the
+// labels can come out on one line: values are read from the text right after each label, up to the next one.
 const DATE = String.raw`(?:[A-Z][a-z]+\.? \d{1,2},? \d{4}|\d{1,2}[- ][A-Za-z]{3,9}[- ]\d{4})(?:[ ,(]+(?:at )?\d{1,2}:\d{2} ?(?:[AaPp]\.?[Mm]\.?)?)?`;
+// PhilGEPS's own field format: "17-Nov-2026 09:30 AM"
+const FIELD_DATE = String.raw`\d{1,2}-[A-Za-z]{3}-\d{4}(?: \d{1,2}:\d{2} ?[AaPp][Mm])?`;
+const NEXT_LABEL = String.raw`(?=\s+(?:Closing Date|Date Last updated|Documents|Bid Form Fee|Bid Supplements|Published Date|Prebid Conference):|$)`;
 function readSchedule(root) {
-  const lines = root.structuredText.split('\n').map(clean).filter(Boolean);
-  const after = (label, from = 0) => {
-    const i = lines.findIndex((l, n) => n >= from && l.toLowerCase().startsWith(label.toLowerCase()));
-    if (i < 0) return { i: -1 };
-    const rest = clean(lines[i].slice(label.length));
-    return { i, value: rest || lines[i + 1] || null };
-  };
-  const prebid = after('Prebid Conference:');
-  const prebidDate = prebid.i >= 0 ? after('Date:', prebid.i) : { i: -1 };
-  const prebidVenue = prebid.i >= 0 ? after('Venue:', prebid.i) : { i: -1 };
-  const text = lines.join(' ');
+  const text = root.structuredText.split('\n').map(clean).filter(Boolean).join(' ');
+  const field = (re) => text.match(new RegExp(re, 'i'))?.[1]?.trim() || null;
   const inText = (words) => text.match(new RegExp(`${words}[^.]{0,60}?(${DATE})`, 'i'))?.[1] || null;
   return {
-    prebid: (prebidDate.i >= 0 && prebidDate.i - prebid.i <= 3 ? prebidDate.value : null) || inText('pre-?bid conference'),
-    prebidVenue: prebidVenue.i >= 0 && prebidVenue.i - prebid.i <= 5 ? prebidVenue.value : null,
+    prebid: field(String.raw`Prebid Conference:\s*Date:\s*(${FIELD_DATE})`) || inText('pre-?bid conference'),
+    prebidVenue: field(String.raw`Prebid Conference:\s*Date:\s*${FIELD_DATE}\s*Venue:\s*(.{1,200}?)${NEXT_LABEL}`),
     bidOpening: inText('(?:bid opening|opening of bids)'),
-    closing: after('Closing Date:').value || null,
-    lastUpdated: after('Date Last updated:').value || null,
+    closing: field(String.raw`Closing Date:\s*(${FIELD_DATE})`),
+    lastUpdated: field(String.raw`Date Last updated:\s*(${FIELD_DATE})`),
   };
 }
 

@@ -93,7 +93,7 @@ export default function BidMatchPage() {
           onClose={() => setSelected(null)}
           lead={
             <PanelSection title="Bidding dates" tone="blue">
-              <ScheduleList schedule={noticeOf(selected)?.schedule} />
+              <ScheduleList schedule={noticeOf(selected)?.schedule} reading={readingOf(selected)} />
             </PanelSection>
           }
         >
@@ -113,21 +113,35 @@ export default function BidMatchPage() {
 // The list shows the hospital; the long notice title, mode and classification are in View details
 const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Closing Date', 'Status'];
 
-// Bidding dates read from the notice page by the Sync (psSync.mjs readSchedule); a missing one is
-// usually only in the bid documents (see "Bid data sheet")
-function ScheduleList({ schedule }) {
-  if (!schedule) return <MissingTag>Not read yet (Sync again)</MissingTag>;
+// The top of View details, where the team looks first: every date and term needed to bid. Each comes from
+// the notice page (Sync, psSync.mjs readSchedule) or, when the notice page doesn't give it, from the bid
+// documents (psDocs.mjs bid data sheet, tagged "from documents"). The full sections stay further down.
+function ScheduleList({ schedule, reading }) {
+  if (!schedule && !reading) return <MissingTag>Not read yet (Sync again)</MissingTag>;
+  const bds = reading?.status === 'done' ? reading.result.bid_data_sheet : {};
+  const pick = (fromPage, fromDocs) => fromPage || (fromDocs && <FromDocs text={fromDocs} />) || null;
   return (
     <KeyValueList
-      missing="Not on the notice page"
+      missing="Not found"
       items={[
-        ['Pre-bid conference', schedule.prebid],
-        ['Pre-bid venue', schedule.prebidVenue],
-        ['Bid opening', schedule.bidOpening],
-        ['Closing', schedule.closing],
-        ['Last updated', schedule.lastUpdated],
+        ['Pre-bid conference', pick(schedule?.prebid && [schedule.prebid, schedule.prebidVenue].filter(Boolean).join(' · '), bds.prebid_conference)],
+        ['Bid opening', pick(schedule?.bidOpening, bds.bid_opening)],
+        ['Submission deadline', pick(null, bds.bid_submission_deadline)],
+        ['Closing', pick(schedule?.closing)],
+        ['Delivery period', pick(null, bds.delivery_period)],
+        ['Bid validity', pick(null, bds.bid_validity)],
+        ['Bid security', pick(null, bds.bid_security)],
+        ['Last updated', pick(schedule?.lastUpdated)],
       ]}
     />
+  );
+}
+
+function FromDocs({ text }) {
+  return (
+    <>
+      {text} <span className="ml-1 whitespace-nowrap rounded bg-[#61A644]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#3F6F2C]">from documents</span>
+    </>
   );
 }
 
