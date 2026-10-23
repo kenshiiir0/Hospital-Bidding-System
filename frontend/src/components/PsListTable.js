@@ -35,7 +35,13 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
           nowrap: /budget|amount/i.test(col.h),
           width: columnWidth(col.h),
           render: (row) =>
-            STATUS_COLUMN.test(col.h) ? <StatusBadge text={row.cells[col.i]} /> : <Cell text={row.cells[col.i]} links={row.links} />,
+            STATUS_COLUMN.test(col.h) ? (
+              <StatusBadge text={row.cells[col.i]} />
+            ) : /date/i.test(col.h) ? (
+              <DateCell text={row.cells[col.i]} />
+            ) : (
+              <Cell text={row.cells[col.i]} links={row.links} />
+            ),
         }
   );
 
@@ -45,7 +51,7 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
 // Table widths for the short columns; the rest (agency, title, products) share what is left
 function columnWidth(header) {
   if (/budget|amount/i.test(header)) return '8rem';
-  if (/date/i.test(header)) return '6.5rem';
+  if (/date/i.test(header)) return '7rem';
   if (/status|acceptance|type|mode/i.test(header)) return '7rem';
   if (/number|ref/i.test(header)) return '6.5rem';
   return undefined;
@@ -53,6 +59,22 @@ function columnWidth(header) {
 
 // Status columns (Status, Status of Bid notice, Bid Submission Status, Award Acceptance) show a coloured pill
 const STATUS_COLUMN = /status|acceptance/i;
+
+// "26-Sep-2026 09:00 AM": the date and the time each stay on one line (never "26-Sep-" / "2026")
+function DateCell({ text = '' }) {
+  const [day, ...time] = String(text).split(' ');
+  return (
+    <>
+      <span className="whitespace-nowrap">{day}</span>
+      {time.length > 0 && (
+        <>
+          {' '}
+          <span className="whitespace-nowrap">{time.join(' ')}</span>
+        </>
+      )}
+    </>
+  );
+}
 
 // A cell whose whole text is one of the row's links (e.g. the notice number) becomes that link
 function Cell({ text = '', links = [] }) {

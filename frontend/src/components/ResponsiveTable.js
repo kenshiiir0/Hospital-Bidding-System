@@ -47,7 +47,7 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
   return (
     <div ref={box} className="@container min-w-0">
       {/* Wide: a table */}
-      <div className={`${asTable ? 'block' : 'hidden'} rounded-[14px] border border-[#E2E8F0] bg-white`}>
+      <div className={`${asTable ? 'block' : 'hidden'} overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-white`}>
         <table className={`w-full table-fixed ${text}`}>
           <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
             <tr>

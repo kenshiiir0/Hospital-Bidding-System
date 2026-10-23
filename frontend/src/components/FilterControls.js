@@ -348,7 +348,13 @@ export function StatusBadge({ text }) {
       : POSITIVE.test(text)
         ? 'border-[#61A644] bg-[#61A644] text-white'
         : 'border-[#CBD5E1] bg-white text-black';
-  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${tone}`}>{text}</span>;
+  // Long statuses ("Pending for Acceptance") wrap inside the pill instead of spilling out of a narrow column
+  const long = text.length > 14;
+  return (
+    <span className={`inline-block max-w-full border px-2.5 py-0.5 text-[11px] font-semibold leading-snug ${long ? 'rounded-xl' : 'whitespace-nowrap rounded-full'} ${tone}`}>
+      {text}
+    </span>
+  );
 }
 
 /** The row's "View details" action. */
