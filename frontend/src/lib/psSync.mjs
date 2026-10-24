@@ -21,7 +21,12 @@ const LISTS = [
   { key: 'awards', label: 'Award Notices', url: `${HOST}/EventManagements/myAwardNotices` },
 ];
 const MAX_PAGES = 30;
-const NOTICES_AT_ONCE = 6;
+// Notices read at the same time (each needs 3 requests: page, Schedule of activity, Document Preview). At 6
+// PhilGEPS answered about half of them with near-empty pages (2026-10-24).
+const NOTICES_AT_ONCE = 3;
+// From the Sync's start, no new notice is started after this (the host stops the request at 300 s and the
+// result must be saved); notices not reached keep what the last Sync read, and the next Sync reads them
+const NOTICES_UNTIL_MS = 210 * 1000;
 const BUCKET = 'ps-documents';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
 // A Sync "running" for longer than this was cut off (server time limit) and may be started again
@@ -238,8 +243,18 @@ function scheduleFrom(activity, page) {
   };
 }
 
+// A notice page PhilGEPS answered in full: it names its reference number and has its closing date or its
+// Document Preview. A busy PhilGEPS sometimes sends the page frame without the notice.
+const noticeIsComplete = (root, ref) => root.structuredText.includes(ref) && (/closing date/i.test(root.structuredText) || Boolean(root.querySelector('a[href_path*="tender_doc_view"]')));
+
 async function readNotice(session, supabase, ref, matchMolecules) {
-  const root = parse(await getPage(session, `${HOST}/tenders/viewBidNotice/${ref}`));
+  let root;
+  for (let attempt = 1; ; attempt++) {
+    root = parse(await getPage(session, `${HOST}/tenders/viewBidNotice/${ref}`));
+    if (noticeIsComplete(root, ref)) break;
+    if (attempt >= 3) throw new PsSyncError('INCOMPLETE', 'PhilGEPS sent an incomplete notice page (asked 3 times).');
+    await new Promise((r) => setTimeout(r, 3000 * attempt));
+  }
   // Line by line: our molecule in one of our dosages (products.mjs)
   const matched = matchMolecules(root.structuredText);
   const activity = await readActivity(session, ref).catch((e) => {
@@ -360,14 +375,23 @@ export async function runSync() {
 
     const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))];
     const notices = {};
+    // A notice that can't be read this time (incomplete page, error, out of time) keeps what the last Sync read,
+    // marked, instead of being emptied
+    const { data: previous } = await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle();
+    const keepPrevious = (ref, why) => {
+      const last = previous?.notices?.[ref];
+      notices[ref] = last && !last.error ? { ...last, errors: [...(last.errors || []).filter((e) => !/^Not read this time/.test(e)), `Not read this time (${why}); showing the last Sync.`] } : { error: why };
+    };
     let done = 0;
     await inBatches(refs, NOTICES_AT_ONCE, async (ref) => {
-      try {
-        notices[ref] = await withSession(() => readNotice(session, supabase, ref, matchMolecules));
-      } catch (e) {
-        if (e.code === 'NOT_CONNECTED' || e.code === 'SITE_DOWN') throw e;
-        notices[ref] = { error: e.message };
-      }
+      if (Date.now() - syncStarted > NOTICES_UNTIL_MS) keepPrevious(ref, 'out of time; the next Sync reads it');
+      else
+        try {
+          notices[ref] = await withSession(() => readNotice(session, supabase, ref, matchMolecules));
+        } catch (e) {
+          if (e.code === 'NOT_CONNECTED' || e.code === 'SITE_DOWN') throw e;
+          keepPrevious(ref, e.message);
+        }
       done++;
       if (done % 10 === 0) await saveCookies();
       await progress(28 + (55 * done) / Math.max(refs.length, 1), `Notices and documents (${done} of ${refs.length})`);
@@ -379,31 +403,37 @@ export async function runSync() {
     if (error) throw new PsSyncError('DB', `Saving the result: ${error.message}`);
     await saveCookies();
 
+    const summarize = async (reading) => {
+      const { data: analyses } = await supabase.from('ps_tender_analysis').select('ref, result').in('ref', refs);
+      const inDocuments = new Set((analyses || []).filter((a) => a.result?.items?.length).map((a) => a.ref));
+      const ours = refs.filter((ref) => notices[ref]?.matched?.length || inDocuments.has(ref));
+      const onlyInDocuments = ours.filter((ref) => !notices[ref]?.matched?.length).length;
+      const files = Object.values(notices).reduce((sum, n) => sum + (n.documents?.length || 0), 0);
+      const notRead = Object.values(notices).filter((n) => (n.errors || []).some((e) => /^Not read this time/.test(e))).length;
+      const leftToRead = reading === undefined ? ' (reading the documents)' : reading?.left ? ` (${reading.left} tenders' documents still being read)` : '';
+      const stage =
+        `Done: ${lists.bidMatch.rows.length} bid matches (${ours.length} with our products, ${onlyInDocuments} found only in the documents), ` +
+        `${files} documents${leftToRead}, ${lists.opportunities.rows.length} opportunities, ${lists.awards.rows.length} award notices` +
+        (notRead ? ` · ${notRead} notices kept from the last Sync (PhilGEPS answered incompletely)` : '');
+      return { stage, details: { bid_matches: lists.bidMatch.rows.length, matching: ours.length, only_in_documents: onlyInDocuments, files, not_read: notRead, opportunities: lists.opportunities.rows.length, awards: lists.awards.rows.length } };
+    };
+
+    // The Sync is done once its lists and notices are saved: marked finished and in History now, so a slow
+    // document (e.g. a long OCR) that runs into the host's time limit can't leave it "running"
+    const first = await summarize(undefined);
+    await setStatus(supabase, { status: 'success', percent: 100, stage: first.stage, finished_at: new Date().toISOString() });
+    await logActivity({ event: 'ps-sync', status: 'success', by: started?.started_by, summary: first.stage, details: { duration_ms: tookMs(), ...first.details } });
+
     // Our products are often only in the documents (a notice titled "Drugs and Medicines" lists its items in
-    // the bid documents): read the new and changed documents now (psDocs.mjs)
-    await progress(85, 'Reading the documents for our products');
+    // the bid documents): read the new and changed documents now (psDocs.mjs), as time allows; the rest are read
+    // by the 5-minute keep-alive
     const reading = await analyzePending({
       maxMs: Math.max(0, READ_UNTIL_MS - (Date.now() - syncStarted)),
       refs,
-      onProgress: (n, total) => progress(85 + (12 * n) / Math.max(total, 1), `Reading the documents for our products (${n} of ${total})`),
+      onProgress: (n, total) => setStatus(supabase, { stage: `${first.stage} · reading the documents for our products (${n} of ${total})` }).catch(() => {}),
     }).catch(() => null);
-    const { data: analyses } = await supabase.from('ps_tender_analysis').select('ref, result').in('ref', refs);
-    const inDocuments = new Set((analyses || []).filter((a) => a.result?.items?.length).map((a) => a.ref));
-
-    const ours = refs.filter((ref) => notices[ref]?.matched?.length || inDocuments.has(ref));
-    const matching = ours.length;
-    const onlyInDocuments = ours.filter((ref) => !notices[ref]?.matched?.length).length;
-    const files = Object.values(notices).reduce((sum, n) => sum + (n.documents?.length || 0), 0);
-    const leftToRead = reading?.left ? ` (${reading.left} tenders' documents still being read)` : '';
-    const stage = `Done: ${lists.bidMatch.rows.length} bid matches (${matching} with our products, ${onlyInDocuments} found only in the documents), ${files} documents${leftToRead}, ${lists.opportunities.rows.length} opportunities, ${lists.awards.rows.length} award notices`;
-    await setStatus(supabase, { status: 'success', percent: 100, stage, finished_at: new Date().toISOString() });
-    await logActivity({
-      event: 'ps-sync',
-      status: 'success',
-      by: started?.started_by,
-      summary: stage,
-      details: { duration_ms: tookMs(), bid_matches: lists.bidMatch.rows.length, matching, only_in_documents: onlyInDocuments, files, opportunities: lists.opportunities.rows.length, awards: lists.awards.rows.length },
-    });
+    const { stage } = await summarize(reading);
+    await setStatus(supabase, { stage }).catch(() => {});
     return stage;
   } catch (e) {
     const fields = { status: 'failed', error: e.message, finished_at: new Date().toISOString() };
