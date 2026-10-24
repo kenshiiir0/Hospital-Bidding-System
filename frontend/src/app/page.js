@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { CustomSelect, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
-import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, plainAction } from '@/components/PageHeader';
+import PageHeader, { KpiRow, blueAction, pesoTotal, plainAction } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
 import { reportUnread, useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
-import { downloadOpportunityWorkbook, philgepsTender } from '@/lib/opportunityWorkbook';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
@@ -162,7 +161,6 @@ export default function Home() {
   const [scrapeError, setScrapeError] = useState('');
   const [products, setProducts] = useState([]);
   const [excluded, setExcluded] = useState([]);
-  const [exporting, setExporting] = useState(false);
   const [selectedBid, setSelectedBid] = useState(null);
   // Published-date range filter ("YYYY-MM-DD" from the date inputs; empty = no limit) and sort direction
   const [dateFrom, setDateFrom] = useState('');
@@ -507,17 +505,6 @@ export default function Home() {
         ? { tone: 'busy', text: loading ? 'Loading…' : 'Updating…' }
         : { tone: 'ok', text: `Connected · Updated ${updatedAt ? formatUpdatedAt(updatedAt) : ''}` };
 
-  // Download the listed tenders (after tabs, search and filters) as the team's Opportunity sheet
-  const exportListed = async () => {
-    setExporting(true);
-    try {
-      await downloadOpportunityWorkbook(filteredBids.map(philgepsTender));
-    } catch (err) {
-      setScrapeError(`Export failed: ${err.message}`);
-    }
-    setExporting(false);
-  };
-
   // Only the current page is drawn; the page is clamped in case the list shrank (realtime, reload)
   const totalPages = Math.max(1, Math.ceil(filteredBids.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -537,9 +524,6 @@ export default function Home() {
             <>
               <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={plainAction}>
                 {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
-              </button>
-              <button onClick={exportListed} disabled={exporting || loading || !filteredBids.length} title="The listed tenders as the team's Opportunity sheet" className={greenAction}>
-                {exporting ? <>Exporting <WorkingDots /></> : '↓ Export Excel'}
               </button>
               <button
                 onClick={triggerSync}
