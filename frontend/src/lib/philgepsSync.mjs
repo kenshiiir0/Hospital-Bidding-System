@@ -48,7 +48,8 @@ const RECHECK_MS = 24 * 60 * 60 * 1000;
 // tender that doesn't name our products there gets its documents ordered and read too
 const DESCRIPTION_ITEMS_MIN = 1500;
 // Version of the document reading stored per tender (documents_read_key); a change reads them again
-const READ_RULES = 'read-5';
+// read-6: misspelled names (lib/products.mjs)
+const READ_RULES = 'read-6';
 // Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;

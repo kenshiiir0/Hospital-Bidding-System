@@ -63,6 +63,53 @@ export function matchName(generic) {
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// ---------- typing errors ----------
+
+// Hospitals misspell names ("Rocorunium", "Epoeitin", "Loratidine", "Suggammadex"), so a word close enough to one
+// of our names counts as that name: one wrong, missing, extra or swapped letter in names of 6 to 8 letters, two
+// from 9 letters on. Shorter names and names of three words or more must be exact. The first letter must be
+// right, the dosage must still match, and a word at least as close to another real medicine (below) is that
+// medicine, not ours ("Cefexime" is Cefixime, not Cefepime).
+const LOOK_ALIKES = [
+  'cefixime', 'cefuroxime', 'cefotaxime', 'ceftazidime', 'ceftriaxone', 'cefalexin', 'cephalexin', 'cefaclor',
+  'cefdinir', 'cefpodoxime', 'cefoperazone', 'cefradine', 'cephradine', 'cefadroxil', 'ceftaroline',
+  'daunorubicin', 'epirubicin', 'vinblastine', 'vinorelbine', 'cisplatin', 'dacarbazine',
+  'desloratadine', 'levocetirizine', 'vecuronium', 'pancuronium', 'heparinoid', 'meropenem', 'imipenem', 'exemestane', 'midodrine', 'metolazone', 'methocarbamol', 'neomycin',
+];
+const typoLimit = (length) => (length >= 9 ? 2 : length >= 6 ? 1 : 0);
+
+// Edit distance with swapped neighbours counted as one (optimal string alignment); stops early above max
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let before = null;
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      let d = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (before && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d = Math.min(d, before[j - 2] + 1);
+      next.push(d);
+      best = Math.min(best, d);
+    }
+    if (best > max) return max + 1;
+    before = row;
+    row = next;
+  }
+  return row[b.length];
+}
+
+// The words of a line, letters only, with numbers split off ("Amlodipine5mg" -> amlodipine, mg)
+const wordsOf = (text) => String(text).toLowerCase().replace(/(\d)(?=[a-z])|([a-z])(?=\d)/g, '$1$2 ').match(/[a-z]+/g) || [];
+
+// Is `got` (one or more words) a misspelling of `term`, and not closer to another medicine?
+function misspelling(got, term) {
+  const limit = typoLimit(term.replace(/\s/g, '').length);
+  if (!limit || got === term || got[0] !== term[0]) return false;
+  const d = editDistance(got, term, limit);
+  return d <= limit && !LOOK_ALIKES.some((other) => other !== term && editDistance(got, other, d) <= d);
+}
+
 // ---------- dosages ----------
 
 const UNIT = {
@@ -166,7 +213,49 @@ export function buildMatcher(products) {
       ),
     };
   });
-  const names = (text) => compiled.filter(({ alternatives }) => alternatives.some((parts) => parts.every((re) => re.test(text))));
+  // Misspellings, word by word: every word of a name within its own limit ("IV infusion, SC" is not "infusion
+  // set": "sc" is too short to be misspelled). Single and two-word names only (no "a+b" combinations or long
+  // supplement names). Only names with the same first letter are compared, and each answer is kept, since
+  // tender texts repeat the same words.
+  const fuzzyTerms = [];
+  for (const entry of compiled) {
+    for (const term of [entry.name.toLowerCase(), ...(OTHER_NAMES[entry.name.toLowerCase()] || [])]) {
+      const parts = term.split(/[\s-]+/);
+      if (!term.includes('+') && !/\d/.test(term) && parts.length <= 2) fuzzyTerms.push({ entry, parts, whole: parts.join('') });
+    }
+  }
+  const answers = new Map();
+  const close = (word, part) => {
+    if (word === part) return true;
+    if (word[0] !== part[0]) return false;
+    const key = `${word}|${part}`;
+    if (!answers.has(key)) answers.set(key, misspelling(word, part));
+    return answers.get(key);
+  };
+  const misspelledNames = (words, exact) => {
+    const found = new Set();
+    for (const { entry, parts, whole } of fuzzyTerms) {
+      if (exact.includes(entry)) continue;
+      for (let i = 0; i < words.length && !found.has(entry); i++) {
+        if (words[i][0] !== whole[0]) continue;
+        if (parts.every((part, k) => words[i + k] && close(words[i + k], part))) found.add(entry);
+        // A stray space inside a one-word name ("Amlo dipine"): both pieces shorter than the name
+        else if (parts.length === 1 && words[i + 1] && words[i].length < whole.length - 1 && words[i + 1].length < whole.length - 1 && close(words[i] + words[i + 1], whole)) found.add(entry);
+      }
+    }
+    return found;
+  };
+  // Exact names first (also with numbers split off: "Amlodipine5mg"), then misspellings. The last line's answer
+  // is kept (details() asks twice per line).
+  let last = { text: null, found: [] };
+  const names = (text) => {
+    if (text === last.text) return last.found;
+    const spaced = String(text).replace(/([a-z])(?=\d)/gi, '$1 ');
+    const exact = compiled.filter(({ alternatives }) => alternatives.some((parts) => parts.every((re) => re.test(text)) || parts.every((re) => re.test(spaced))));
+    const misspelled = misspelledNames(wordsOf(text), exact);
+    last = { text, found: compiled.filter((entry) => exact.includes(entry) || misspelled.has(entry)) };
+    return last.found;
+  };
 
   const line = (text, next = '') => {
     if (!text) return [];

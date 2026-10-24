@@ -24,6 +24,11 @@ const products = [
   P('Blood Transfusion Set', '-', '-'),
   P('Iodine (as Iohexol)', '350mg'),
   P('Teriparatide [COLD CHAIN]', '20 mcg/80 mcL (600 mcg/2.4 ml)'),
+  P('Rocuronium', '10 mg/ml (50 mg/5 ml)'),
+  P('Loratadine', '10 mg'),
+  P('Epoetin Alfa', '4000 IU/0.4 ml'),
+  P('Sugammadex', '100 mg/ml (200 mg/2 ml)'),
+  P('Intravenous Infusion Set', '-', '-'),
 ];
 const match = buildMatcher(products);
 
@@ -45,6 +50,16 @@ const MUST_MATCH = [
   ['Blood transfusion set, adult', 'Blood Transfusion Set'],
   ['Iohexol 350 mg I/ml, 100 ml bottle', 'Iohexol'],
   ['Teriparatide 20 mcg/80 mcL pen', 'Teriparatide'],
+  // Typing errors in tenders (user, 2026-10-24): real lines from PhilGEPS
+  ['3 90 Vial (vial) Rocorunium 10mg/mL,5mL', 'Rocuronium'],
+  ['200 vial Rocoronium Bromide 50 mg/5ml', 'Rocuronium'],
+  ['53 Loratidine 10mg tablet 2000 pcs', 'Loratadine'],
+  ['400 pfs ErythropoeitIn 4000 iu/0.4 ml', 'Epoetin Alfa'],
+  ['8 Epoeitin Alfa 4000iu/0.4ml. : Pre-Filled Syringe', 'Epoetin Alfa'],
+  ['11 SUGAMMADEZ 100MG/ML, 2ML VIAL', 'Sugammadex'],
+  ['Paclitaxol 300 mg/50 ml vial', 'Paclitaxel'],
+  ['Amlodipine5mg tablet', 'Amlodipine'],
+  ['Amlo dipine 10 mg tablet', 'Amlodipine'],
 ];
 const MUST_NOT_MATCH = [
   ['Amlodipine 2.5 mg tablet', 'a strength we do not sell'],
@@ -55,6 +70,11 @@ const MUST_NOT_MATCH = [
   ['Povidone iodine 10% solution', 'iodine is not Iohexol'],
   ['Supply of Paclitaxel', 'no dosage at all'],
   ['Losartan 50 mg tablet', 'not our product'],
+  ['CEFEXIME 1 G', 'Cefexime is Cefixime misspelled, not our Cefepime'],
+  ['Cefixime 1g', 'Cefixime is another medicine'],
+  ['Dobutamine 50 mg/ml, 5 ml ampule (IV infusion, SC)', '"infusion, SC" is not "infusion set"'],
+  ['Rocuronium 10 mg/ml? no: Rocorunium 25 mg/ml', 'misspelled but another dosage'],
+  ['Amlodipine 5 mg? no: Bmlodipine 5 mg', 'first letter wrong'],
 ];
 
 let failed = 0;
