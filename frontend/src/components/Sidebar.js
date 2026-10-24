@@ -17,7 +17,6 @@ const GROUPS = [
     label: 'PhilGEPS Portal',
     links: [
       { href: '/', label: 'Dashboard', icon: '▦' },
-      { href: '/history', label: 'History', icon: '⟲' },
     ],
   },
   {
@@ -26,7 +25,6 @@ const GROUPS = [
       { href: '/ps-philgeps', label: 'Bid Match', icon: '◎' },
       { href: '/ps-philgeps/opportunities', label: 'My Opportunities', icon: '☰' },
       { href: '/ps-philgeps/awards', label: 'Award Notices', icon: '★' },
-      { href: '/history/ps-philgeps', label: 'History', icon: '⟲' },
     ],
   },
   // Tenders picked with "Add to Screened" in View details on either site; the Excel export is there
@@ -39,10 +37,14 @@ const GROUPS = [
     label: 'Catalog Management',
     links: [{ href: '/products', label: 'Product List', icon: '✚' }],
   },
-  // System reports for both sites (the OCR warning and the OCR layers' last runs)
+  // Both sites' History and the system reports (the OCR warning and the OCR layers' last runs)
   {
-    label: 'Reports',
-    links: [{ href: '/report-log', label: 'Report Log', icon: '☷' }],
+    label: 'History & Logs',
+    links: [
+      { href: '/history', label: 'PhilGEPS History', icon: '⟲' },
+      { href: '/history/ps-philgeps', label: 'PS-PhilGEPS History', icon: '⟲' },
+      { href: '/report-log', label: 'Report Log', icon: '☷' },
+    ],
   },
 ];
 
@@ -71,7 +73,6 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
               <div className={`mb-2 select-none px-3.5 text-[10px] font-bold uppercase tracking-wider text-black/46 ${g ? 'mt-1' : ''}`}>{group.label}</div>
               {group.links.map(({ href, label, icon }) => {
                 const active = pathname === href;
-                const count = counts[href];
                 const unread = counts[`new:${href}`] || 0;
                 return (
                   <Link
@@ -92,24 +93,14 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
                       {icon}
                     </span>
                     <span className="min-w-0 truncate">{label}</span>
-                    {unread > 0 ? (
+                    {/* A notification number only for tenders this user hasn't viewed yet (lib/newTenders.js) */}
+                    {unread > 0 && (
                       <span
-                        aria-label={`${unread} new, unread`}
-                        title={`${unread} new tender${unread > 1 ? 's' : ''} since you last looked`}
-                        className="ml-auto shrink-0 rounded-full bg-[#1EA0DA] px-2.5 py-0.5 text-[10px] font-bold tabular-nums text-white"
+                        aria-label={`${unread} new, not viewed yet`}
+                        title={`${unread} new tender${unread > 1 ? 's' : ''} you haven't viewed yet`}
+                        className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#B3312C] px-1.5 text-[10px] font-bold tabular-nums leading-none text-white"
                       >
-                        {unread} new
-                      </span>
-                    ) : count != null && (
-                      <span
-                        aria-label={`${count} items`}
-                        className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[10px] tabular-nums ${
-                          active
-                            ? 'border border-[#61A644]/30 bg-[#61A644]/15 font-bold text-[#3F6F2C]'
-                            : 'bg-[#1EA0DA]/8 font-medium text-[#12769F]'
-                        }`}
-                      >
-                        {count}
+                        {unread > 99 ? '99+' : unread}
                       </span>
                     )}
                   </Link>
