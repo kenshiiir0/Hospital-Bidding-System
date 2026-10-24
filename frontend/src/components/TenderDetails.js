@@ -156,7 +156,7 @@ export default function TenderDetails({ bid, onClose }) {
       link={PHILGEPS_LINK.test(bid.detail_link || '') ? bid.detail_link : null}
       wide
       onClose={onClose}
-      action={<ScreenButton source="philgeps" tenderRef={bid.ref_no} title={bid.title} getTender={() => philgepsTender(bid)} />}
+      action={<ScreenButton source="philgeps" tenderRef={bid.ref_no} title={bid.title} products={bid.matched_molecules} getTender={() => philgepsTender(bid)} />}
       lead={
         <>
           {!bid.details && (

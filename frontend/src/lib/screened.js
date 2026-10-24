@@ -55,9 +55,10 @@ export function useScreened() {
   return { ...state, has: (source, ref) => keys.has(screenedKey(source, ref)) };
 }
 
-// tender: the tender in export shape (philgepsTender / psTender)
-export async function addScreened(source, ref, title, tender) {
-  const { error: err } = await supabase.from('screened_tenders').insert({ source, ref, title, tender });
+// tender: the tender in export shape (philgepsTender / psTender); products: our products it asks for (kept
+// with it for the page's "Our product" filter)
+export async function addScreened(source, ref, title, tender, products = []) {
+  const { error: err } = await supabase.from('screened_tenders').insert({ source, ref, title, tender: { ...tender, products } });
   // Someone else added it a moment ago: it is screened either way
   if (err && err.code !== '23505') throw new Error(err.message);
   await loadScreened();

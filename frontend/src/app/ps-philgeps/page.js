@@ -115,6 +115,7 @@ export default function BidMatchPage() {
               source="ps"
               tenderRef={refOf(selected)}
               title={selected.cells[list.headers.indexOf('Notice Title')]}
+              products={productsOf(selected)}
               getTender={() => psTender(selected, list.headers, noticeOf(selected), readingOf(selected))}
             />
           }

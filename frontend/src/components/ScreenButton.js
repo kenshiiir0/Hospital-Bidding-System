@@ -6,8 +6,8 @@ import WorkingDots from '@/components/WorkingDots';
 
 // "Add to Screened" in a tender's View details footer: puts the tender on the Screened Tenders page (lib/screened.js),
 // where the Excel export is. Once added it reads "✓ Screened" and a second click takes it off again.
-// getTender(): the tender in export shape (philgepsTender / psTender), saved as it is now.
-export default function ScreenButton({ source, tenderRef, title, getTender }) {
+// getTender(): the tender in export shape (philgepsTender / psTender), saved as it is now; products: our products in it.
+export default function ScreenButton({ source, tenderRef, title, products, getTender }) {
   const { rows, has } = useScreened();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -19,7 +19,7 @@ export default function ScreenButton({ source, tenderRef, title, getTender }) {
     setError('');
     try {
       if (screened) await removeScreened(source, tenderRef);
-      else await addScreened(source, tenderRef, title, getTender());
+      else await addScreened(source, tenderRef, title, getTender(), products);
     } catch (err) {
       setError(err.message);
     }

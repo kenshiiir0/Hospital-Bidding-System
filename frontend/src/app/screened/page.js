@@ -1,7 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import { SearchPill } from '@/components/FilterControls';
+import { usePsFilters } from '@/components/PsFilters';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import TypeBadge from '@/components/TypeBadge';
@@ -17,29 +18,53 @@ const SOURCES = { philgeps: 'PhilGEPS', ps: 'PS-PhilGEPS' };
 // team's Opportunity sheet, with each tender as it is now (latest update / Sync), oldest published at the top.
 export default function ScreenedPage() {
   const { rows, error } = useScreened();
-  const [source, setSource] = useState('all');
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState({ tone: '', text: '' });
   const [removing, setRemoving] = useState(null);
-  // Page shown (1-based) and rows per page; a search or tab change goes back to page 1
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const listTop = useRef(null);
 
   const all = rows || [];
+  // The screened rows as a list the shared filter bar reads (the PS-PhilGEPS pages' usePsFilters): one cell
+  // per filter column, dates written as PhilGEPS does ("22-Oct-2026"); `item` is the screened row
+  const list = rows ? { headers: LIST_HEADERS, rows: all.map(toListRow) } : null;
+  const filters = usePsFilters(list, {
+    selects: [
+      { label: 'Source', tabs: true, options: Object.values(SOURCES), column: 'Source' },
+      { label: 'Our product', valuesOf: (row) => row.item.tender?.products || [] },
+      { label: 'Type', column: 'Type' },
+      { label: 'Hospital', column: 'Hospital' },
+      { label: 'Added by', column: 'Added by' },
+    ],
+    dates: [
+      { label: 'Published', column: 'Publish Date' },
+      { label: 'Closing', column: 'Closing Date' },
+    ],
+    sorts: [
+      // "Added at" is the ISO time; as a number (its digits) it sorts to the second
+      { label: 'Recently added', column: 'Added at', kind: 'number', dir: 'desc' },
+      { label: 'Closing soonest', column: 'Closing Date', kind: 'date', dir: 'asc' },
+      { label: 'Latest published', column: 'Publish Date', kind: 'date', dir: 'desc' },
+      { label: 'Oldest published', column: 'Publish Date', kind: 'date', dir: 'asc' },
+    ],
+  });
   const text = search.trim().toLowerCase();
-  const shown = all.filter(
-    (r) =>
-      (source === 'all' || r.source === source) &&
-      (!text || `${r.ref} ${r.title || ''} ${r.tender?.hospital || ''} ${(r.tender?.molecules || []).map((m) => m[0]).join(' ')}`.toLowerCase().includes(text))
-  );
+  const shown = filters
+    .apply((list?.rows || []).filter((row) => !text || row.searchText.includes(text)))
+    .map((row) => row.item);
+
+  // Page shown (1-based) and rows per page; any search, filter or sort change goes back to page 1 (the page
+  // number belongs to the filters it was picked under)
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const filterKey = JSON.stringify([search, filters.chosen, shown.map((r) => `${r.source}:${r.ref}`)]);
+  const [paging, setPaging] = useState({ page: 1, key: '' });
+  const page = paging.key === filterKey ? paging.page : 1;
   const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const goToPage = (next) => {
-    setPage(next);
+    setPaging({ page: next, key: filterKey });
     listTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
@@ -110,8 +135,6 @@ export default function ScreenedPage() {
     },
   ];
 
-  const count = (key) => all.filter((r) => key === 'all' || r.source === key).length;
-
   return (
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
@@ -139,30 +162,8 @@ export default function ScreenedPage() {
         {error && <Notice tone="error">{error}</Notice>}
         {message.text && <Notice tone={message.tone}>{message.text}</Notice>}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <SearchPill
-            value={search}
-            onChange={(value) => {
-              setSearch(value);
-              setPage(1);
-            }}
-            placeholder="Search reference no., title, hospital or molecule..."
-            label="Search screened tenders"
-          />
-          <SegmentedTabs
-            label="Source"
-            value={source}
-            onChange={(value) => {
-              setSource(value);
-              setPage(1);
-            }}
-            options={[
-              { value: 'all', label: 'All', count: count('all') },
-              { value: 'philgeps', label: 'PhilGEPS', count: count('philgeps') },
-              { value: 'ps', label: 'PS-PhilGEPS', count: count('ps') },
-            ]}
-          />
-        </div>
+        <SearchPill value={search} onChange={setSearch} placeholder="Search reference no., title, hospital or molecule..." label="Search screened tenders" />
+        {filters.bar}
 
         <div ref={listTop} className="scroll-mt-20 space-y-4">
           {!rows && !error ? (
@@ -172,7 +173,7 @@ export default function ScreenedPage() {
           ) : !shown.length ? (
             <div className="rounded-[14px] border border-[#E2E8F0] p-6 text-center text-sm text-black/62">
               {all.length
-                ? 'No screened tender matches this search.'
+                ? 'No screened tender matches this search and these filters.'
                 : 'Nothing screened yet. Open a tender’s View details on the PhilGEPS Dashboard or PS-PhilGEPS Bid Match and press “+ Add to Screened”.'}
             </div>
           ) : (
@@ -186,7 +187,7 @@ export default function ScreenedPage() {
                   onPageChange={goToPage}
                   onPageSizeChange={(size) => {
                     setPageSize(size);
-                    setPage(1);
+                    setPaging({ page: 1, key: filterKey });
                   }}
                 />
               )}
@@ -196,6 +197,23 @@ export default function ScreenedPage() {
       </div>
     </div>
   );
+}
+
+const LIST_HEADERS = ['Source', 'Type', 'Hospital', 'Added by', 'Publish Date', 'Closing Date', 'Added at'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "2026-10-22..." -> "22-Oct-2026" (closing is stored as the Philippine time written in UTC, so its date part is right)
+const philgepsDay = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(typeof iso === 'string' ? iso : '');
+  return m ? `${m[3]}-${MONTH_NAMES[Number(m[2]) - 1]}-${m[1]}` : '';
+};
+function toListRow(r) {
+  const t = r.tender || {};
+  return {
+    item: r,
+    links: [],
+    cells: [SOURCES[r.source] || r.source, t.type || '', t.hospital || '', displayName(r.added_by || ''), philgepsDay(t.published), philgepsDay(t.closing), r.added_at || ''],
+    searchText: `${r.ref} ${r.title || ''} ${t.hospital || ''} ${(t.products || []).join(' ')} ${(t.molecules || []).map((m) => m[0]).join(' ')}`.toLowerCase(),
+  };
 }
 
 function SourceTag({ source }) {
