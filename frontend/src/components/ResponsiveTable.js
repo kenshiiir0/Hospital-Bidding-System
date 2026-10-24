@@ -5,7 +5,7 @@ import { DetailsButton } from '@/components/FilterControls';
 
 // Columns without a set width need at least this much room to stay readable in the table
 const FLEX_COLUMN_REM = 8;
-const DETAILS_COLUMN_REM = 6.5;
+const DETAILS_COLUMN_REM = 7.5;
 const rem = (value) => (value ? parseFloat(value) : FLEX_COLUMN_REM);
 
 /**
@@ -57,18 +57,22 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
       {/* Wide: a table */}
       <div className={`${asTable ? 'block' : 'hidden'} overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-white`}>
         <table className={`w-full table-fixed ${text}`}>
-          <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
+          <thead className="h-11 border-b border-[#E2E8F0] bg-[#1EA0DA]/5 text-left text-[11px] font-bold uppercase tracking-wider text-black/62">
             <tr>
               {tableColumns.map((c) => (
                 <th
                   key={c.label}
                   style={c.width ? { width: c.width } : undefined}
-                  className={`px-3 py-2.5 font-semibold break-words first:rounded-tl-[14px] ${c.align === 'right' ? 'text-right' : ''}`}
+                  className={`px-3 py-2.5 font-bold break-words first:rounded-tl-[14px] ${c.align === 'right' ? 'text-right' : ''}`}
                 >
                   {c.label}
                 </th>
               ))}
-              {onDetails && <th style={{ width: `${DETAILS_COLUMN_REM}rem` }} className="px-3 py-2.5 rounded-tr-[14px]" aria-label="Details" />}
+              {onDetails && (
+                <th style={{ width: `${DETAILS_COLUMN_REM}rem` }} className="px-3 py-2.5 text-right font-bold">
+                  Action
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>

@@ -52,7 +52,9 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
         }
   );
 
-  return <ResponsiveTable columns={tableColumns} rows={rows} onDetails={onDetails} />;
+  // Row numbers first, as on the PhilGEPS list
+  const numbered = [{ label: '#', lead: true, width: '3rem', render: (_, i) => <span className="font-mono text-xs text-black/46">{i + 1}</span> }, ...tableColumns];
+  return <ResponsiveTable columns={numbered} rows={rows} onDetails={onDetails} />;
 }
 
 // Table widths for the short columns; the rest (agency, title, products) share what is left

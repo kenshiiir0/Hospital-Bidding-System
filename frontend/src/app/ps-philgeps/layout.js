@@ -4,10 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import { formatInstant } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
+import PageHeader, { blueAction } from '@/components/PageHeader';
 import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
-import { SearchPill } from '@/components/FilterControls';
 import ScrapeProgress from '@/components/ScrapeProgress';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 
@@ -155,40 +155,42 @@ export default function PsPhilgepsLayout({ children }) {
   }, [connectFailed]);
 
   return (
-    <PsContext.Provider value={{ data, search, reload: loadData, connected, syncing, sync }}>
+    <PsContext.Provider value={{ data, search, setSearch, reload: loadData, connected, syncing, sync }}>
       <div className="min-h-screen bg-white text-black antialiased">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-black flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-[#1EA0DA]" aria-hidden />
-                PS-PhilGEPS
-              </h1>
-              <p className="text-xs text-black/62 mt-1">
-                philgeps.gov.ph · {!sync ? 'Checking…' : connected ? `Connected since ${formatInstant(sync.connected_at)}` : 'Not connected'}
-                {data?.syncedAt && ` · Last sync ${formatInstant(data.syncedAt)}`}
-              </p>
-            </div>
-            <button
-              onClick={pressSync}
-              disabled={!sync || syncing || connecting || (syncAfterConnect && !connected)}
-              title="Reads Bid Match (with notice details and documents), My Opportunities and Award Notices. Opens the PhilGEPS log-in first when it has ended."
-              className="inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#1790C5] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2.5 rounded-lg text-xs font-semibold transition"
-            >
-              {syncing ? (
-                <>Syncing {sync.percent || 0}% <WorkingDots /></>
-              ) : connecting || syncAfterConnect ? (
-                <>Waiting for log-in <WorkingDots /></>
-              ) : (
-                '🔄 Sync PS-PhilGEPS'
-              )}
-            </button>
-          </header>
+          <PageHeader
+            title="PS-PhilGEPS Procurement Radar"
+            subtitle="philgeps.gov.ph"
+            status={
+              !sync
+                ? { tone: 'busy', text: 'Checking…' }
+                : syncing
+                  ? { tone: 'busy', text: `Syncing ${sync.percent || 0}%` }
+                  : connected
+                    ? { tone: 'ok', text: `Connected${data?.syncedAt ? ` · Sync ${formatInstant(data.syncedAt)}` : ''}` }
+                    : { tone: 'error', text: 'Not connected' }
+            }
+            actions={
+              <button
+                onClick={pressSync}
+                disabled={!sync || syncing || connecting || (syncAfterConnect && !connected)}
+                title="Reads Bid Match (with notice details and documents), My Opportunities and Award Notices. Opens the PhilGEPS log-in first when it has ended."
+                className={blueAction}
+              >
+                {syncing ? (
+                  <>Syncing {sync.percent || 0}% <WorkingDots /></>
+                ) : connecting || syncAfterConnect ? (
+                  <>Waiting for log-in <WorkingDots /></>
+                ) : (
+                  '🔄 Sync PS-PhilGEPS'
+                )}
+              </button>
+            }
+          />
 
           {requestError && <Notice tone="error">{requestError}</Notice>}
           <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
           <SyncNotice sync={sync} ringShowing={Boolean(ringJob)} />
-          <SearchPill value={search} onChange={setSearch} label="Search PS-PhilGEPS" />
           {children}
         </div>
       </div>

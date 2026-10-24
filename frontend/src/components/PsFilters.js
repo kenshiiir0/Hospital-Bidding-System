@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CustomSelect, DateRangePill, SegmentedTabs } from '@/components/FilterControls';
+import { CustomSelect, DateRangeDropdown, SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import { usePsPhilgeps } from '@/lib/psContext';
 
 // Filters for a PS-PhilGEPS list (used with the search box from the layout):
 // - selects: [{ label, column }] picks one value of a PhilGEPS column (options = the values in the list),
@@ -11,7 +12,10 @@ import { CustomSelect, DateRangePill, SegmentedTabs } from '@/components/FilterC
 // - sorts: [{ label, column, kind: 'date' | 'number', dir: 'asc' | 'desc' }], the first is the default.
 // Returns { apply(rows), bar, chosen } where bar is the filter rows to show above the list and chosen the
 // selected value of each select, by label ('' or missing = All).
-export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
+// headTabs: tabs of the page itself (e.g. Our products / All) shown first in the tabs row (tier 1).
+// The bar: tier 1 = tabs; tier 2 = the search (from the PS-PhilGEPS layout), dropdowns, Sort and one Date range.
+export function usePsFilters(list, { selects = [], dates = [], sorts = [], headTabs = null }) {
+  const { search = '', setSearch } = usePsPhilgeps() || {};
   const [chosen, setChosen] = useState({});
   const [ranges, setRanges] = useState({});
   const [sortIndex, setSortIndex] = useState(0);
@@ -64,22 +68,28 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
   const spanLast = (dropdowns.length + (sorts.length ? 1 : 0)) % 2 === 1;
   const lastDropdown = sorts.length ? -1 : dropdowns.at(-1);
 
+  const tabSelects = selects.map((s, n) => (s.tabs ? n : null)).filter((n) => n !== null);
   const bar = list ? (
     <div className="space-y-3">
-      {selects.map((s, n) =>
-        s.tabs ? (
-          <SegmentedTabs
-            key={s.label}
-            label={s.label}
-            value={chosen[s.label] || ''}
-            onChange={(v) => choose(s.label, v)}
-            options={[{ value: '', label: 'All', count: total }, ...options[n]]}
-          />
-        ) : null
+      {/* Tier 1: tabs */}
+      {(headTabs || tabSelects.length > 0) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {headTabs}
+          {tabSelects.map((n) => (
+            <SegmentedTabs
+              key={selects[n].label}
+              label={selects[n].label}
+              value={chosen[selects[n].label] || ''}
+              onChange={(v) => choose(selects[n].label, v)}
+              options={[{ value: '', label: 'All', count: total }, ...options[n]]}
+            />
+          ))}
+        </div>
       )}
-      {/* Phones: an even two-column grid (a lone last dropdown spans the row, dates get their own rows);
-          wider: one wrapping row */}
+      {/* Tier 2: search, dropdowns, Sort, Date range. Phones: an even two-column grid (a lone last dropdown
+          spans the row; search and Date range get their own rows) */}
       <div className="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap sm:items-center">
+        {setSearch && <SearchPill className="col-span-2" value={search} onChange={setSearch} label="Search PS-PhilGEPS" />}
         {selects.map((s, n) =>
           s.tabs ? null : (
             <CustomSelect
@@ -102,17 +112,14 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [] }) {
             className={`w-full sm:w-auto ${spanLast ? 'col-span-2 sm:col-auto' : ''}`}
           />
         )}
-        {dates.map((d) => (
-          <DateRangePill
-            key={d.label}
-            className="col-span-2"
-            label={d.label}
-            from={ranges[d.label]?.from || ''}
-            to={ranges[d.label]?.to || ''}
-            onFrom={(from) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], from } }))}
-            onTo={(to) => setRanges((r) => ({ ...r, [d.label]: { ...r[d.label], to } }))}
+        {dates.length > 0 && (
+          <DateRangeDropdown
+            className="col-span-2 w-full sm:col-auto sm:w-auto"
+            fields={dates.map((d) => ({ key: d.label, label: d.label }))}
+            ranges={ranges}
+            onChange={(key, range) => setRanges((r) => ({ ...r, [key]: range }))}
           />
-        ))}
+        )}
         {active && (
           <button
             type="button"

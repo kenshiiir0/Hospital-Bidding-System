@@ -10,6 +10,8 @@ import PsAwardResponse from '@/components/PsAwardResponse';
 import { usePsFilters } from '@/components/PsFilters';
 import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
+import { KpiRow } from '@/components/PageHeader';
+import { setNavCount } from '@/lib/navCounts';
 
 // My Award Notices: awards the hospitals posted for us, with their acceptance status. An award still "Pending
 // for Acceptance" can be accepted or refused only inside its View details drawer (components/PsAwardResponse.js),
@@ -47,12 +49,19 @@ export default function AwardNoticesPage() {
   const rows = filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row)));
   const selected = selectedNo && list?.rows.find((row) => row.cells[0] === selectedNo);
   const waiting = (list?.rows || []).filter(pending).length;
+  const total = list ? list.rows.length : null;
+  useEffect(() => {
+    if (total != null) setNavCount('/ps-philgeps/awards', total);
+  }, [total]);
   return (
     <section className="space-y-4">
-      <h2 className="text-base font-semibold">
-        Award Notices {list && <span className="text-sm font-normal text-black/62">· {rows.length} of {list.rows.length} shown</span>}
-        {waiting > 0 && <span className="text-sm font-normal text-[#12769F]"> · {waiting} waiting for our answer</span>}
-      </h2>
+      <KpiRow
+        items={[
+          { label: 'Total awards', value: rows.length, note: list ? `of ${list.rows.length} award notices` : 'Waiting for the first Sync' },
+          { label: 'Accepted', value: rows.filter((row) => /^accepted/i.test(row.cells[column('Award Acceptance')] || '')).length, tone: 'green', note: 'of the listed awards' },
+          { label: 'Waiting for our answer', value: waiting, tone: 'blue', note: waiting ? 'Accept or refuse in View details' : 'Nothing pending' },
+        ]}
+      />
       {filters.bar}
       <PsListTable
         list={list}

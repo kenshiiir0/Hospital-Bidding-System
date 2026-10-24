@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { CustomSelect, DateRangePill, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import { CustomSelect, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, plainAction } from '@/components/PageHeader';
+import { setNavCount } from '@/lib/navCounts';
+import { downloadOpportunityWorkbook, philgepsTender } from '@/lib/opportunityWorkbook';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
@@ -128,10 +131,15 @@ function EmptyState({ children }) {
   );
 }
 
-const outlineButton =
-  'inline-flex items-center justify-center gap-2 rounded-full border border-[#1EA0DA]/25 bg-white px-4 py-2 text-sm font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 disabled:text-black/46 disabled:border-[#E2E8F0] disabled:cursor-not-allowed transition';
-const fieldClass =
-  'bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25';
+// "Oct 24" (the year only when it isn't this year) and "Oct 27, 12:01 AM", for the stacked Dates column
+function shortDay(value, thisYear) {
+  const text = formatDate(value);
+  return text && thisYear && text.endsWith(`, ${thisYear}`) ? text.slice(0, -6) : text;
+}
+function shortDayTime(value, thisYear) {
+  const text = formatDateTime(value);
+  return text && thisYear ? text.replace(`, ${thisYear} `, ', ') : text;
+}
 
 export default function Home() {
   const [bids, setBids] = useState([]);
@@ -152,8 +160,7 @@ export default function Home() {
   const [scrapeError, setScrapeError] = useState('');
   const [products, setProducts] = useState([]);
   const [excluded, setExcluded] = useState([]);
-  const [showExclusions, setShowExclusions] = useState(false);
-  const [productSearch, setProductSearch] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [selectedBid, setSelectedBid] = useState(null);
   // Published-date range filter ("YYYY-MM-DD" from the date inputs; empty = no limit) and sort direction
   const [dateFrom, setDateFrom] = useState('');
@@ -290,6 +297,12 @@ export default function Home() {
     const timer = setInterval(update, 60 * 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Sidebar badge: tenders asking for our products (still on the Product List)
+  const ourCount = loading ? null : activeTenders(bids, products.length ? new Set(products) : null).length;
+  useEffect(() => {
+    if (ourCount != null) setNavCount('/', ourCount);
+  }, [ourCount]);
 
   // Keep the cache in step with what is shown (including realtime inserts), once a real list has arrived
   useEffect(() => {
@@ -430,8 +443,6 @@ export default function Home() {
   for (const bid of ourBids) {
     for (const name of bid.matched_molecules || []) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
   }
-  const productQuery = productSearch.toLowerCase();
-  const listedProducts = products.filter((name) => name.toLowerCase().includes(productQuery));
 
   // Search the reference number, tender title, procuring entity (hospital) and matched products,
   // keep the published-date range, then order by published date (latest first unless reversed)
@@ -468,6 +479,29 @@ export default function Home() {
     });
 
 
+  // Header and summary cards: what is listed now (after the tabs, search and filters)
+  const listedProducts = new Set(filteredBids.flatMap((bid) => bid.matched_molecules || [])).size;
+  const listedAbc = filteredBids.reduce((sum, bid) => sum + (Number(bid.abc_amount) || 0), 0);
+  const thisYear = today.slice(0, 4);
+  const status = scrapeError
+    ? { tone: 'error', text: 'Could not load' }
+    : syncing
+      ? { tone: 'busy', text: syncView?.status === 'running' ? `Syncing ${syncView.percent || 0}%` : 'Sync starting' }
+      : loading || reloading
+        ? { tone: 'busy', text: loading ? 'Loading…' : 'Updating…' }
+        : { tone: 'ok', text: `Connected · Updated ${updatedAt ? formatUpdatedAt(updatedAt) : ''}` };
+
+  // Download the listed tenders (after tabs, search and filters) as the team's Opportunity sheet
+  const exportListed = async () => {
+    setExporting(true);
+    try {
+      await downloadOpportunityWorkbook(filteredBids.map(philgepsTender));
+    } catch (err) {
+      setScrapeError(`Export failed: ${err.message}`);
+    }
+    setExporting(false);
+  };
+
   // Only the current page is drawn; the page is clamped in case the list shrank (realtime, reload)
   const totalPages = Math.max(1, Math.ceil(filteredBids.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -478,64 +512,61 @@ export default function Home() {
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {/* Header, as on the PS-PhilGEPS pages: title, one status line, actions with Sync last */}
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-black flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-[#1EA0DA]" aria-hidden />
-              PhilGEPS
-            </h1>
-            <p className="text-xs text-black/62 mt-1">
-              notices.philgeps.gov.ph · {reloading ? 'Updating…' : updatedAt ? `Updated ${formatUpdatedAt(updatedAt)}` : 'Loading…'}
-              {addedToday > 0 && ` · ${addedToday} new today`}
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={outlineButton}>
-              {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
-            </button>
-            <button
-              onClick={triggerSync}
-              disabled={syncing}
-              title="Log in to PhilGEPS and download the documents of the screened tenders (runs on the team computer). Public data updates by itself every hour, 6 AM to 5 PM."
-              className="inline-flex items-center justify-center gap-2 bg-[#1EA0DA] hover:bg-[#1790C5] disabled:opacity-70 disabled:cursor-wait text-white px-4 py-2.5 rounded-lg text-xs font-semibold transition"
-            >
-              {syncView?.status === 'checking'
-                ? <>Checking PhilGEPS <WorkingDots /></>
-                : syncView?.status === 'queued'
-                  ? <>Sync waiting <WorkingDots /></>
-                  : syncing
-                    ? <>Syncing {syncView.percent || 0}% <WorkingDots /></>
-                    : '🔄 Sync PhilGEPS'}
-            </button>
-          </div>
-        </header>
+        {/* Header: title + live status, actions (Sync last), then the summary cards */}
+        <PageHeader
+          title="PhilGEPS Procurement Radar"
+          status={status}
+          subtitle={<>notices.philgeps.gov.ph{addedToday > 0 && ` · ${addedToday} new today`}</>}
+          actions={
+            <>
+              <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={plainAction}>
+                {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
+              </button>
+              <button onClick={exportListed} disabled={exporting || loading || !filteredBids.length} title="The listed tenders as the team's Opportunity sheet" className={greenAction}>
+                {exporting ? <>Exporting <WorkingDots /></> : '↓ Export Excel'}
+              </button>
+              <button
+                onClick={triggerSync}
+                disabled={syncing}
+                title="Log in to PhilGEPS and download the documents of the screened tenders (runs on the team computer). Public data updates by itself every hour, 6 AM to 5 PM."
+                className={blueAction}
+              >
+                {syncView?.status === 'checking'
+                  ? <>Checking PhilGEPS <WorkingDots /></>
+                  : syncView?.status === 'queued'
+                    ? <>Sync waiting <WorkingDots /></>
+                    : syncing
+                      ? <>Syncing {syncView.percent || 0}% <WorkingDots /></>
+                      : '🔄 Sync PhilGEPS'}
+              </button>
+            </>
+          }
+        />
 
         {scrapeError && <Notice tone="error">{scrapeError}</Notice>}
 
-        <section ref={listTop} className="scroll-mt-6 space-y-4">
-          {/* Section heading with the documents filter, like "Bid Match · n of m mention our products" */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-base font-semibold">
-              Opportunities{' '}
-              <span className="text-sm font-normal text-black/62">
-                · {visibleBids.length} mention our products · {productCount} of our products requested
-              </span>
-            </h2>
-            <SegmentedTabs
-              label="Documents"
-              value={docFilter}
-              onChange={(key) => {
-                setDocFilter(key);
-                setPage(1);
-              }}
-              options={DOC_GROUPS.map(({ key, label }) => ({ value: key, label, count: docCounts[key] }))}
-            />
-          </div>
+        <KpiRow
+          items={[
+            { label: 'Total opportunities', value: filteredBids.length, note: `of ${visibleBids.length} asking for our products` },
+            { label: 'Product matches', value: listedProducts, tone: 'green', note: `of our products requested (${productCount} in all)` },
+            { label: 'Total ABC value', value: pesoTotal(listedAbc), tone: 'blue', note: 'approved budgets of the listed tenders' },
+          ]}
+        />
 
-          {/* Search, products to leave out, published dates and order */}
-          {/* Phones: an even two-column grid, search and dates on their own rows; wider: one wrapping row */}
-          <div className="grid grid-cols-2 gap-2.5 text-xs sm:flex sm:flex-wrap sm:items-center">
+        <section ref={listTop} className="scroll-mt-6 space-y-3">
+          {/* Tier 1: which tenders, by their documents */}
+          <SegmentedTabs
+            label="Documents"
+            value={docFilter}
+            onChange={(key) => {
+              setDocFilter(key);
+              setPage(1);
+            }}
+            options={DOC_GROUPS.map(({ key, label }) => ({ value: key, label, count: docCounts[key] }))}
+          />
+
+          {/* Tier 2: search, then the dropdowns. Phones: an even two-column grid under a full-width search */}
+          <div className="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap sm:items-center">
             <SearchPill
               className="col-span-2"
               value={search}
@@ -544,15 +575,6 @@ export default function Home() {
                 setPage(1);
               }}
             />
-            <button
-              onClick={() => setShowExclusions(!showExclusions)}
-              aria-expanded={showExclusions}
-              className={`truncate rounded-full px-3.5 py-1.5 border text-xs font-medium transition ${
-                excluded.length ? 'bg-[#1EA0DA]/5 border-[#1EA0DA] text-[#12769F] ring-2 ring-[#1EA0DA]/20' : 'bg-white border-[#CBD5E1] text-black hover:border-[#1EA0DA]'
-              }`}
-            >
-              Exclude products{excluded.length ? ` (${excluded.length})` : ''} {showExclusions ? '▴' : '▾'}
-            </button>
             <CustomSelect
               label="Type"
               className="w-full sm:w-auto"
@@ -563,67 +585,39 @@ export default function Home() {
               }}
               options={[{ value: '', label: 'All' }, ...typeOptions]}
             />
-            <button
-              onClick={() => {
-                setOldestFirst(!oldestFirst);
+            <MultiSelectDropdown
+              label="Exclude products"
+              className="w-full sm:w-auto"
+              value={excluded}
+              onChange={updateExcluded}
+              hint="Checked products are left out: any tender asking for one of them is hidden."
+              options={products.map((name) => ({ value: name, count: tendersPerProduct[name] || 0 }))}
+            />
+            <CustomSelect
+              label="Sort"
+              className="w-full sm:w-auto"
+              value={oldestFirst ? 'oldest' : 'latest'}
+              defaultValue="latest"
+              onChange={(value) => {
+                setOldestFirst(value === 'oldest');
                 setPage(1);
               }}
-              title="Reverse the order of the list"
-              className="col-span-2 rounded-full px-3.5 py-1.5 border border-[#CBD5E1] bg-white text-xs font-medium text-black hover:border-[#1EA0DA] transition sm:col-auto"
-            >
-              ⇅ {oldestFirst ? 'Oldest first' : 'Latest first'}
-            </button>
-            <DateRangePill
-              className="col-span-2"
-              label="Published"
-              from={dateFrom}
-              to={dateTo}
-              onFrom={(value) => {
-                setDateFrom(value);
-                setPage(1);
-              }}
-              onTo={(value) => {
-                setDateTo(value);
+              options={[
+                { value: 'latest', label: 'Latest first' },
+                { value: 'oldest', label: 'Oldest first' },
+              ]}
+            />
+            <DateRangeDropdown
+              className="w-full sm:w-auto"
+              fields={[{ key: 'published', label: 'Published' }]}
+              ranges={{ published: { from: dateFrom, to: dateTo } }}
+              onChange={(_, { from, to }) => {
+                setDateFrom(from);
+                setDateTo(to);
                 setPage(1);
               }}
             />
           </div>
-
-          {/* Products to leave out */}
-          {showExclusions && (
-            <div className="rounded-[14px] border border-[#E2E8F0] p-4 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Search products…"
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  className={`${fieldClass} flex-1 min-w-[12rem]`}
-                />
-                <button
-                  onClick={() => updateExcluded([])}
-                  disabled={!excluded.length}
-                  className="text-sm text-[#12769F] hover:text-[#0E5C7C] disabled:text-black/36 disabled:cursor-not-allowed px-2 py-1.5 transition"
-                >
-                  Clear exclusions
-                </button>
-              </div>
-              <p className="text-xs text-black/46">Checked products are left out: any tender that requests one of them is removed from the list.</p>
-              {listedProducts.length === 0 ? (
-                <p className="text-sm text-black/46 py-4 text-center">No products match &quot;{productSearch}&quot;.</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1 max-h-72 overflow-y-auto pr-1">
-                  {listedProducts.map((name) => (
-                    <label key={name} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-black hover:bg-[#1EA0DA]/6 cursor-pointer select-none">
-                      <input type="checkbox" checked={excluded.includes(name)} onChange={() => toggleExcluded(name)} className="h-4 w-4 accent-[#1EA0DA]" />
-                      <span className="flex-1 truncate">{name}</span>
-                      <span className="text-xs text-black/46 tabular-nums">{tendersPerProduct[name] || 0}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
 
           {excluded.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -660,14 +654,45 @@ export default function Home() {
                     <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
                   ),
                 },
-                { label: 'Reference Number', title: true, nowrap: true, width: '6.5rem', render: (bid) => <RefLink bid={bid} /> },
-                { label: 'Type', badge: true, width: '5rem', optional: 3, render: (bid) => <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} /> },
-                { label: 'Agency name', wide: true, render: (bid) => bid.procuring_entity || bid.title },
-                { label: 'Approved Budget', nowrap: true, width: '8rem', render: (bid) => (bid.abc_amount ? formatPeso(bid.abc_amount) : '—') },
-                { label: 'Publish Date', width: '6.5rem', optional: 1, render: (bid) => formatDate(bid.publish_date) || '—' },
-                { label: 'Closing Date', width: '7rem', render: (bid) => formatDateTime(bid.closing_date) || '—' },
-                { label: 'Our products', wide: true, render: (bid) => <Products names={bid.matched_molecules} /> },
-                { label: 'Remarks', width: '6.5rem', optional: 2, render: (bid) => <DocumentCount bid={bid} /> },
+                {
+                  label: 'Ref No. & Type',
+                  title: true,
+                  width: '8.5rem',
+                  render: (bid) => (
+                    <div className="space-y-1">
+                      <div className="font-semibold"><RefLink bid={bid} /></div>
+                      <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} />
+                      <div className="font-normal"><DocumentCount bid={bid} /></div>
+                    </div>
+                  ),
+                },
+                {
+                  label: 'Procuring Agency',
+                  wide: true,
+                  render: (bid) => (
+                    <span className="line-clamp-2 text-xs font-bold leading-tight text-black" title={bid.procuring_entity || bid.title}>
+                      {bid.procuring_entity || bid.title}
+                    </span>
+                  ),
+                },
+                {
+                  label: 'Approved Budget (ABC)',
+                  width: '9rem',
+                  align: 'right',
+                  nowrap: true,
+                  render: (bid) => <span className="font-mono text-xs font-bold text-black">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</span>,
+                },
+                {
+                  label: 'Dates',
+                  width: '10rem',
+                  render: (bid) => (
+                    <div className="space-y-0.5 text-xs">
+                      <div><span className="text-black/46">Pub:</span> {shortDay(bid.publish_date, thisYear) || '—'}</div>
+                      <div><span className="text-black/46">Close:</span> <span className="font-medium">{shortDayTime(bid.closing_date, thisYear) || '—'}</span></div>
+                    </div>
+                  ),
+                },
+                { label: 'Matched Molecules', wide: true, render: (bid) => <Products names={bid.matched_molecules} /> },
               ]}
             />
           )}

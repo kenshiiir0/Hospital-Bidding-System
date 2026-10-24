@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel from '@/components/PsDetailsPanel';
 import { usePsFilters } from '@/components/PsFilters';
 import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
+import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
+import { setNavCount } from '@/lib/navCounts';
 
 // My Opportunities: the notices the team already took up on PS-PhilGEPS, with their bid submission status
 export default function MyOpportunitiesPage() {
@@ -31,11 +33,20 @@ export default function MyOpportunitiesPage() {
     ],
   });
   const rows = filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row)));
+  const cell = (row, name) => row.cells[list.headers.indexOf(name)] || '';
+  const total = list ? list.rows.length : null;
+  useEffect(() => {
+    if (total != null) setNavCount('/ps-philgeps/opportunities', total);
+  }, [total]);
   return (
     <section className="space-y-4">
-      <h2 className="text-base font-semibold">
-        My Opportunities {list && <span className="text-sm font-normal text-black/62">· {rows.length} of {list.rows.length} shown</span>}
-      </h2>
+      <KpiRow
+        items={[
+          { label: 'Total opportunities', value: rows.length, note: list ? `of ${list.rows.length} taken up` : 'Waiting for the first Sync' },
+          { label: 'Bids submitted', value: rows.filter((row) => /submitted/i.test(cell(row, 'Bid Submission Status')) && !/not/i.test(cell(row, 'Bid Submission Status'))).length, tone: 'green', note: 'of the listed opportunities' },
+          { label: 'Total ABC value', value: pesoTotal(rows.reduce((sum, row) => sum + pesoValue(cell(row, 'Approve Budget Contract')), 0)), tone: 'blue', note: 'approved budgets of the listed tenders' },
+        ]}
+      />
       {filters.bar}
       <PsListTable
         list={list}

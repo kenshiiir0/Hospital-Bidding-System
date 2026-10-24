@@ -12,7 +12,8 @@ export default function TypeBadge({ type }) {
   return (
     <span
       title={type.title}
-      className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${TONES[type.code] || 'border-[#CBD5E1] bg-white text-black/62'}`}
+      // A type with no abbreviation ("Request for Quotation") wraps inside a narrow column instead of spilling out
+      className={`inline-block max-w-full border px-2 py-0.5 text-[11px] font-semibold leading-snug ${type.code.length > 10 ? 'rounded-lg' : 'whitespace-nowrap rounded-full'} ${TONES[type.code] || 'border-[#CBD5E1] bg-white text-black/62'}`}
     >
       {type.code}
     </span>

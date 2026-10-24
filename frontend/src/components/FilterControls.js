@@ -131,6 +131,7 @@ export function CustomSelect({ label, value, onChange, options, defaultValue = '
   return (
     <div
       ref={root}
+      data-open-id={listId}
       className={`relative inline-flex max-w-full ${className}`}
       onKeyDown={onKeyDown}
       // Focus moving out of the control (Tab, click elsewhere) closes the menu
@@ -359,6 +360,7 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
   return (
     <span
       ref={root}
+      data-open-id={id}
       className={`relative inline-flex max-w-full ${className}`}
       onBlur={(e) => !root.current?.contains(e.relatedTarget) && setOpen(false)}
     >
@@ -578,7 +580,7 @@ export function DateRangePill({ label, from, to, onFrom, onTo, className = '' })
 export function SearchPill({ value, onChange, placeholder = 'Search reference no., title, hospital name or molecule...', label = 'Search', className = '' }) {
   return (
     <div
-      className={`flex min-w-[16rem] flex-1 items-center gap-2 rounded-full border border-[#CBD5E1] bg-white px-4 py-2 transition hover:border-[#1EA0DA] focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 ${className}`}
+      className={`flex min-w-[14rem] flex-1 items-center gap-2 rounded-xl border border-[#CBD5E1] bg-white px-4 py-2 transition hover:border-[#1EA0DA] focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 ${className}`}
     >
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4 shrink-0 text-black/46" aria-hidden>
         <circle cx="8.5" cy="8.5" r="5.5" />
@@ -590,7 +592,7 @@ export function SearchPill({ value, onChange, placeholder = 'Search reference no
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={label}
-        className="min-w-0 flex-1 bg-transparent text-sm text-black placeholder:text-black/46 focus:outline-none"
+        className="min-w-0 flex-1 bg-transparent text-xs text-black placeholder:text-black/46 focus:outline-none"
       />
       {value && (
         <button type="button" onClick={() => onChange('')} aria-label="Clear search" className="rounded-full px-1 text-xs text-black/46 hover:text-[#12769F]">
@@ -617,8 +619,8 @@ export function SegmentedTabs({ label, value, onChange, options }) {
             role="tab"
             aria-selected={on}
             onClick={() => onChange(o.value)}
-            className={`rounded-full border px-3.5 py-1.5 transition ${
-              on ? 'border-[#1EA0DA] bg-[#1EA0DA] text-white' : 'border-[#CBD5E1] bg-white text-black/62 hover:border-[#1EA0DA] hover:bg-[#1EA0DA]/6 hover:text-black'
+            className={`rounded-full border px-4 py-1.5 transition ${
+              on ? 'border-[#1EA0DA] bg-[#1EA0DA] font-semibold text-white shadow-sm' : 'border-[#CBD5E1] bg-white text-black/62 hover:border-[#1EA0DA] hover:text-black'
             }`}
           >
             {o.label}
@@ -674,9 +676,274 @@ export function DetailsButton({ onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="whitespace-nowrap rounded-lg px-3 py-1 text-xs font-semibold text-[#12769F] transition-all hover:bg-[#1EA0DA]/8 hover:text-[#0E5C7C]"
+      className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold text-[#12769F] transition-all hover:bg-[#1EA0DA]/8 hover:text-[#0E5C7C]"
     >
-      View details
+      View details <span aria-hidden>➔</span>
     </button>
+  );
+}
+
+// A pill-triggered popover shared by the dropdowns below: one open at a time (with CustomSelect and the
+// calendars), closes on a click outside, Escape or focus leaving it. Events from controls nested inside the
+// popover (the calendars of DateRangeDropdown) don't close it.
+function usePopover() {
+  const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState({ up: false, alignRight: false });
+  const root = useRef(null);
+  const trigger = useRef(null);
+  const id = useId();
+
+  const show = (width = 300) => {
+    const box = trigger.current?.getBoundingClientRect();
+    if (box) setPlace({ up: window.innerHeight - box.bottom < 420 && box.top > 420, alignRight: box.left + width > window.innerWidth - 12 });
+    setOpen(true);
+    window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: id }));
+  };
+  const hide = (refocus = true) => {
+    setOpen(false);
+    if (refocus) trigger.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => !root.current?.contains(e.target) && setOpen(false);
+    const onOther = (e) => e.detail !== id && !root.current?.querySelector(`[data-open-id="${CSS.escape(e.detail)}"]`) && setOpen(false);
+    const onKey = (e) => e.key === 'Escape' && !e.defaultPrevented && hide();
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener(OPEN_EVENT, onOther);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener(OPEN_EVENT, onOther);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, id]);
+
+  return { open, show, hide, place, rootRef: root, triggerRef: trigger };
+}
+
+// The pill that opens a popover, styled like CustomSelect's trigger
+function PopoverTrigger({ triggerRef, open, onToggle, active, children, className = '' }) {
+  return (
+    <button
+      ref={triggerRef}
+      type="button"
+      onClick={onToggle}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      className={`inline-flex w-full min-w-0 items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium text-black transition ${
+        open || active ? 'border-[#1EA0DA] bg-[#1EA0DA]/5 ring-2 ring-[#1EA0DA]/20' : 'border-[#CBD5E1] bg-white hover:border-[#1EA0DA]'
+      } focus:outline-none focus-visible:border-[#1EA0DA] focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/20 ${className}`}
+    >
+      {active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#1EA0DA]" aria-hidden />}
+      <span className="min-w-0 flex-1 truncate text-left">{children}</span>
+      <Chevron open={open} />
+    </button>
+  );
+}
+
+function PopoverCard({ place, label, width, children }) {
+  return (
+    <div
+      role="dialog"
+      aria-label={label}
+      style={{ width }}
+      className={`absolute z-50 max-w-[calc(100vw-1.5rem)] rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl shadow-black/5 ${
+        place.up ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+      } ${place.alignRight ? 'right-0' : 'left-0'}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Pick several values (e.g. products to exclude): a pill with the count, a popover with a find box and
+ * checkboxes (each with its count), Clear.
+ * @param {string} props.label                       "Exclude products"
+ * @param {string[]} props.value                     The checked values
+ * @param {(values: string[]) => void} props.onChange
+ * @param {Array<{ value: string, label?: string, count?: number }>} props.options
+ * @param {string} [props.hint]                      One line under the find box
+ */
+export function MultiSelectDropdown({ label, value, onChange, options, hint, className = '' }) {
+  const { open, show, hide, place, rootRef, triggerRef } = usePopover();
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o) => String(o.label ?? o.value).toLowerCase().includes(q)) : options;
+  const toggle = (v) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
+  const WIDTH = 320;
+
+  return (
+    <div ref={rootRef} className={`relative inline-flex max-w-full ${className}`}>
+      <PopoverTrigger triggerRef={triggerRef} open={open} onToggle={() => (open ? hide() : show(WIDTH))} active={value.length > 0}>
+        {label}
+        {value.length > 0 && <span className="text-[#12769F]"> ({value.length})</span>}
+      </PopoverTrigger>
+      {open && (
+        <PopoverCard place={place} label={label} width={WIDTH}>
+          <input
+            autoFocus
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find…"
+            aria-label={`Find in ${label.toLowerCase()}`}
+            className="w-full rounded-lg border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs text-black placeholder:text-black/46 focus:border-[#1EA0DA] focus:outline-none"
+          />
+          {hint && <p className="mt-1.5 text-[11px] leading-snug text-black/46">{hint}</p>}
+          <ul className="mt-1.5 max-h-64 overflow-y-auto" role="group" aria-label={label}>
+            {shown.length === 0 && <li className="px-2 py-2 text-xs text-black/46">No matches</li>}
+            {shown.map((o) => {
+              const on = value.includes(o.value);
+              return (
+                <li key={o.value}>
+                  <label className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-[#1EA0DA]/8 ${on ? 'font-semibold text-[#12769F]' : 'text-black/80'}`}>
+                    <input type="checkbox" checked={on} onChange={() => toggle(o.value)} className="h-3.5 w-3.5 accent-[#1EA0DA]" />
+                    <span className="min-w-0 flex-1 truncate" title={String(o.label ?? o.value)}>{o.label ?? o.value}</span>
+                    {o.count != null && <span className="tabular-nums text-black/46">{o.count}</span>}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-2 flex items-center justify-between border-t border-[#E2E8F0] pt-2">
+            <span className="text-[11px] text-black/46">{value.length} selected</span>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              disabled={!value.length}
+              className="rounded-lg px-2.5 py-1 text-xs font-medium text-[#12769F] transition hover:bg-[#1EA0DA]/6 disabled:cursor-not-allowed disabled:text-black/36"
+            >
+              Clear
+            </button>
+          </div>
+        </PopoverCard>
+      )}
+    </div>
+  );
+}
+
+const shortDay = (iso) => {
+  const d = dateOf(iso);
+  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
+};
+// "Oct 1 – Oct 24", "From Oct 1", "Until Oct 24"
+const rangeText = ({ from, to }) => (from && to ? `${shortDay(from)} – ${shortDay(to)}` : from ? `From ${shortDay(from)}` : to ? `Until ${shortDay(to)}` : '');
+
+/**
+ * Date filters in one "Date range" pill. The popover picks which date (Published / Closing / Award date)
+ * when there are several, has quick ranges (Last 7 days, Last 30 days, This month) and From / To calendars.
+ * @param {Array<{ key: string, label: string }>} props.fields
+ * @param {Record<string, { from?: string, to?: string }>} props.ranges   "YYYY-MM-DD" per field key
+ * @param {(key: string, range: { from: string, to: string }) => void} props.onChange
+ */
+export function DateRangeDropdown({ fields, ranges, onChange, className = '' }) {
+  const { open, show, hide, place, rootRef, triggerRef } = usePopover();
+  const [fieldKey, setFieldKey] = useState(fields[0]?.key);
+  const field = fields.find((f) => f.key === fieldKey) || fields[0];
+  const current = ranges[field.key] || {};
+  const set = fields.filter((f) => ranges[f.key]?.from || ranges[f.key]?.to);
+  const WIDTH = 320;
+
+  const preset = (kind) => {
+    const today = todayIso();
+    const from = kind === 'month' ? `${today.slice(0, 8)}01` : addDays(today, kind === 7 ? -6 : -29);
+    onChange(field.key, { from, to: today });
+  };
+
+  return (
+    <div ref={rootRef} className={`relative inline-flex max-w-full ${className}`}>
+      <PopoverTrigger triggerRef={triggerRef} open={open} onToggle={() => (open ? hide() : show(WIDTH))} active={set.length > 0}>
+        <svg viewBox="0 0 20 20" fill="none" stroke="#12769F" strokeWidth="1.8" strokeLinecap="round" className="mr-1.5 inline h-3.5 w-3.5 align-[-2px]" aria-hidden>
+          <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
+          <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
+        </svg>
+        {set.length === 0 ? (
+          <>
+            <span className="text-black/62">Date range: </span>Any
+          </>
+        ) : set.length === 1 ? (
+          <>
+            <span className="text-[#12769F]">{set[0].label}: </span>
+            {rangeText(ranges[set[0].key])}
+          </>
+        ) : (
+          <span className="text-[#12769F]">{set.length} date ranges</span>
+        )}
+      </PopoverTrigger>
+      {open && (
+        <PopoverCard place={place} label="Date range" width={WIDTH}>
+          {fields.length > 1 && (
+            <div className="mb-3 grid gap-1 rounded-lg bg-[#1EA0DA]/5 p-1" style={{ gridTemplateColumns: `repeat(${fields.length}, minmax(0, 1fr))` }} role="tablist" aria-label="Which date">
+              {fields.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={f.key === field.key}
+                  onClick={() => setFieldKey(f.key)}
+                  className={`truncate rounded-md px-2 py-1 text-xs font-medium transition ${f.key === field.key ? 'bg-white text-[#12769F] shadow-sm' : 'text-black/62 hover:text-black'}`}
+                >
+                  {f.label}
+                  {(ranges[f.key]?.from || ranges[f.key]?.to) && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-[#1EA0DA] align-middle" aria-label="set" />}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {[
+              [7, 'Last 7 days'],
+              [30, 'Last 30 days'],
+              ['month', 'This month'],
+            ].map(([kind, text]) => (
+              <button
+                key={text}
+                type="button"
+                onClick={() => preset(kind)}
+                className="rounded-full border border-[#CBD5E1] bg-white px-2.5 py-1 text-[11px] font-medium text-black/62 transition hover:border-[#1EA0DA] hover:text-[#12769F]"
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-2 [&>*]:w-full [&>*>button]:w-full">
+            <DatePicker
+              label={`${field.label} from`}
+              prefix="From"
+              value={current.from || ''}
+              onChange={(from) => onChange(field.key, { from, to: current.to || '' })}
+              max={current.to || undefined}
+              rangeEnd={current.to || undefined}
+            />
+            <DatePicker
+              label={`${field.label} to`}
+              prefix="To"
+              value={current.to || ''}
+              onChange={(to) => onChange(field.key, { from: current.from || '', to })}
+              min={current.from || undefined}
+              rangeStart={current.from || undefined}
+            />
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-[#E2E8F0] pt-2">
+            <button
+              type="button"
+              onClick={() => fields.forEach((f) => onChange(f.key, { from: '', to: '' }))}
+              disabled={!set.length}
+              className="rounded-lg px-2.5 py-1 text-xs font-medium text-black/62 transition hover:bg-[#1EA0DA]/6 hover:text-black disabled:cursor-not-allowed disabled:text-black/36"
+            >
+              Clear all
+            </button>
+            <button
+              type="button"
+              onClick={() => hide()}
+              className="rounded-lg bg-[#1EA0DA] px-3 py-1 text-xs font-semibold text-white transition hover:bg-[#1790C5]"
+            >
+              Done
+            </button>
+          </div>
+        </PopoverCard>
+      )}
+    </div>
   );
 }
