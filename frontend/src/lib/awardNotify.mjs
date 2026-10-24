@@ -37,9 +37,11 @@ export function readAwardPage(html) {
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// The deployed dashboard's Award Notices page (asks to sign in first when needed)
+const DASHBOARD = 'https://hospital-bidding-automation.vercel.app';
 const dashboardUrl = () => {
-  const host = process.env.DASHBOARD_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
-  return host ? `${host.replace(/\/$/, '')}/ps-philgeps/awards` : null;
+  const host = process.env.DASHBOARD_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`) || DASHBOARD;
+  return `${host.replace(/\/$/, '')}/ps-philgeps/awards`;
 };
 
 export function composeEmail({ award, lineItem, details, route }) {
@@ -60,9 +62,7 @@ export function composeEmail({ award, lineItem, details, route }) {
   ].filter(([, v]) => v);
   const awardLink = `${HOST}/BidAwards/viewAwardNotice/${award}`;
   const dash = dashboardUrl();
-  const next = dash
-    ? `Please accept or refuse it in the dashboard (Award Notices → Accept / Refuse): ${dash}`
-    : 'Please accept or refuse it in the dashboard (PS-PhilGEPS → Award Notices → Accept / Refuse).';
+  const next = `Please sign in to the Hospital Bidding System and accept or refuse it (Award Notices → Accept / Refuse): ${dash}`;
   const copied = route.cc.length ? `${route.cc.map((p) => p.name).join(' and ')} are copied as back-up.` : '';
   const text = [greeting, '', intro, '', ...rows.map(([k, v]) => `${k}: ${v}`), '', next, `Award notice on PS-PhilGEPS: ${awardLink}`, '', copied, '', 'Hospital Bidding System (automatic message)']
     .join('\n')
@@ -70,7 +70,9 @@ export function composeEmail({ award, lineItem, details, route }) {
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">
 <p>${esc(greeting)}</p><p>${esc(intro)}</p>
 <table style="border-collapse:collapse;margin:8px 0">${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#555">${esc(k)}</td><td style="padding:4px 0;font-weight:600">${esc(v)}</td></tr>`).join('')}</table>
-<p>${dash ? `Please accept or refuse it in the dashboard: <a href="${esc(dash)}">Award Notices → Accept / Refuse</a>.` : esc(next)}<br><a href="${esc(awardLink)}">Open the award notice on PS-PhilGEPS</a></p>
+<p>Please sign in to the Hospital Bidding System and accept or refuse it (Award Notices → Accept / Refuse).</p>
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin:16px 0"><tr><td style="border-radius:8px;background:#1EA0DA"><a href="${esc(dash)}" style="display:inline-block;padding:12px 24px;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px">Log in to Hospital Bidding System</a></td></tr></table>
+<p style="font-size:13px"><a href="${esc(awardLink)}" style="color:#12769F">Open the award notice on PS-PhilGEPS</a></p>
 ${copied ? `<p style="color:#555">${esc(copied)}</p>` : ''}<p style="color:#888;font-size:12px">Hospital Bidding System (automatic message)</p></div>`;
   return { subject: `Award notice waiting for our answer: ${hospital} · ${lineItem} (No. ${award})`, text, html };
 }
