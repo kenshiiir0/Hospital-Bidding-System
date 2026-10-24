@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
+import { supabase } from '@/lib/supabase';
+import { PEOPLE } from '@/lib/awardRouting.mjs';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel from '@/components/PsDetailsPanel';
 import PsAwardResponse from '@/components/PsAwardResponse';
@@ -18,6 +20,14 @@ export default function AwardNoticesPage() {
   const [selectedNo, setSelectedNo] = useState(null);
   // Answered from the drawer: keep its result showing after the reload (the row is no longer pending)
   const [answered, setAnswered] = useState(null);
+  // Who was emailed about each award waiting for our answer (lib/awardNotify.mjs, run by the Sync)
+  const [emails, setEmails] = useState({});
+  useEffect(() => {
+    supabase
+      .from('award_notifications')
+      .select('award_no, agency, recipients, status, error, sent_at')
+      .then(({ data: rows }) => setEmails(Object.fromEntries((rows || []).map((r) => [r.award_no, r]))));
+  }, [data]);
   const list = data?.lists?.awards;
   const column = (name) => list?.headers.indexOf(name) ?? -1;
   const pending = (row) => /pending/i.test(row.cells[column('Award Acceptance')] || '');
@@ -51,6 +61,7 @@ export default function AwardNoticesPage() {
         columns={COLUMNS}
         extraColumns={[
           { label: 'Type', after: 'Award Notice Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Procurement Mode')])} /> },
+          { label: 'Emailed to', render: (row) => <EmailedTo note={emails[row.cells[0]]} /> },
         ]}
         onDetails={(row) => setSelectedNo(row.cells[0])}
       />
@@ -79,6 +90,19 @@ export default function AwardNoticesPage() {
         />
       )}
     </section>
+  );
+}
+
+const firstName = (email) => Object.values(PEOPLE).find((p) => p.email === email)?.name.split(' ')[0] || email;
+
+// The representative first (the back-ups are copied on every email); a failed send shows why
+function EmailedTo({ note }) {
+  if (!note) return null;
+  if (note.status !== 'sent') return <span className="text-xs text-[#B3312C]" title={note.error || ''}>Not sent</span>;
+  return (
+    <span className="whitespace-nowrap text-xs text-black/70" title={`${note.agency || ''}\n${note.recipients.join(', ')}`}>
+      {note.recipients.map(firstName).join(', ')}
+    </span>
   );
 }
 

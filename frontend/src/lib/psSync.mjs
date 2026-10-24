@@ -4,6 +4,7 @@ import { loadMatcher } from './products.mjs';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
 import { analyzePending } from './psDocs.mjs';
+import { notifyPendingAwards } from './awardNotify.mjs';
 
 // PS-PhilGEPS (philgeps.gov.ph) Sync without a browser, so it runs on the deployed dashboard's server.
 // PhilGEPS's lists, notices and document lists are plain HTML; they are fetched with the log-in session
@@ -424,6 +425,10 @@ export async function runSync() {
     const first = await summarize(undefined);
     await setStatus(supabase, { status: 'success', percent: 100, stage: first.stage, finished_at: new Date().toISOString() });
     await logActivity({ event: 'ps-sync', status: 'success', by: started?.started_by, summary: first.stage, details: { duration_ms: tookMs(), ...first.details } });
+
+    // Awards waiting for our answer: email the hospital's representative, once per award (awardNotify.mjs)
+    await notifyPendingAwards(supabase, lists.awards, (url) => withSession(() => getPage(session, url))).catch(() => {});
+    await saveCookies().catch(() => {});
 
     // Our products are often only in the documents (a notice titled "Drugs and Medicines" lists its items in
     // the bid documents): read the new and changed documents now (psDocs.mjs), as time allows; the rest are read

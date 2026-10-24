@@ -307,3 +307,25 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON products FROM authenticated;
 -- Restore brings it back. The matcher only reads rows with archived_at NULL (loadProducts).
 ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_by TEXT;
+
+-- Award notices "Pending for Acceptance" emailed to the hospital's representative by the PS-PhilGEPS Sync
+-- (frontend/src/lib/awardNotify.mjs, routing in awardRouting.mjs): one row per award; status sent | failed
+-- (failed is tried again, up to 3 attempts). The Award Notices page shows who was told.
+CREATE TABLE IF NOT EXISTS award_notifications (
+    award_no TEXT PRIMARY KEY,
+    line_item TEXT,
+    agency TEXT,
+    hospital_no INT,                          -- number on the served list of hospitals; NULL = not on it
+    recipients TEXT[] NOT NULL DEFAULT '{}',
+    status VARCHAR(20) NOT NULL,
+    error TEXT,
+    attempts INT NOT NULL DEFAULT 0,
+    sent_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE award_notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON award_notifications;
+CREATE POLICY "dashboard can read" ON award_notifications FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON award_notifications FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON award_notifications FROM authenticated;
