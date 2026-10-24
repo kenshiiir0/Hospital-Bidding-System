@@ -11,11 +11,12 @@ import { analyzePending } from './psDocs.mjs';
 // ps-philgeps-sync.js: Bid Match, My Opportunities and Award Notices lists, each Bid Match notice's
 // products (table products) and documents. New documents go to the Storage bucket ps-documents, the
 // result to ps_philgeps_snapshot, progress to ps_sync_status (read by every dashboard).
-// Reads only: never opens Accept / Refuse / Feedback or anything that changes data on PhilGEPS.
+// Reads only: never opens Accept / Refuse / Feedback or anything that changes data on PhilGEPS (accepting or
+// refusing an award is psAward.mjs, started only by a person).
 // Plain .mjs (no Next imports) so it can also be run directly with node for testing.
 
 const HOST = 'https://philgeps.gov.ph';
-const LISTS = [
+export const LISTS = [
   { key: 'bidMatch', label: 'Bid Match', url: `${HOST}/EventManagements/myBidMatch` },
   { key: 'opportunities', label: 'My Opportunities', url: `${HOST}/EventManagements/myOpportunities` },
   { key: 'awards', label: 'Award Notices', url: `${HOST}/EventManagements/myAwardNotices` },
@@ -28,7 +29,7 @@ const NOTICES_AT_ONCE = 3;
 // result must be saved); notices not reached keep what the last Sync read, and the next Sync reads them
 const NOTICES_UNTIL_MS = 210 * 1000;
 const BUCKET = 'ps-documents';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
+export const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
 // A Sync "running" for longer than this was cut off (server time limit) and may be started again
 export const STALE_RUN_MS = 6 * 60 * 1000;
 
@@ -39,7 +40,7 @@ export class PsSyncError extends Error {
   }
 }
 
-function admin() {
+export function admin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url || !process.env.SUPABASE_KEY) {
     throw new PsSyncError('NOT_CONFIGURED', 'SUPABASE_URL and SUPABASE_KEY (secret key) are not set on this server.');
@@ -50,7 +51,7 @@ function admin() {
 // ---------- session (cookies) ----------
 
 // The session's cookies as name → value; PhilGEPS's Set-Cookie headers update them as pages are read
-class Session {
+export class Session {
   constructor(cookies) {
     this.load(cookies);
   }
@@ -105,11 +106,11 @@ async function get(session, url, { ajax = false } = {}) {
 }
 
 // A members-only page that comes back as the log-in form means PhilGEPS ended the session
-function isLoginPage(res, html) {
+export function isLoginPage(res, html) {
   return /\/(Indexes|users)\/login/i.test(res.url) || /form[^>]+action="[^"]*users\/login/i.test(html) || /session has been expired/i.test(html);
 }
 
-async function getPage(session, url, options) {
+export async function getPage(session, url, options) {
   const res = await get(session, url, options);
   const html = await res.text();
   if (isLoginPage(res, html)) throw new PsSyncError('NOT_CONNECTED', 'The PS-PhilGEPS session has ended. A person must connect again (captcha).');
@@ -158,7 +159,7 @@ function nextPageUrl(root, current) {
   return href && !href.startsWith('javascript') && href !== current ? href : null;
 }
 
-async function readList(session, list, onPage) {
+export async function readList(session, list, onPage = () => {}) {
   const result = { label: list.label, headers: [], rows: [], pages: 0 };
   const seen = new Set();
   let url = list.url;

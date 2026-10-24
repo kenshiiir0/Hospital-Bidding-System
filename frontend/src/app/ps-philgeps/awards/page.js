@@ -4,16 +4,23 @@ import { useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel from '@/components/PsDetailsPanel';
+import PsAwardResponse from '@/components/PsAwardResponse';
 import { usePsFilters } from '@/components/PsFilters';
 import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
 
-// My Award Notices: awards the hospitals posted for us, with their acceptance status. Read only for now;
-// Accept / Refuse from here comes later, behind a confirmation step.
+// My Award Notices: awards the hospitals posted for us, with their acceptance status. An award still "Pending
+// for Acceptance" can be accepted or refused from its View details drawer (components/PsAwardResponse.js),
+// which sends the answer to PS-PhilGEPS.
 export default function AwardNoticesPage() {
-  const { data, search = '' } = usePsPhilgeps() || {};
-  const [selected, setSelected] = useState(null);
+  const { data, search = '', reload, connected, syncing } = usePsPhilgeps() || {};
+  // The open award by its number, so the drawer shows the new status after the list is reloaded
+  const [selectedNo, setSelectedNo] = useState(null);
+  // Answered from the drawer: keep its result showing after the reload (the row is no longer pending)
+  const [answered, setAnswered] = useState(null);
   const list = data?.lists?.awards;
+  const column = (name) => list?.headers.indexOf(name) ?? -1;
+  const pending = (row) => /pending/i.test(row.cells[column('Award Acceptance')] || '');
   const filters = usePsFilters(list, {
     selects: [
       { label: 'Acceptance', column: 'Award Acceptance' },
@@ -28,10 +35,13 @@ export default function AwardNoticesPage() {
     ],
   });
   const rows = filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row)));
+  const selected = selectedNo && list?.rows.find((row) => row.cells[0] === selectedNo);
+  const waiting = (list?.rows || []).filter(pending).length;
   return (
     <section className="space-y-4">
       <h2 className="text-base font-semibold">
         Award Notices {list && <span className="text-sm font-normal text-black/62">· {rows.length} of {list.rows.length} shown</span>}
+        {waiting > 0 && <span className="text-sm font-normal text-[#12769F]"> · {waiting} waiting for our answer</span>}
       </h2>
       {filters.bar}
       <PsListTable
@@ -41,8 +51,21 @@ export default function AwardNoticesPage() {
         columns={COLUMNS}
         extraColumns={[
           { label: 'Type', after: 'Award Notice Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Procurement Mode')])} /> },
+          {
+            label: 'Answer',
+            render: (row) =>
+              pending(row) ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedNo(row.cells[0])}
+                  className="whitespace-nowrap rounded-lg border border-[#1EA0DA]/30 px-3 py-1 text-xs font-semibold text-[#12769F] transition hover:bg-[#1EA0DA]/8"
+                >
+                  Accept / Refuse
+                </button>
+              ) : null,
+          },
         ]}
-        onDetails={setSelected}
+        onDetails={(row) => setSelectedNo(row.cells[0])}
       />
       {selected && (
         <PsDetailsPanel
@@ -50,7 +73,22 @@ export default function AwardNoticesPage() {
           row={selected}
           titleColumn="Line Item"
           link={selected.links.find((l) => /viewAwardNotice/.test(l.href))?.href}
-          onClose={() => setSelected(null)}
+          lead={
+            (pending(selected) || answered === selectedNo) && (
+              <PsAwardResponse
+                key={selectedNo}
+                award={selectedNo}
+                lineItem={selected.cells[column('Line Item')]}
+                connected={connected}
+                syncing={syncing}
+                onDone={() => {
+                  setAnswered(selectedNo);
+                  reload?.();
+                }}
+              />
+            )
+          }
+          onClose={() => setSelectedNo(null)}
         />
       )}
     </section>
