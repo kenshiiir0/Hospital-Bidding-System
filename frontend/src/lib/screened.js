@@ -83,8 +83,12 @@ async function loadPsData() {
 
 // The stored copy's dates come back from JSON as text; the workbook needs Date objects
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T/;
+// Copies saved before 2026-10-24 may start molecule cells with a stock code ("55100000. "); only line numbers
+// of up to 4 digits are kept, as in the export (opportunityWorkbook.js itemRow)
+const STOCK_CODE = /^(?:\d{5,}|[A-Z]+\d+)\.\s*/;
 const revive = (tender) => ({
   ...tender,
+  molecules: (tender.molecules || []).map((cells) => cells.map((cell) => (typeof cell === 'string' ? cell.replace(STOCK_CODE, '') : cell))),
   closing: ISO_TIME.test(tender.closing || '') ? new Date(tender.closing) : tender.closing,
   lastUpdated: ISO_TIME.test(tender.lastUpdated || '') ? new Date(tender.lastUpdated) : tender.lastUpdated,
 });
