@@ -16,7 +16,7 @@ const GROUPS = [
   {
     label: 'PhilGEPS Portal',
     links: [
-      { href: '/', label: 'Dashboard', icon: '▦' },
+      { href: '/', label: 'Bid Match', icon: '▦' },
     ],
   },
   {
