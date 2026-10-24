@@ -110,16 +110,16 @@ export default function TenderDetails({ bid, onClose }) {
   // Lines naming our products: from the notice's item list (scraper; missing until the next update) and from
   // the downloaded documents (Sync, philgepsSync.mjs), as in the PS-PhilGEPS molecule tracker
   const descriptionItems = d.matched_items;
-  // The documents are trusted over the notice: a product with lines in the documents shows only those
+  // The documents hold the real data: their lines come first, and a product with lines there shows only those
   const inDocuments = new Set((d.documents_items || []).flatMap((item) => item.our_products || []));
   const items =
     descriptionItems === undefined && !d.documents_items
       ? undefined
       : [
+          ...(d.documents_items || []).map((item) => ({ ...item, products: item.our_products, where: item.source?.split(', ').pop() || 'Documents' })),
           ...(descriptionItems || [])
             .filter((item) => !(item.products || []).length || !item.products.every((p) => inDocuments.has(p)))
             .map((item) => ({ ...item, where: 'Description' })),
-          ...(d.documents_items || []).map((item) => ({ ...item, products: item.our_products, where: item.source?.split(', ').pop() || 'Documents' })),
         ];
   const supplements = d.supplements || [];
   const documents = d.documents || [];
@@ -162,14 +162,14 @@ export default function TenderDetails({ bid, onClose }) {
             </p>
           )}
           <PanelSection title="Bidding dates" tone="blue">
-            {/* The description first, else what the bid documents say (PhilGEPS's notice page has no schedule) */}
+            {/* The bid documents first (they hold the real data), else the description (PhilGEPS's notice page has no schedule) */}
             <KeyValueList
               items={[
-                ['Pre-bid conference', d.pre_bid || fromDocs(bidDateText(bds.prebid_conference))],
-                ['Bid opening', d.bid_opening || fromDocs(bidDateText(bds.bid_opening))],
+                ['Pre-bid conference', fromDocs(bidDateText(bds.prebid_conference)) || d.pre_bid],
+                ['Bid opening', fromDocs(bidDateText(bds.bid_opening)) || d.bid_opening],
                 ['Submission deadline', fromDocs(bidDateText(bds.bid_submission_deadline))],
                 ['Closing', formatDateTime(bid.closing_date)],
-                ['Delivery period', d.delivery_period || fromDocs(deliveryText(bds.delivery_period))],
+                ['Delivery period', fromDocs(deliveryText(bds.delivery_period)) || d.delivery_period],
                 ['Last updated', d.last_updated],
               ]}
               missing={documents.length ? 'Not in the notice or its documents' : 'Not on the notice page'}

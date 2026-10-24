@@ -148,12 +148,15 @@ function itemRow(item) {
   return [`${n}${text}`, qty, item.unit_price != null ? `${n}${amount(item.unit_price)}` : '', total];
 }
 
-// Molecule rows: the notice's own item lines, else the lines read in the bid documents that have a quantity
-// (lines without one are context such as "Project Name: ..."), else just our product names
+// Molecule rows: the documents hold the real data, so a product with lines read in the bid documents (lines
+// with a quantity; others are context such as "Project Name: ...") gets those, and the notice's own item lines
+// fill in only the products the documents don't give; else just our product names
 function moleculeRows(noticeItems, documentItems, productNames) {
-  if (noticeItems?.length) return noticeItems.map(itemRow);
   const fromDocs = (documentItems || []).filter((item) => item.quantity != null);
-  if (fromDocs.length) return fromDocs.map(itemRow);
+  const inDocuments = new Set(fromDocs.flatMap((item) => item.our_products || []));
+  const fromNotice = (noticeItems || []).filter((item) => !(item.products || []).length || !item.products.every((p) => inDocuments.has(p)));
+  const rows = [...fromDocs, ...fromNotice];
+  if (rows.length) return rows.map(itemRow);
   // A tender listed only because its documents couldn't be read ("Need manual check")
   return [[productNames.join(', ') || MANUAL_CHECK, '', '', null]];
 }
@@ -170,10 +173,10 @@ export function philgepsTender(bid) {
     hospital: bid.procuring_entity || '',
     ref: bid.ref_no || '',
     molecules: moleculeRows(d.matched_items, d.documents_items, bid.matched_molecules || []),
-    // The notice's own dates, else what the bid documents say (as in View details)
-    preBid: d.pre_bid || bidDateText(bds.prebid_conference) || '',
-    bidOpening: d.bid_opening || bidDateText(bds.bid_opening) || '',
-    deliveryPeriod: d.delivery_period || deliveryText(bds.delivery_period) || '',
+    // What the bid documents say, else the notice's description (as in View details)
+    preBid: bidDateText(bds.prebid_conference) || d.pre_bid || '',
+    bidOpening: bidDateText(bds.bid_opening) || d.bid_opening || '',
+    deliveryPeriod: deliveryText(bds.delivery_period) || d.delivery_period || '',
     lastUpdated: dmyTime(d.last_updated),
     closing: isoDateTime(bid.closing_date),
     contactName: d.contact_name || '',
