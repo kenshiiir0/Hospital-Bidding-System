@@ -39,6 +39,11 @@ const GROUPS = [
     label: 'Catalog Management',
     links: [{ href: '/products', label: 'Product List', icon: '✚' }],
   },
+  // System reports for both sites (the OCR warning and the OCR layers' last runs)
+  {
+    label: 'Reports',
+    links: [{ href: '/report-log', label: 'Report Log', icon: '☷' }],
+  },
 ];
 
 // Signing out also drops the tender list cached in this browser (see page.js)
