@@ -8,7 +8,7 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import TypeBadge from '@/components/TypeBadge';
 import WorkingDots from '@/components/WorkingDots';
 import { exportScreened, removeScreened, useScreened } from '@/lib/screened';
-import { formatDate, formatDateTime, formatInstant } from '@/lib/format';
+import { formatDate, formatDateTime, formatInstant, instantDay } from '@/lib/format';
 import { displayName } from '@/lib/username';
 
 const SOURCES = { philgeps: 'PhilGEPS', ps: 'PS-PhilGEPS' };
@@ -37,6 +37,7 @@ export default function ScreenedPage() {
       { label: 'Added by', column: 'Added by' },
     ],
     dates: [
+      { label: 'Screened', column: 'Screened Date' },
       { label: 'Published', column: 'Publish Date' },
       { label: 'Closing', column: 'Closing Date' },
     ],
@@ -49,9 +50,15 @@ export default function ScreenedPage() {
     ],
   });
   const text = search.trim().toLowerCase();
+  // Newest screening day first; within a day the chosen sort (the Excel export still stacks them all in one list)
   const shown = filters
     .apply((list?.rows || []).filter((row) => !text || row.searchText.includes(text)))
-    .map((row) => row.item);
+    .map((row) => row.item)
+    .map((r, i) => ({ r, i, day: instantDay(r.added_at) }))
+    .sort((a, b) => b.day.localeCompare(a.day) || a.i - b.i)
+    .map(({ r }) => r);
+  const perDay = {};
+  for (const r of shown) perDay[instantDay(r.added_at)] = (perDay[instantDay(r.added_at)] || 0) + 1;
 
   // Page shown (1-based) and rows per page; any search, filter or sort change goes back to page 1 (the page
   // number belongs to the filters it was picked under)
@@ -178,7 +185,19 @@ export default function ScreenedPage() {
             </div>
           ) : (
             <>
-              <ResponsiveTable columns={columns} rows={pageRows} rowKey={(r) => `${r.source}:${r.ref}`} />
+              {/* One block per day the tenders were screened (Philippine date) */}
+              {groupByDay(pageRows).map(({ day, items }) => (
+                <section key={day} className="space-y-2">
+                  <h2 className="flex items-center gap-2 border-b border-[#E2E8F0] pb-1.5 text-sm font-semibold text-black">
+                    <span className="h-2 w-2 rounded-full bg-[#61A644]" aria-hidden />
+                    Screened {dayLabel(day)}
+                    <span className="text-xs font-normal text-black/62">
+                      · {perDay[day]} tender{perDay[day] === 1 ? '' : 's'}
+                    </span>
+                  </h2>
+                  <ResponsiveTable columns={columns} rows={items} rowKey={(r) => `${r.source}:${r.ref}`} />
+                </section>
+              ))}
               {shown.length > PAGE_SIZES[0] && (
                 <Pagination
                   page={currentPage}
@@ -199,7 +218,27 @@ export default function ScreenedPage() {
   );
 }
 
-const LIST_HEADERS = ['Source', 'Type', 'Hospital', 'Added by', 'Publish Date', 'Closing Date', 'Added at'];
+const LIST_HEADERS = ['Source', 'Type', 'Hospital', 'Added by', 'Publish Date', 'Closing Date', 'Added at', 'Screened Date'];
+
+// Rows (already newest day first) split into days: [{ day: '2026-10-24', items }]
+function groupByDay(rows) {
+  const groups = [];
+  for (const r of rows) {
+    const day = instantDay(r.added_at);
+    if (groups.at(-1)?.day !== day) groups.push({ day, items: [] });
+    groups.at(-1).items.push(r);
+  }
+  return groups;
+}
+
+// "today · Oct 24, 2026", "yesterday · Oct 23, 2026", else "Thu · Oct 22, 2026" (Philippine days)
+function dayLabel(day) {
+  if (!day) return 'on an unknown day';
+  const today = instantDay(new Date().toISOString());
+  const yesterday = instantDay(new Date(Date.now() - 86400000).toISOString());
+  const weekday = new Date(`${day}T00:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', timeZone: 'UTC' });
+  return `${day === today ? 'today' : day === yesterday ? 'yesterday' : weekday} · ${formatDate(day)}`;
+}
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // "2026-10-22..." -> "22-Oct-2026" (closing is stored as the Philippine time written in UTC, so its date part is right)
 const philgepsDay = (iso) => {
@@ -211,7 +250,7 @@ function toListRow(r) {
   return {
     item: r,
     links: [],
-    cells: [SOURCES[r.source] || r.source, t.type || '', t.hospital || '', displayName(r.added_by || ''), philgepsDay(t.published), philgepsDay(t.closing), r.added_at || ''],
+    cells: [SOURCES[r.source] || r.source, t.type || '', t.hospital || '', displayName(r.added_by || ''), philgepsDay(t.published), philgepsDay(t.closing), r.added_at || '', philgepsDay(instantDay(r.added_at))],
     searchText: `${r.ref} ${r.title || ''} ${t.hospital || ''} ${(t.products || []).join(' ')} ${(t.molecules || []).map((m) => m[0]).join(' ')}`.toLowerCase(),
   };
 }
