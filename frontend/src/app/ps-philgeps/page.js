@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import PsBidMatchDetails from '@/components/PsBidMatchDetails';
-import { needsManualCheck } from '@/lib/manualCheck';
+import { stillReading } from '@/lib/documentsReading';
 import { usePsFilters } from '@/components/PsFilters';
 import { NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
 import { useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
@@ -19,7 +19,7 @@ import { psType } from '@/lib/tenderType';
 // against each notice's full page), with the notice's downloaded documents
 export default function BidMatchPage() {
   const { data, search = '', sync } = usePsPhilgeps() || {};
-  // Which tenders: true = our products, false = all, 'check' = documents that couldn't be read (lib/manualCheck.js)
+  // Which tenders: true = our products, false = all
   const [onlyOurs, setOnlyOurs] = useState(true);
   const [selected, setSelected] = useState(null);
   const list = data?.lists?.bidMatch;
@@ -35,9 +35,8 @@ export default function BidMatchPage() {
   // "Drugs and Medicines" lists its items in the documents)
   const productsOf = (row) => [...new Set([...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)])];
   const ours = (list?.rows || []).filter((row) => productsOf(row).length);
-  const needsCheck = (row) => needsManualCheck(readingOf(row)?.documents_read);
-  // Also the tenders with no product found: our products may be in the files that couldn't be read
-  const toCheck = (list?.rows || []).filter(needsCheck);
+  // Scanned documents still being read automatically with OCR (lib/documentsReading.js)
+  const reading = (row) => stillReading(readingOf(row)?.documents_read);
   // New since last read (lib/newTenders.js; the PS-PhilGEPS layout records each Sync's rows)
   const news = useTenderNews();
   const newKey = (row) => `ps:${refOf(row) || row.cells[0]}`;
@@ -53,7 +52,6 @@ export default function BidMatchPage() {
         options={[
           { value: true, label: 'Our products', count: ours.length },
           { value: false, label: 'All', count: list.rows.length },
-          { value: 'check', label: 'Need manual check', count: toCheck.length },
         ]}
       />
     ),
@@ -86,7 +84,7 @@ export default function BidMatchPage() {
     if (oursCount != null) setNavCount('/ps-philgeps', oursCount);
   }, [oursCount]);
   // New, unread tenders first (a stable sort keeps the chosen order otherwise)
-  const rows = [...(filters.apply((onlyOurs === 'check' ? toCheck : onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' ')))))].sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
+  const rows = [...(filters.apply((onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' ')))))].sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
 
 
   return (
@@ -124,7 +122,7 @@ export default function BidMatchPage() {
                     <TypeBadge type={psType(cell(row, 'Mode of Procurement'))} />
                     <StatusBadge text={cell(row, 'Status')} />
                   </div>
-                  <div className="font-normal"><DocumentCount notice={noticeOf(row)} check={needsCheck(row)} /></div>
+                  <div className="font-normal"><DocumentCount notice={noticeOf(row)} reading={reading(row)} /></div>
                 </div>
               ),
             },
@@ -166,7 +164,7 @@ export default function BidMatchPage() {
 // The list shows the hospital; the long notice title, mode and classification are in View details
 const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Closing Date', 'Status'];
 
-function DocumentCount({ notice, check }) {
+function DocumentCount({ notice, reading }) {
   if (!notice) return <span className="text-black/46">—</span>;
   if (notice.error) return <span className="text-xs text-[#B3312C]">Not read</span>;
   const n = notice.documents?.length || 0;
@@ -174,7 +172,7 @@ function DocumentCount({ notice, check }) {
   return (
     <span className="text-xs text-[#3F6F2C]">
       📎 {n} file{n > 1 ? 's' : ''}
-      {check && <span className="block font-medium text-[#B3312C]">Check by hand</span>}
+      {reading && <span className="block font-medium text-[#12769F]">Reading scans (OCR)</span>}
     </span>
   );
 }

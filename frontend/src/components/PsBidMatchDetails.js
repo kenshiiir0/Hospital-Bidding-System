@@ -1,11 +1,11 @@
 'use client';
 
 import ResponsiveTable from '@/components/ResponsiveTable';
-import PsDetailsPanel, { ChecklistList, KeyValueList, ManualCheckNote, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
+import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 import ScreenButton from '@/components/ScreenButton';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
-import { needsManualCheck } from '@/lib/manualCheck';
+import { stillReading } from '@/lib/documentsReading';
 import { psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { formatInstant } from '@/lib/format';
@@ -119,9 +119,9 @@ function FromDocuments({ reading }) {
         ) : (
           <ChecklistList items={BDS_FIELDS.map(([label, key]) => [label, reading.result.bid_data_sheet[key]])} />
         )}
-        {needsManualCheck(reading?.documents_read) && (
+        {stillReading(reading?.documents_read) && (
           <div className="mt-2">
-            <ManualCheckNote read={reading.documents_read} />
+            <ReadingNote read={reading.documents_read} />
           </div>
         )}
       </PanelSection>

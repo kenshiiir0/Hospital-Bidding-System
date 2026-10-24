@@ -10,7 +10,6 @@
 import { philgepsType, psType } from './tenderType';
 // Bid dates and delivery period read in the bid documents, cut to the value alone
 import { bidDateText, deliveryText } from './bidDates';
-import { MANUAL_CHECK } from './manualCheck';
 
 const COLUMNS = [
   // header, width, header font size
@@ -158,8 +157,8 @@ function moleculeRows(noticeItems, documentItems, productNames) {
   const fromNotice = (noticeItems || []).filter((item) => !(item.products || []).length || !item.products.every((p) => inDocuments.has(p)));
   const rows = [...fromDocs, ...fromNotice];
   if (rows.length) return rows.map(itemRow);
-  // A tender listed only because its documents couldn't be read ("Need manual check")
-  return [[productNames.join(', ') || MANUAL_CHECK, '', '', null]];
+  // No item lines read yet (e.g. scanned documents still being read with OCR)
+  return [[productNames.join(', '), '', '', null]];
 }
 
 // A PhilGEPS tender (philgeps_opportunities row)
