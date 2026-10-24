@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from 'react';
 import { supabase } from '@/lib/supabase';
-import { downloadOpportunityWorkbook, oldestFirst, philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
+import { downloadOpportunityWorkbook, philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 
 // Screened Tenders (Supabase screened_tenders, shared by the team): tenders picked with "Add to Screened" in
@@ -113,9 +113,11 @@ async function currentTenders(list) {
   });
 }
 
-// The team's Opportunity sheet for these screened rows, oldest published at the top
+// The team's Opportunity sheet for these screened rows, stacked in the order they were screened: the first
+// screened at the top, the latest at the bottom (so each day's additions land under the earlier ones)
 export async function exportScreened(list) {
-  const tenders = oldestFirst(await currentTenders(list));
+  const inScreenedOrder = [...list].sort((a, b) => String(a.added_at).localeCompare(String(b.added_at)));
+  const tenders = await currentTenders(inScreenedOrder);
   await downloadOpportunityWorkbook(tenders);
   return tenders.length;
 }

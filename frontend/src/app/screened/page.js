@@ -15,7 +15,7 @@ const SOURCES = { philgeps: 'PhilGEPS', ps: 'PS-PhilGEPS' };
 
 // Screened Tenders: the tenders the team picked with "Add to Screened" in View details on the PhilGEPS
 // Dashboard and PS-PhilGEPS Bid Match (lib/screened.js). Export Excel writes the ones listed here to the
-// team's Opportunity sheet, with each tender as it is now (latest update / Sync), oldest published at the top.
+// team's Opportunity sheet, with each tender as it is now (latest update / Sync), stacked in the order they were screened.
 export default function ScreenedPage() {
   const { rows, error } = useScreened();
   const [search, setSearch] = useState('');
@@ -80,7 +80,7 @@ export default function ScreenedPage() {
     setMessage({ tone: '', text: '' });
     try {
       const count = await exportScreened(shown);
-      setMessage({ tone: 'success', text: `Exported ${count} screened tender${count === 1 ? '' : 's'}, oldest published at the top.` });
+      setMessage({ tone: 'success', text: `Exported ${count} screened tender${count === 1 ? '' : 's'}, first screened at the top, latest at the bottom.` });
     } catch (err) {
       setMessage({ tone: 'error', text: `Export failed: ${err.message}` });
     }
@@ -159,7 +159,7 @@ export default function ScreenedPage() {
           <button
             onClick={runExport}
             disabled={exporting || !shown.length}
-            title="The tenders listed below in the team's Opportunity sheet, oldest published at the top"
+            title="The tenders listed below in the team's Opportunity sheet, first screened at the top, latest at the bottom"
             className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#3F6F2C] disabled:cursor-not-allowed disabled:bg-[#4A8033]/50"
           >
             {exporting ? <>Exporting <WorkingDots /></> : `⬇ Export Excel${rows ? ` (${shown.length})` : ''}`}
