@@ -9,10 +9,9 @@ import PsDetailsPanel, { ChecklistList, KeyValueList, ManualCheckNote, MissingTa
 import { needsManualCheck } from '@/lib/manualCheck';
 import { usePsFilters } from '@/components/PsFilters';
 import { ProductChips as Products, SegmentedTabs } from '@/components/FilterControls';
-import { psRefOf } from '@/lib/opportunityWorkbook';
+import { psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
-import { psTenders } from '@/lib/unifiedExport';
-import { useExportScope } from '@/lib/exportScope';
+import ScreenButton from '@/components/ScreenButton';
 import TypeBadge from '@/components/TypeBadge';
 import FetchedSection, { startedByLabel } from '@/components/FetchedSection';
 import { formatInstant } from '@/lib/format';
@@ -64,19 +63,6 @@ export default function BidMatchPage() {
   });
   const rows = filters.apply((onlyOurs === 'check' ? toCheck : onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' '))));
 
-  // The sidebar's Export Excel uses these rows (all filters applied) plus the PhilGEPS tenders matching the
-  // same search (lib/exportScope.js, lib/unifiedExport.js). Until the data loads, it exports everything.
-  useExportScope('ps-bid-match', () =>
-    data
-      ? {
-          from: 'ps',
-          getShown: () => psTenders(data, rows),
-          search,
-          type: filters.chosen.Type || '',
-          summary: `${rows.length} Bid Match listed here${search ? ` · search "${search}"` : ''}${filters.chosen.Type ? ` · ${filters.chosen.Type} only` : ''}`,
-        }
-      : {}
-  );
 
   return (
     <section className="space-y-4">
@@ -124,6 +110,14 @@ export default function BidMatchPage() {
           link={selected.links.find((l) => /viewBidNotice/.test(l.href))?.href}
           wide
           onClose={() => setSelected(null)}
+          action={
+            <ScreenButton
+              source="ps"
+              tenderRef={refOf(selected)}
+              title={selected.cells[list.headers.indexOf('Notice Title')]}
+              getTender={() => psTender(selected, list.headers, noticeOf(selected), readingOf(selected))}
+            />
+          }
           lead={
             <>
               <PanelSection title="Bidding dates" tone="blue">

@@ -1,0 +1,116 @@
+'use client';
+
+import { useEffect, useSyncExternalStore } from 'react';
+import { supabase } from '@/lib/supabase';
+import { downloadOpportunityWorkbook, oldestFirst, philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
+import { activePsData, loadActiveNames } from '@/lib/activeProducts';
+
+// Screened Tenders (Supabase screened_tenders, shared by the team): tenders picked with "Add to Screened" in
+// View details. The Screened Tenders page lists them and exports them to Excel.
+// A plain module store: every Add/Remove button and the page read the same rows.
+// A row is { source: 'philgeps' | 'ps', ref, title, tender, added_by, added_at }.
+
+let rows = null;
+let error = '';
+let loading = null;
+const listeners = new Set();
+const notify = () => listeners.forEach((listener) => listener());
+const subscribe = (listener) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+export const screenedKey = (source, ref) => `${source}:${ref}`;
+
+export function loadScreened() {
+  loading ||= supabase
+    .from('screened_tenders')
+    .select('*')
+    .order('added_at', { ascending: false })
+    .then(({ data, error: err }) => {
+      if (err) error = `Could not load the screened tenders: ${err.message}`;
+      else {
+        rows = data;
+        error = '';
+      }
+      loading = null;
+      notify();
+    });
+  return loading;
+}
+
+// { rows (null until loaded), error, has(source, ref) }; loads the list when first used
+let snapshot = { rows, error };
+const getSnapshot = () => {
+  if (snapshot.rows !== rows || snapshot.error !== error) snapshot = { rows, error };
+  return snapshot;
+};
+const serverSnapshot = { rows: null, error: '' };
+export function useScreened() {
+  const state = useSyncExternalStore(subscribe, getSnapshot, () => serverSnapshot);
+  useEffect(() => {
+    if (!rows) loadScreened();
+  }, []);
+  const keys = new Set((state.rows || []).map((r) => screenedKey(r.source, r.ref)));
+  return { ...state, has: (source, ref) => keys.has(screenedKey(source, ref)) };
+}
+
+// tender: the tender in export shape (philgepsTender / psTender)
+export async function addScreened(source, ref, title, tender) {
+  const { error: err } = await supabase.from('screened_tenders').insert({ source, ref, title, tender });
+  // Someone else added it a moment ago: it is screened either way
+  if (err && err.code !== '23505') throw new Error(err.message);
+  await loadScreened();
+}
+
+export async function removeScreened(source, ref) {
+  const { error: err } = await supabase.from('screened_tenders').delete().eq('source', source).eq('ref', ref);
+  if (err) throw new Error(err.message);
+  await loadScreened();
+}
+
+// PS-PhilGEPS Bid Match: the last Sync's list, notices and document readings (as app/ps-philgeps/layout.js loads them)
+async function loadPsData() {
+  const [{ data: snap, error: err }, { data: readings }] = await Promise.all([
+    supabase.from('ps_philgeps_snapshot').select('lists, notices').eq('id', 'latest').maybeSingle(),
+    supabase.from('ps_tender_analysis').select('ref, status, result'),
+  ]);
+  if (err) throw new Error(`Could not load PS-PhilGEPS data: ${err.message}`);
+  const active = await loadActiveNames().catch(() => null);
+  return activePsData({ lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) }, active);
+}
+
+// The stored copy's dates come back from JSON as text; the workbook needs Date objects
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T/;
+const revive = (tender) => ({
+  ...tender,
+  closing: ISO_TIME.test(tender.closing || '') ? new Date(tender.closing) : tender.closing,
+  lastUpdated: ISO_TIME.test(tender.lastUpdated || '') ? new Date(tender.lastUpdated) : tender.lastUpdated,
+});
+
+// Each screened tender as it is now (the latest PhilGEPS update / PS-PhilGEPS Sync, with what was read in its
+// documents since), else as it was when added
+async function currentTenders(list) {
+  const philgepsRefs = list.filter((r) => r.source === 'philgeps').map((r) => r.ref);
+  const [philgeps, ps] = await Promise.all([
+    philgepsRefs.length
+      ? supabase.from('philgeps_opportunities').select('*').in('ref_no', philgepsRefs).then(({ data }) => data || [])
+      : [],
+    list.some((r) => r.source === 'ps') ? loadPsData().catch(() => null) : null,
+  ]);
+  const bids = Object.fromEntries(philgeps.map((bid) => [bid.ref_no, bid]));
+  const bidMatch = ps?.lists?.bidMatch;
+  const psRows = Object.fromEntries((bidMatch?.rows || []).map((row) => [psRefOf(row), row]));
+  return list.map((r) => {
+    if (r.source === 'philgeps' && bids[r.ref]) return philgepsTender(bids[r.ref]);
+    if (r.source === 'ps' && psRows[r.ref]) return psTender(psRows[r.ref], bidMatch.headers, ps.notices[r.ref], ps.analysis[r.ref]);
+    return revive(r.tender);
+  });
+}
+
+// The team's Opportunity sheet for these screened rows, oldest published at the top
+export async function exportScreened(list) {
+  const tenders = oldestFirst(await currentTenders(list));
+  await downloadOpportunityWorkbook(tenders);
+  return tenders.length;
+}

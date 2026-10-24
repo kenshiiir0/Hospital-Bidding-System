@@ -329,3 +329,30 @@ CREATE POLICY "dashboard can read" ON award_notifications FOR SELECT TO authenti
     USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
 REVOKE ALL ON award_notifications FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON award_notifications FROM authenticated;
+
+-- Screened Tenders (dashboard page /screened): tenders a team member picked with "Add to Screened" in View
+-- details on the PhilGEPS Dashboard or PS-PhilGEPS Bid Match (frontend/src/lib/screened.js). The Excel export
+-- comes from this list. tender = the tender in export shape when it was added (lib/opportunityWorkbook.js),
+-- used for the list and when the tender is no longer in the live data. added_by is filled from the sign-in.
+CREATE TABLE IF NOT EXISTS screened_tenders (
+    source TEXT NOT NULL CHECK (source IN ('philgeps', 'ps')),
+    ref TEXT NOT NULL,
+    title TEXT,
+    tender JSONB NOT NULL,
+    added_by TEXT DEFAULT (auth.jwt() ->> 'email'),
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (source, ref)
+);
+ALTER TABLE screened_tenders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON screened_tenders;
+CREATE POLICY "dashboard can read" ON screened_tenders FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "team can add" ON screened_tenders;
+CREATE POLICY "team can add" ON screened_tenders FOR INSERT TO authenticated
+    WITH CHECK (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "team can remove" ON screened_tenders;
+CREATE POLICY "team can remove" ON screened_tenders FOR DELETE TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON screened_tenders FROM anon;
+REVOKE UPDATE, TRUNCATE ON screened_tenders FROM authenticated;
+GRANT SELECT, INSERT, DELETE ON screened_tenders TO authenticated;

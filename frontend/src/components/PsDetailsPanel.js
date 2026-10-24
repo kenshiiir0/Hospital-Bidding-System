@@ -10,10 +10,10 @@ import { MANUAL_CHECK, unreadDocuments, unreadReason } from '@/lib/manualCheck';
 // - header: the agency (hospital) with its website links, the notice title under it, ✕,
 // - a scrolling body: `lead` (bidding dates), a two-column "Tender details" card with every other column,
 //   then `children` (our products, bid data sheet, documents…),
-// - a footer: Close panel / Open original PhilGEPS notice ↗.
+// - a footer: Close panel / `action` (Add to Screened) / Open original PhilGEPS notice ↗.
 // Only the body scrolls; the page behind is locked while the drawer is open.
 // titleColumn / subtitleColumn: the columns for the heading (subtitle = the agency); wide: room for tables.
-export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, link, wide = false, lead, children, onClose }) {
+export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, link, wide = false, lead, action, children, onClose }) {
   const closeButton = useRef(null);
 
   useEffect(() => {
@@ -87,7 +87,7 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
         </div>
 
         {/* Footer */}
-        <footer className="flex items-center justify-between gap-3 border-t border-[#E2E8F0] bg-white p-4">
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E2E8F0] bg-white p-4">
           <button
             type="button"
             onClick={onClose}
@@ -95,16 +95,19 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
           >
             Close panel
           </button>
-          {link && (
-            <a
-              href={link}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg bg-[#1EA0DA] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1790C5]"
-            >
-              Open original PhilGEPS notice ↗
-            </a>
-          )}
+          <div className="flex flex-wrap items-start justify-end gap-2">
+            {action}
+            {link && (
+              <a
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg bg-[#1EA0DA] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1790C5]"
+              >
+                Open original PhilGEPS notice ↗
+              </a>
+            )}
+          </div>
         </footer>
       </div>
     </div>

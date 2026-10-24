@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import FetchedSection from '@/components/FetchedSection';
+import ScreenButton from '@/components/ScreenButton';
+import { philgepsTender } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { KeyValueList, ManualCheckNote, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -154,6 +156,7 @@ export default function TenderDetails({ bid, onClose }) {
       link={PHILGEPS_LINK.test(bid.detail_link || '') ? bid.detail_link : null}
       wide
       onClose={onClose}
+      action={<ScreenButton source="philgeps" tenderRef={bid.ref_no} title={bid.title} getTender={() => philgepsTender(bid)} />}
       lead={
         <>
           {!bid.details && (

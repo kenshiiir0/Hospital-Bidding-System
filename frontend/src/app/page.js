@@ -14,8 +14,6 @@ import { activeTenders } from '@/lib/activeProducts';
 import { UNREAD_KINDS, needsManualCheck } from '@/lib/manualCheck';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
-import { philgepsTender } from '@/lib/opportunityWorkbook';
-import { useExportScope } from '@/lib/exportScope';
 import { supabase } from '@/lib/supabase';
 import { authFetch } from '@/lib/authFetch';
 
@@ -469,17 +467,6 @@ export default function Home() {
       return oldestFirst ? byDate : -byDate;
     });
 
-  // The sidebar's Export Excel uses this list (all filters applied) plus the PS-PhilGEPS tenders matching the
-  // same search and published dates (lib/exportScope.js, lib/unifiedExport.js)
-  useExportScope('philgeps', () => ({
-    from: 'philgeps',
-    getShown: () => filteredBids.map(philgepsTender),
-    search,
-    publishedFrom: dateFrom,
-    publishedTo: dateTo,
-    type: typeFilter,
-    summary: `${filteredBids.length} PhilGEPS listed here${search ? ` · search "${search}"` : ''}${typeFilter ? ` · ${typeFilter} only` : ''}${dateFrom || dateTo ? ` · published ${dateFrom || '…'} to ${dateTo || '…'}` : ''}`,
-  }));
 
   // Only the current page is drawn; the page is clamped in case the list shrank (realtime, reload)
   const totalPages = Math.max(1, Math.ceil(filteredBids.length / pageSize));

@@ -5,9 +5,6 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { displayName } from '@/lib/username';
-import { getExportScope, useExportSummary } from '@/lib/exportScope';
-import { exportBothPortals } from '@/lib/unifiedExport';
-import WorkingDots from '@/components/WorkingDots';
 
 // Two sources, each with its own pages and its own Sync: the old PhilGEPS (notices.philgeps.gov.ph)
 // and the new PS-PhilGEPS (philgeps.gov.ph)
@@ -28,6 +25,11 @@ const GROUPS = [
       { href: '/history/ps-philgeps', label: 'History', icon: '⟲' },
     ],
   },
+  // Tenders picked with "Add to Screened" in View details on either site; the Excel export is there
+  {
+    label: 'Screening',
+    links: [{ href: '/screened', label: 'Screened Tenders', icon: '✓' }],
+  },
   // The one product list both sites' tenders are screened against
   {
     label: 'Our Products',
@@ -43,44 +45,7 @@ async function signOut() {
   await supabase.auth.signOut();
 }
 
-// One Excel for both portals (lib/unifiedExport.js), oldest at the top. Uses the filters and search of the
-// page on screen when it registered them (lib/exportScope.js), else exports everything.
-function ExportButton() {
-  const summary = useExportSummary();
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState('');
-
-  const run = async () => {
-    setExporting(true);
-    setError('');
-    try {
-      const scope = getExportScope();
-      await exportBothPortals(scope?.getShown ? { ...scope, shown: scope.getShown() } : {});
-    } catch (err) {
-      setError(`Export failed: ${err.message}`);
-    }
-    setExporting(false);
-  };
-
-  return (
-    <div className="flex flex-col items-stretch gap-1.5">
-      <button
-        onClick={run}
-        disabled={exporting}
-        title="One Excel with PhilGEPS and PS-PhilGEPS tenders, oldest at the top"
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-3 py-2 text-xs font-semibold text-white hover:bg-[#3F6F2C] disabled:bg-[#4A8033]/50 disabled:cursor-wait transition whitespace-nowrap"
-      >
-        {exporting ? <>Exporting <WorkingDots /></> : '⬇ Export Excel'}
-      </button>
-      <p className="text-[11px] leading-snug text-black/62">
-        PhilGEPS + PS-PhilGEPS, oldest first · {summary || 'everything (no filters on this page)'}
-      </p>
-      {error && <p role="alert" className="text-[11px] font-medium text-[#B3312C]">{error}</p>}
-    </div>
-  );
-}
-
-// The navigation: groups of links, the shared Export, the signed-in user and Sign out.
+// The navigation: groups of links, the signed-in user and Sign out.
 // onNavigate: called when a link is followed (closes the phone menu).
 function SidebarContent({ pathname, user, onNavigate }) {
   return (
@@ -114,8 +79,7 @@ function SidebarContent({ pathname, user, onNavigate }) {
         ))}
       </nav>
       <div className="mt-auto flex flex-col gap-2 border-t border-[#E2E8F0] pt-4">
-        <ExportButton />
-        <div className="truncate pt-2 text-xs text-black/62" title={user?.email}>{displayName(user?.email)}</div>
+        <div className="truncate text-xs text-black/62" title={user?.email}>{displayName(user?.email)}</div>
         <button
           onClick={signOut}
           className="rounded-lg px-3 py-2 text-left text-sm font-medium text-black/62 transition hover:bg-[#1EA0DA]/6 hover:text-black"
