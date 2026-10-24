@@ -29,6 +29,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
+      # Draws pages that have no scanned picture (vector-outline text, small scans) so OCR can read them;
+      # installed only here, not in the deployed site (lib/ocr.mjs renderedPage)
+      - run: npm install --no-save --no-audit --no-fund @napi-rs/canvas@0.1.80
       - name: Read scanned documents
         run: node scripts/ocr-job.mjs
         env:

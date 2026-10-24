@@ -32,6 +32,8 @@ const OCR_MAX_PAGES = 40; // pages per document; a longer scan is read up to her
 // OCR text is kept in the same bucket under _ocr/<document path>.json (per page), so a re-read (e.g. after a
 // product list change) or a reading cut short by time doesn't OCR the same pages again
 const ocrCachePath = (doc) => `_ocr/${doc.path}.json`;
+// Pages an older OCR read with at least this many letters are kept when the OCR version changes
+const OCR_KEEP_LETTERS = 40;
 
 function admin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -195,7 +197,13 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
   if (blob) {
     try {
       const saved = JSON.parse(await blob.text());
-      if (saved.version === OCR_VERSION && saved.size === doc.size) cached = saved.pages || {};
+      if (saved.size === doc.size) {
+        cached = saved.pages || {};
+        // An older OCR's pages that gave text stay; its empty ones are read again with the current OCR
+        if (saved.version !== OCR_VERSION) {
+          cached = Object.fromEntries(Object.entries(cached).filter(([, text]) => letterCount(text) >= OCR_KEEP_LETTERS));
+        }
+      }
     } catch {
       // unreadable cache: OCR again
     }
@@ -274,7 +282,10 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       ({ pages, ocrPages, error: ocrError } = ocr);
     }
     const letters = pages.join('').replace(/\s/g, '').length;
-    if (letters / Math.max(pages.length, 1) < TEXT_PAGE_MIN_CHARS) {
+    // Not readable: almost no text in the whole file, or mostly empty pages that OCR couldn't run on (yet).
+    // Once OCR has read every page, a file with a filled first page and blank signature pages counts as read.
+    const ocrRan = Boolean(pdf) && !ocrError;
+    if (letters < TEXT_PAGE_MIN_CHARS || (!ocrRan && letters / Math.max(pages.length, 1) < TEXT_PAGE_MIN_CHARS)) {
       // ocr: OCR found no more text, so it isn't tried again; without it (OCR failed) the next run tries again
       read.push({ name: doc.name, kind: 'scanned', pages: pages.length, ...(pdf && (ocrError ? { ocr_error: ocrError.slice(0, 200) } : { ocr: OCR_VERSION })) });
       continue;

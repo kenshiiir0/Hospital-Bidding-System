@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { OCR_VERSION } from './ocr.mjs';
 
 // Scanned documents still waiting to be read with OCR, on both sides, and the ocr_status row the dashboard
 // reads (schema.sql). A document "waits" when the last reading listed it as scanned without OCR text
@@ -12,8 +13,9 @@ export function admin() {
   return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-// Scanned documents of a reading: tried = OCR (tesseract) already ran and found no readable text
-const scannedIn = (read) => (read || []).filter((d) => d.kind === 'scanned').map((d) => ({ name: d.name, tried: Boolean(d.ocr) }));
+// Scanned documents of a reading: tried = the current OCR (tesseract) already ran and found no readable text.
+// One an older OCR found nothing in counts as waiting: the current one reads more (OCR_VERSION in ocr.mjs).
+const scannedIn = (read) => (read || []).filter((d) => d.kind === 'scanned').map((d) => ({ name: d.name, tried: d.ocr === OCR_VERSION }));
 
 // [{ side: 'ps' | 'philgeps', ref, bucket, doc: { name, path, size }, since, tried }] oldest first.
 // Without includeTried only the documents OCR hasn't run on yet (what the dashboard counts as waiting).

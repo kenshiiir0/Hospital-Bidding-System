@@ -1,5 +1,5 @@
 import { createWorker } from 'tesseract.js';
-import { getResolvedPDFJS } from 'unpdf';
+import { getResolvedPDFJS, renderPageAsImage } from 'unpdf';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,7 +10,8 @@ import path from 'node:path';
 // ships with the app (@tesseract.js-data/eng); it is only downloaded when that copy can't be found.
 // psDocs.mjs readDocuments calls ocrPdfPages for the pages that have too little text.
 
-export const OCR_VERSION = 'ocr-1';
+// ocr-2: pages without one big scanned picture (vector-outline text, small scans) are drawn and read
+export const OCR_VERSION = 'ocr-2';
 const LANG_DIR = '4.0.0_best_int';
 const MIN_IMAGE_SIDE = 1000; // smaller pictures are logos or stamps, not a scanned page
 const INK_THRESHOLD = 150; // lighter grey is paper, or text showing through from the back of the sheet
@@ -121,23 +122,52 @@ const fixDosages = (text) =>
     .replace(/(\d\s*(?:mg|mcg|g|iu|units?))\s*[il1|]\s*m[lLt1I]\b/gi, '$1/mL')
     .replace(/(\d\s*(?:mg|mcg|g|iu|units?)\s*\/\s*)m[t1I]\b/gi, '$1mL');
 
+// The whole page drawn as a picture (PNG), for pages whose text is neither a text layer nor one big scanned
+// picture: letters drawn as vector outlines ("print to PDF" as curves), or a scan smaller than MIN_IMAGE_SIDE.
+// Needs @napi-rs/canvas, installed only where OCR runs (the GitHub OCR job, a team computer; not the deployed
+// server, which doesn't OCR); null without it.
+const RENDER_SCALE = 3; // ~216 dpi for an A4 / letter page
+async function renderedPage(pdf, pageNumber) {
+  let canvas;
+  try {
+    const name = '@napi-rs/canvas';
+    canvas = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ name);
+  } catch {
+    return null;
+  }
+  // From the file's bytes: a document opened without a canvas can't be drawn ("not available in this environment")
+  return Buffer.from(await renderPageAsImage(await pdf.getData(), pageNumber, { canvasImport: async () => canvas, scale: RENDER_SCALE }));
+}
+
+const letterCount = (text) => (text || '').replace(/\s/g, '').length;
+const FEW_LETTERS = 40; // a page read from its picture with fewer letters than this is drawn and read again
+
 // Reads the given pages (1-based) of a PDF (a pdf.js document) until `until` (a time in ms).
-// Returns { texts: { [page]: text }, done: pages finished }. A page with no scanned picture gives ''.
+// Returns { texts: { [page]: text }, done: pages finished }. A page with nothing readable gives ''.
+// Each page: its biggest scanned picture first; when there is none (or it gives almost no text), the whole
+// page drawn as a picture.
 export async function ocrPdfPages(pdf, pageNumbers, { until = Infinity, onPage } = {}) {
   const texts = {};
   let worker;
   try {
     for (const n of pageNumbers) {
       if (Date.now() >= until) break;
-      // A page whose picture pdf.js can't decode counts as blank
+      // A page whose picture pdf.js can't decode counts as having none
       const image = await pageImage(pdf, n).catch(() => null);
+      let text = '';
       if (image) {
         worker ||= await startWorker();
-        const { data } = await worker.recognize(toPgm(image));
-        texts[n] = fixDosages(data.text || '');
-      } else {
-        texts[n] = '';
+        text = (await worker.recognize(toPgm(image))).data.text || '';
       }
+      if (letterCount(text) < FEW_LETTERS) {
+        const drawn = await renderedPage(pdf, n).catch(() => null);
+        if (drawn) {
+          worker ||= await startWorker();
+          const again = (await worker.recognize(drawn)).data.text || '';
+          if (letterCount(again) > letterCount(text)) text = again;
+        }
+      }
+      texts[n] = fixDosages(text);
       await onPage?.(n, texts[n]);
     }
   } finally {
