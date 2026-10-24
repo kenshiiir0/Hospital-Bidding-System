@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatInstant } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
+import { StatusPill } from '@/components/PageHeader';
 
 const LATE_MS = 6 * 60 * 60 * 1000;
 const RUN_MAX_MS = 70 * 60 * 1000; // the OCR job stops at 60 minutes
@@ -70,8 +71,16 @@ export default function OcrHealthNotice() {
   );
 }
 
-// Report Log page: the OCR state of both sites, always shown: red when a scanned document has waited more
-// than 6 hours, blue while reading, green when nothing waits; with when each layer last ran, so the cause is visible.
+const CIRCLE = {
+  error: 'bg-[#B3312C] text-white',
+  busy: 'bg-[#1EA0DA] text-white',
+  ok: 'bg-[#61A644] text-white',
+  off: 'border border-[#CBD5E1] bg-white text-black/62',
+};
+
+// Report Log page: the OCR state of both sites as a numbered log, always shown. Each row: its number in a
+// circle coloured by its state (red = needs attention, blue = working, green = fine, grey = not used yet),
+// what it is, a status pill and the details, so the cause of a late document is visible at a glance.
 export function OcrReport() {
   const view = useOcrStatus();
   if (!view) {
@@ -83,28 +92,65 @@ export function OcrReport() {
   }
   const { status } = view;
   const n = status.waiting || 0;
-  const head = {
-    late: { box: 'border-[#B3312C]/25 bg-[#B3312C]/6 text-[#B3312C]', text: `${n} scanned document${n > 1 ? 's have' : ' has'} waited more than 6 hours to be read.` },
-    reading: { box: 'border-[#1EA0DA]/25 bg-[#1EA0DA]/6 text-[#12769F]', text: `Reading ${n} scanned document${n > 1 ? 's' : ''} (OCR)` },
-    ok: {
-      box: 'border-[#61A644]/25 bg-[#61A644]/8 text-[#3F6F2C]',
-      text: n ? `${n} scanned document${n > 1 ? 's' : ''} waiting, less than 6 hours.` : 'No scanned documents waiting to be read.',
+  const docs = `${n} scanned document${n === 1 ? '' : 's'}`;
+  const running = view.kind === 'reading';
+
+  const rows = [
+    {
+      title: 'Scanned documents waiting',
+      tone: view.kind === 'late' ? 'error' : running ? 'busy' : 'ok',
+      pill: view.kind === 'late' ? 'Waited over 6 hours' : running ? 'Reading now' : n ? 'On time' : 'None waiting',
+      detail:
+        view.kind === 'late'
+          ? `${docs} ${n === 1 ? 'has' : 'have'} waited more than 6 hours to be read.`
+          : running
+            ? `Reading ${docs} (OCR); their products and dates appear in View details when it finishes.`
+            : n
+              ? `${docs} waiting, less than 6 hours.`
+              : 'Every scanned document has been read.',
+      note: n > 0 && status.oldest_waiting_since ? `Oldest waiting since ${formatInstant(status.oldest_waiting_since)}` : null,
     },
-  }[view.kind];
+    {
+      title: 'OCR on GitHub',
+      tone: running ? 'busy' : status.github_last_run_at ? 'ok' : 'off',
+      pill: running ? 'Running' : status.github_last_run_at ? 'Ran' : 'Not run yet',
+      detail: status.github_last_run_at ? status.github_last_result || 'Finished.' : 'Has not run yet.',
+      note: running && status.github_running_since
+        ? `Started ${formatInstant(status.github_running_since)}`
+        : status.github_last_run_at ? `Last run ${formatInstant(status.github_last_run_at)}` : null,
+    },
+    {
+      title: 'Google Vision backup',
+      tone: status.vision_last_run_at ? 'ok' : 'off',
+      pill: status.vision_last_run_at ? 'Used' : 'Not used yet',
+      detail: status.vision_last_run_at
+        ? status.vision_last_result || 'Finished.'
+        : 'Reads documents still waiting after 6 hours; it has not been needed yet.',
+      note: [
+        status.vision_last_run_at && `Last run ${formatInstant(status.vision_last_run_at)}`,
+        status.vision_pages ? `${status.vision_pages} pages this month` : null,
+      ].filter(Boolean).join(' · ') || null,
+    },
+  ];
 
   return (
-    <div role={view.kind === 'late' ? 'alert' : 'status'} className={`rounded-[14px] border px-4 py-3 text-sm ${head.box}`}>
-      <b className="inline-flex items-center gap-2">
-        {head.text} {view.kind === 'reading' && <WorkingDots />}
-      </b>{' '}
-      <span className="text-black/70">
-        OCR on GitHub: {status.github_last_run_at ? `${formatInstant(status.github_last_run_at)} · ${status.github_last_result || ''}` : 'has not run yet'}.
-        {' '}Google Vision backup: {status.vision_last_run_at ? `${formatInstant(status.vision_last_run_at)} · ${status.vision_last_result || ''}` : 'not used yet'}
-        {status.vision_pages ? ` (${status.vision_pages} pages this month)` : ''}.
-      </span>
-      {n > 0 && status.oldest_waiting_since && (
-        <span className="mt-1 block text-xs text-black/62">Oldest waiting since {formatInstant(status.oldest_waiting_since)}.</span>
-      )}
-    </div>
+    <ol className="divide-y divide-[#E2E8F0] overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-white">
+      {rows.map((row, i) => (
+        <li key={row.title} role={row.tone === 'error' ? 'alert' : undefined} className={`flex items-start gap-3 px-4 py-3.5 ${row.tone === 'error' ? 'bg-[#B3312C]/4' : ''}`}>
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-mono text-xs font-semibold ${CIRCLE[row.tone]}`} aria-hidden>
+            {i + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <span className="text-sm font-semibold text-black">{row.title}</span>
+              <StatusPill tone={row.tone} text={row.pill} />
+              {row.tone === 'busy' && <WorkingDots />}
+            </div>
+            <p className={`mt-1 text-sm ${row.tone === 'error' ? 'font-medium text-[#B3312C]' : 'text-black/70'}`}>{row.detail}</p>
+            {row.note && <p className="mt-0.5 text-xs text-black/46">{row.note}</p>}
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
