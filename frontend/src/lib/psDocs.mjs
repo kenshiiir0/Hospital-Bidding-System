@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { loadMatcher } from './products.mjs';
 import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
+import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -11,7 +12,8 @@ import { extractText, getDocumentProxy } from 'unpdf';
 //   quantity, unit, unit price and total where the line's layout allows (same rules as parseItemLine in
 //   scraper.js); the raw line is always kept.
 // PDFs, Word (.docx) and Excel (.xlsx) files are read; a table row of a Word or Excel file becomes one line.
-// Scanned PDFs (no text layer) can't be read this way; they are listed in documents_read as "scanned".
+// PDF pages with no text layer (scanned) are read with OCR (lib/ocr.mjs); a document whose pages still give
+// too little text is listed in documents_read as "scanned".
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
@@ -21,6 +23,11 @@ const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
 const TENDERS_AT_ONCE = 3;
+const OCR_MAX_MS = 90 * 1000; // OCR time per readDocuments call when the caller gives no deadline
+const OCR_MAX_PAGES = 40; // pages per document; a longer scan is read up to here
+// OCR text is kept in the same bucket under _ocr/<document path>.json (per page), so a re-read (e.g. after a
+// product list change) or a reading cut short by time doesn't OCR the same pages again
+const ocrCachePath = (doc) => `_ocr/${doc.path}.json`;
 
 function admin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -149,29 +156,75 @@ async function xlsxText(zip) {
   return lines.join('\n');
 }
 
-// A file's text as pages (a Word or Excel file is one "page"); [] when it can't be opened
+// A file's text as pages (a Word or Excel file is one "page"); [] when it can't be opened.
+// pdf: the opened PDF (pdf.js), for OCR of its scanned pages
 async function fileText(name, bytes) {
   if (/\.pdf$/i.test(name)) {
-    const { text } = await extractText(await getDocumentProxy(bytes), { mergePages: false });
-    return text;
+    const pdf = await getDocumentProxy(bytes);
+    const { text } = await extractText(pdf, { mergePages: false });
+    return { pages: text, pdf };
   }
   const zip = await JSZip.loadAsync(bytes);
-  return [/\.docx$/i.test(name) ? await docxText(zip) : await xlsxText(zip)];
+  return { pages: [/\.docx$/i.test(name) ? await docxText(zip) : await xlsxText(zip)] };
 }
+
+const letterCount = (text) => (text || '').replace(/\s/g, '').length;
+
+// Replaces the PDF's pages that have too little text with their OCR text (cached in Storage). Returns
+// { pages, ocrPages: how many pages came from OCR, complete: false when time ran out first, error: OCR failed }
+async function withOcr(supabase, bucket, doc, pdf, pages, until) {
+  const scanned = pages.map((p, i) => (letterCount(p) < TEXT_PAGE_MIN_CHARS ? i + 1 : null)).filter(Boolean).slice(0, OCR_MAX_PAGES);
+  if (!scanned.length) return { pages, ocrPages: 0, complete: true };
+  let cached = {};
+  const { data: blob } = await supabase.storage.from(bucket).download(ocrCachePath(doc));
+  if (blob) {
+    try {
+      const saved = JSON.parse(await blob.text());
+      if (saved.version === OCR_VERSION && saved.size === doc.size) cached = saved.pages || {};
+    } catch {
+      // unreadable cache: OCR again
+    }
+  }
+  const todo = scanned.filter((n) => cached[n] == null);
+  if (todo.length) {
+    let texts;
+    try {
+      ({ texts } = await ocrPdfPages(pdf, todo, { until }));
+    } catch (e) {
+      // OCR itself failed (not this document): read the rest as before, try the OCR again next run
+      return { pages, ocrPages: 0, complete: true, error: e.message };
+    }
+    Object.assign(cached, texts);
+    // Pages with no scanned picture (a short page of a text PDF) aren't worth a cache file
+    if (Object.values(texts).some(Boolean) || todo.some((n) => texts[n] == null)) {
+      await supabase.storage
+        .from(bucket)
+        .upload(ocrCachePath(doc), JSON.stringify({ version: OCR_VERSION, size: doc.size, pages: cached }), { contentType: 'application/json', upsert: true });
+    }
+  }
+  const complete = scanned.every((n) => cached[n] != null);
+  const merged = pages.map((p, i) => (cached[i + 1] != null && letterCount(cached[i + 1]) > letterCount(p) ? cached[i + 1] : p));
+  return { pages: merged, ocrPages: scanned.filter((n) => letterCount(cached[n]) > letterCount(pages[n - 1])).length, complete };
+}
+
+// Documents read before OCR, or by an older OCR, that were scanned: read them again
+export const ocrPending = (read) => (read || []).some((d) => d.kind === 'scanned' && d.ocr !== OCR_VERSION);
 
 // ---------- one tender ----------
 
 // Which documents changed since the last reading (and which rules and product list read them)
 export const documentsKey = (notice, listKey = '') => `${RULES_VERSION}|${listKey}|${(notice.documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
 
-function readTender(supabase, matchProducts, notice) {
-  return readDocuments(supabase, BUCKET, notice.documents, matchProducts);
+function readTender(supabase, matchProducts, notice, options) {
+  return readDocuments(supabase, BUCKET, notice.documents, matchProducts, options);
 }
 
 // Reads a tender's files ([{ name, path }] in Storage bucket `bucket`; also used by the PhilGEPS Sync,
 // philgepsSync.mjs) for our products and the bid data sheet. Returns { status: done | skipped, read,
 // result: { bid_data_sheet, items }, error }. A file that can't be opened is listed as "unreadable".
-export async function readDocuments(supabase, bucket, documents, matchProducts) {
+// ocrUntil: time (ms) when OCR of scanned pages stops; when it stops before every scanned page is read, this
+// throws (the pages read so far are kept), so the caller reads the tender again on its next run.
+export async function readDocuments(supabase, bucket, documents, matchProducts, { ocrUntil = Date.now() + OCR_MAX_MS } = {}) {
   const items = [];
   const seen = new Set();
   const read = [];
@@ -184,19 +237,28 @@ export async function readDocuments(supabase, bucket, documents, matchProducts) 
     const { data: blob, error } = await supabase.storage.from(bucket).download(doc.path);
     if (error) throw new Error(`${doc.name}: ${error.message}`);
     let pages;
+    let pdf;
     try {
-      pages = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer()));
+      ({ pages, pdf } = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer())));
     } catch {
       read.push({ name: doc.name, kind: 'unreadable' });
       continue;
     }
     const isPdf = /\.pdf$/i.test(doc.name);
+    let ocrPages = 0;
+    let ocrError;
+    if (pdf) {
+      const ocr = await withOcr(supabase, bucket, doc, pdf, pages, ocrUntil);
+      if (!ocr.complete) throw new Error(`${doc.name}: scanned pages are still being read (OCR); the next run continues.`);
+      ({ pages, ocrPages, error: ocrError } = ocr);
+    }
     const letters = pages.join('').replace(/\s/g, '').length;
     if (letters / Math.max(pages.length, 1) < TEXT_PAGE_MIN_CHARS) {
-      read.push({ name: doc.name, kind: 'scanned', pages: pages.length });
+      // ocr: OCR found no more text, so it isn't tried again; without it (OCR failed) the next run tries again
+      read.push({ name: doc.name, kind: 'scanned', pages: pages.length, ...(pdf && (ocrError ? { ocr_error: ocrError.slice(0, 200) } : { ocr: OCR_VERSION })) });
       continue;
     }
-    read.push({ name: doc.name, kind: 'text', pages: pages.length });
+    read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages }) });
     texts.push(pages.join('\n'));
     pages.forEach((page, i) => {
       const lines = page.split('\n').map(clean);
@@ -231,11 +293,11 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
   const matchProducts = await loadMatcher();
 
   const { data: snap } = await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle();
-  const { data: done } = await supabase.from('ps_tender_analysis').select('ref, documents_key');
-  const known = new Map((done || []).map((r) => [r.ref, r.documents_key]));
+  const { data: done } = await supabase.from('ps_tender_analysis').select('ref, documents_key, documents_read');
+  const known = new Map((done || []).map((r) => [r.ref, r]));
   const queue = Object.entries(snap?.notices || {})
     .filter(([ref, n]) => (!only || only.includes(ref)) && n.documents?.some((d) => d.path))
-    .filter(([ref, n]) => known.get(ref) !== documentsKey(n, matchProducts.key))
+    .filter(([ref, n]) => known.get(ref)?.documents_key !== documentsKey(n, matchProducts.key) || ocrPending(known.get(ref).documents_read))
     // Tenders that mention our products first
     .sort(([, a], [, b]) => (b.matched?.length || 0) - (a.matched?.length || 0));
 
@@ -247,7 +309,7 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
       const [ref, notice] = queue[next++];
       let outcome;
       try {
-        outcome = await readTender(supabase, matchProducts, notice);
+        outcome = await readTender(supabase, matchProducts, notice, { ocrUntil: started + maxMs });
       } catch (e) {
         outcome = { status: 'failed', error: e.message };
       }

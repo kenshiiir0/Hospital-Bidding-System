@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { checkLogin, recordLogin } from './loginGuard.mjs';
 import { logActivity } from './activityLog.mjs';
-import { loadMatcher, readDocuments } from './psDocs.mjs';
+import { loadMatcher, ocrPending, readDocuments } from './psDocs.mjs';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
 // server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
@@ -547,8 +547,9 @@ export function wantsDocuments(o) {
 // listKey: the product list's fingerprint (matcher.key), so a changed product list reads the documents again
 const readKey = (documents, listKey = '') => `${READ_RULES}|${listKey}|${(documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
 
-// Downloaded documents not read yet (or changed since): no PhilGEPS log-in needed
-export const needsReading = (o, listKey) => (o.details?.documents || []).some((d) => d.path) && o.details?.documents_read_key !== readKey(o.details.documents, listKey);
+// Downloaded documents not read yet (or changed since, or scanned and not read with OCR yet): no PhilGEPS log-in needed
+export const needsReading = (o, listKey) =>
+  (o.details?.documents || []).some((d) => d.path) && (o.details?.documents_read_key !== readKey(o.details.documents, listKey) || ocrPending(o.details?.documents_read));
 
 // Reads a tender's downloaded documents (PDF, Word, Excel) for our products and returns the details fields
 // to store, plus matched_molecules (description matches with today's list + products found in the documents)
