@@ -142,7 +142,8 @@ export function moleculeText(text) {
 function itemRow(item) {
   const text = moleculeText(item.description || item.line);
   if (item.quantity == null && item.unit_price == null) return [text, '', '', null];
-  const n = item.item_no ? `${item.item_no}. ` : '';
+  // Only a line number (1–4 digits, as in the team's sheet); longer ones are stock codes such as 55100000
+  const n = /^\d{1,4}$/.test(String(item.item_no ?? '')) ? `${item.item_no}. ` : '';
   const qty = item.quantity != null ? `${n}${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
   const total = item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null);
   return [`${n}${text}`, qty, item.unit_price != null ? `${n}${amount(item.unit_price)}` : '', total];
