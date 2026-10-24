@@ -71,23 +71,23 @@ export default function AwardNoticesPage() {
           row={selected}
           titleColumn="Line Item"
           link={selected.links.find((l) => /viewAwardNotice/.test(l.href))?.href}
-          lead={
-            (pending(selected) || answered === selectedNo) && (
-              <PsAwardResponse
-                key={selectedNo}
-                award={selectedNo}
-                lineItem={selected.cells[column('Line Item')]}
-                connected={connected}
-                syncing={syncing}
-                onDone={() => {
-                  setAnswered(selectedNo);
-                  reload?.();
-                }}
-              />
-            )
-          }
           onClose={() => setSelectedNo(null)}
-        />
+        >
+          {/* Below Tender details */}
+          {(pending(selected) || answered === selectedNo) && (
+            <PsAwardResponse
+              key={selectedNo}
+              award={selectedNo}
+              lineItem={selected.cells[column('Line Item')]}
+              connected={connected}
+              syncing={syncing}
+              onDone={() => {
+                setAnswered(selectedNo);
+                reload?.();
+              }}
+            />
+          )}
+        </PsDetailsPanel>
       )}
     </section>
   );
