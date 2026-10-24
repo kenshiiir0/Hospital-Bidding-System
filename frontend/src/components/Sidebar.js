@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { displayName } from '@/lib/username';
 import { authFetch } from '@/lib/authFetch';
 import { setNavCount, useNavCounts } from '@/lib/navCounts';
+import { philgepsCutoff, reportUnread, unreadPhilgeps } from '@/lib/newTenders';
 import { useScreened } from '@/lib/screened';
 
 // Two sources, each with its own pages and its own Sync: the old PhilGEPS (notices.philgeps.gov.ph)
@@ -66,6 +67,7 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
               {group.links.map(({ href, label, icon }) => {
                 const active = pathname === href;
                 const count = counts[href];
+                const unread = counts[`new:${href}`] || 0;
                 return (
                   <Link
                     key={href}
@@ -85,7 +87,15 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
                       {icon}
                     </span>
                     <span className="min-w-0 truncate">{label}</span>
-                    {count != null && (
+                    {unread > 0 ? (
+                      <span
+                        aria-label={`${unread} new, unread`}
+                        title={`${unread} new tender${unread > 1 ? 's' : ''} since you last looked`}
+                        className="ml-auto shrink-0 rounded-full bg-[#1EA0DA] px-2.5 py-0.5 text-[10px] font-bold tabular-nums text-white"
+                      >
+                        {unread} new
+                      </span>
+                    ) : count != null && (
                       <span
                         aria-label={`${count} items`}
                         className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[10px] tabular-nums ${
@@ -130,6 +140,10 @@ export default function Sidebar({ user }) {
     const load = async () => {
       const { count } = await supabase.from('philgeps_opportunities').select('id', { count: 'exact', head: true }).not('matched_molecules', 'eq', '{}');
       if (!stopped && count != null) setNavCount('/', count);
+      // New, unread PhilGEPS tenders (the page reports the exact number while it is open)
+      const since = new Date(philgepsCutoff()).toISOString().slice(0, 19);
+      const { data: recent } = await supabase.from('philgeps_opportunities').select('id, created_at').not('matched_molecules', 'eq', '{}').gte('created_at', since);
+      if (!stopped && recent) reportUnread('/', unreadPhilgeps(recent));
       try {
         const res = await authFetch('/api/products');
         if (res.ok && !stopped) setNavCount('/products', (await res.json()).length);

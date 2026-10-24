@@ -1,6 +1,6 @@
 'use client';
 
-import { StatusBadge } from '@/components/FilterControls';
+import { NewPill, StatusBadge } from '@/components/FilterControls';
 import ResponsiveTable from '@/components/ResponsiveTable';
 
 // A PS-PhilGEPS list as read by ps-philgeps-sync.js ({ headers, rows: [{ cells, links }] }).
@@ -8,7 +8,8 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 // menu); the rest, like the long notice title, are in the details panel (onDetails). Links in a cell
 // open PhilGEPS in a new tab. extraColumns: [{ label, render(row), after? }] added after the site's columns,
 // or right after the site column named in `after`.
-export default function PsListTable({ list, rows = list?.rows || [], columns, extraColumns = [], onDetails, empty }) {
+// isNew(row): shows NEW next to the first column (lib/newTenders.js).
+export default function PsListTable({ list, rows = list?.rows || [], columns, extraColumns = [], onDetails, empty, isNew }) {
   if (!list) return <EmptyState>{empty}</EmptyState>;
   const indexOf = (name) => list.headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
   const siteColumns = (columns || list.headers.filter((h) => !/^actions?$/i.test(h)))
@@ -42,7 +43,12 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
           width: columnWidth(col.h),
           optional: optionalRank(col.h),
           render: (row) =>
-            STATUS_COLUMN.test(col.h) ? (
+            n === 0 && isNew?.(row) ? (
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                <Cell text={row.cells[col.i]} links={row.links} />
+                <NewPill />
+              </span>
+            ) : STATUS_COLUMN.test(col.h) ? (
               <StatusBadge text={row.cells[col.i]} />
             ) : /date/i.test(col.h) ? (
               <DateCell text={row.cells[col.i]} />

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { CustomSelect, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import { CustomSelect, MarkReadButton, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
 import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, plainAction } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
+import { markRead, reportUnread, useTenderNews } from '@/lib/newTenders';
 import { downloadOpportunityWorkbook, philgepsTender } from '@/lib/opportunityWorkbook';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import NumberCircle from '@/components/NumberCircle';
@@ -143,6 +144,8 @@ function shortDayTime(value, thisYear) {
 
 export default function Home() {
   const [bids, setBids] = useState([]);
+  // New, unread tenders (lib/newTenders.js)
+  const news = useTenderNews();
   // Tenders with no product found whose documents couldn't be read: only under "Need manual check"
   const [checkBids, setCheckBids] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -297,6 +300,17 @@ export default function Home() {
     const timer = setInterval(update, 60 * 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // New, unread tenders (lib/newTenders.js): the NEW label, the sidebar's "N new", Mark all as read
+  const unreadBids = loading || !news.ready ? [] : activeTenders(bids, products.length ? new Set(products) : null).filter(news.isNewPhilgeps);
+  const unreadCount = loading || !news.ready ? null : unreadBids.length;
+  useEffect(() => {
+    if (unreadCount != null) reportUnread('/', unreadCount);
+  }, [unreadCount]);
+  const openBid = (bid) => {
+    markRead(`philgeps:${bid.id}`);
+    setSelectedBid(bid);
+  };
 
   // Sidebar badge: tenders asking for our products (still on the Product List)
   const ourCount = loading ? null : activeTenders(bids, products.length ? new Set(products) : null).length;
@@ -474,8 +488,10 @@ export default function Home() {
   const filteredBids = searchedBids
     .filter((bid) => docFilter === 'all' || (docFilter === 'check' ? needsCheck(bid) : docGroupOf(bid) === docFilter))
     .sort((a, b) => {
+      // New, unread tenders first, then the chosen order
+      const byNew = Number(news.isNewPhilgeps(b)) - Number(news.isNewPhilgeps(a));
       const byDate = (a.publish_date || '').localeCompare(b.publish_date || '') || (a.ref_no || '').localeCompare(b.ref_no || '');
-      return oldestFirst ? byDate : -byDate;
+      return byNew || (oldestFirst ? byDate : -byDate);
     });
 
 
@@ -554,16 +570,19 @@ export default function Home() {
         />
 
         <section ref={listTop} className="scroll-mt-6 space-y-3">
-          {/* Tier 1: which tenders, by their documents */}
-          <SegmentedTabs
-            label="Documents"
-            value={docFilter}
-            onChange={(key) => {
-              setDocFilter(key);
-              setPage(1);
-            }}
-            options={DOC_GROUPS.map(({ key, label }) => ({ value: key, label, count: docCounts[key] }))}
-          />
+          {/* Tier 1: which tenders, by their documents; Mark all as read while there are new ones */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SegmentedTabs
+              label="Documents"
+              value={docFilter}
+              onChange={(key) => {
+                setDocFilter(key);
+                setPage(1);
+              }}
+              options={DOC_GROUPS.map(({ key, label }) => ({ value: key, label, count: docCounts[key] }))}
+            />
+            <MarkReadButton count={unreadBids.length} onClick={() => markRead(unreadBids.map((bid) => `philgeps:${bid.id}`))} />
+          </div>
 
           {/* Tier 2: search, then the dropdowns. Phones: an even two-column grid under a full-width search */}
           <div className="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap sm:items-center">
@@ -644,7 +663,7 @@ export default function Home() {
             <ResponsiveTable
               rows={pageBids}
               rowKey={(bid, index) => bid.id || index}
-              onDetails={setSelectedBid}
+              onDetails={openBid}
               columns={[
                 {
                   label: '#',
@@ -660,7 +679,10 @@ export default function Home() {
                   width: '8.5rem',
                   render: (bid) => (
                     <div className="space-y-1">
-                      <div className="font-semibold"><RefLink bid={bid} /></div>
+                      <div className="flex flex-wrap items-center gap-1.5 font-semibold">
+                        <RefLink bid={bid} />
+                        {news.isNewPhilgeps(bid) && <NewPill />}
+                      </div>
                       <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} />
                       <div className="font-normal"><DocumentCount bid={bid} /></div>
                     </div>

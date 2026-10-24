@@ -9,13 +9,20 @@ import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
+import { markRead, useTenderNews } from '@/lib/newTenders';
+import { MarkReadButton } from '@/components/FilterControls';
 
 // My Opportunities: the notices the team already took up on PS-PhilGEPS, with their bid submission status
 export default function MyOpportunitiesPage() {
   const { data, search = '' } = usePsPhilgeps() || {};
   const [selected, setSelected] = useState(null);
   const list = data?.lists?.opportunities;
+  // New since last read (lib/newTenders.js; the PS-PhilGEPS layout records each Sync's rows)
+  const news = useTenderNews();
+  const newKey = (row) => `psopp:${row.cells[0]}`;
+  const unread = (list?.rows || []).filter((row) => news.isNewPs(newKey(row)));
   const filters = usePsFilters(list, {
+    headTabs: unread.length > 0 && <MarkReadButton count={unread.length} onClick={() => markRead(unread.map(newKey))} />,
     selects: [
       // ITB / RFQ from the mode of procurement (lib/tenderType.js), as in the Type column
       { label: 'Type', valuesOf: (row) => [psType(row.cells[list.headers.indexOf('Mode of Procurement')]).code].filter(Boolean) },
@@ -32,7 +39,8 @@ export default function MyOpportunitiesPage() {
       { label: 'Highest budget', column: 'Approve Budget Contract', kind: 'number', dir: 'desc' },
     ],
   });
-  const rows = filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row)));
+  // New, unread tenders first (a stable sort keeps the chosen order otherwise)
+  const rows = [...(filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row))))].sort((a, b) => Number(news.isNewPs(newKey(b))) - Number(news.isNewPs(newKey(a))));
   const cell = (row, name) => row.cells[list.headers.indexOf(name)] || '';
   const total = list ? list.rows.length : null;
   useEffect(() => {
@@ -56,7 +64,11 @@ export default function MyOpportunitiesPage() {
         extraColumns={[
           { label: 'Type', after: 'Notice Reference Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Mode of Procurement')])} /> },
         ]}
-        onDetails={setSelected}
+        isNew={(row) => news.isNewPs(newKey(row))}
+        onDetails={(row) => {
+          markRead(newKey(row));
+          setSelected(row);
+        }}
       />
       {selected && (
         <PsDetailsPanel

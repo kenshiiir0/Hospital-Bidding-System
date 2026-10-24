@@ -7,7 +7,8 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import PsDetailsPanel, { ChecklistList, KeyValueList, ManualCheckNote, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import { needsManualCheck } from '@/lib/manualCheck';
 import { usePsFilters } from '@/components/PsFilters';
-import { ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { MarkReadButton, NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { markRead, useTenderNews } from '@/lib/newTenders';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
 import { psRefOf, psTender } from '@/lib/opportunityWorkbook';
@@ -41,8 +42,13 @@ export default function BidMatchPage() {
   const needsCheck = (row) => needsManualCheck(readingOf(row)?.documents_read);
   // Also the tenders with no product found: our products may be in the files that couldn't be read
   const toCheck = (list?.rows || []).filter(needsCheck);
+  // New since last read (lib/newTenders.js; the PS-PhilGEPS layout records each Sync's rows)
+  const news = useTenderNews();
+  const newKey = (row) => `ps:${refOf(row) || row.cells[0]}`;
+  const unreadOurs = ours.filter((row) => news.isNewPs(newKey(row)));
   const filters = usePsFilters(list, {
     headTabs: list && (
+      <>
       <SegmentedTabs
         label="Which tenders"
         value={onlyOurs}
@@ -53,6 +59,8 @@ export default function BidMatchPage() {
           { value: 'check', label: 'Need manual check', count: toCheck.length },
         ]}
       />
+      <MarkReadButton count={unreadOurs.length} onClick={() => markRead(unreadOurs.map(newKey))} />
+      </>
     ),
     selects: [
       { label: 'Our product', valuesOf: productsOf },
@@ -82,7 +90,8 @@ export default function BidMatchPage() {
   useEffect(() => {
     if (oursCount != null) setNavCount('/ps-philgeps', oursCount);
   }, [oursCount]);
-  const rows = filters.apply((onlyOurs === 'check' ? toCheck : onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' '))));
+  // New, unread tenders first (a stable sort keeps the chosen order otherwise)
+  const rows = [...(filters.apply((onlyOurs === 'check' ? toCheck : onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' ')))))].sort((a, b) => Number(news.isNewPs(newKey(b))) - Number(news.isNewPs(newKey(a))));
 
 
   return (
@@ -103,7 +112,10 @@ export default function BidMatchPage() {
         <ResponsiveTable
           rows={rows}
           rowKey={(row) => refOf(row) || row.cells[0]}
-          onDetails={setSelected}
+          onDetails={(row) => {
+            markRead(newKey(row));
+            setSelected(row);
+          }}
           columns={[
             { label: '#', lead: true, width: '3rem', render: (_, i) => <span className="font-mono text-xs text-black/46">{i + 1}</span> },
             {
@@ -112,7 +124,10 @@ export default function BidMatchPage() {
               width: '8.5rem',
               render: (row) => (
                 <div className="space-y-1">
-                  <div className="font-semibold"><RefLink row={row} /></div>
+                  <div className="flex flex-wrap items-center gap-1.5 font-semibold">
+                    <RefLink row={row} />
+                    {news.isNewPs(newKey(row)) && <NewPill />}
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     <TypeBadge type={psType(cell(row, 'Mode of Procurement'))} />
                     <StatusBadge text={cell(row, 'Status')} />

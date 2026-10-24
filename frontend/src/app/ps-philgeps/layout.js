@@ -10,6 +10,8 @@ import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
 import ScrapeProgress from '@/components/ScrapeProgress';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
+import { registerList, reportUnread, useTenderNews } from '@/lib/newTenders';
+import { psRefOf } from '@/lib/opportunityWorkbook';
 
 // Shared by the PS-PhilGEPS pages (Bid Match, My Opportunities, Award Notices), on the deployed dashboard
 // and on team computers alike:
@@ -153,6 +155,29 @@ export default function PsPhilgepsLayout({ children }) {
     const stop = setTimeout(() => setSyncAfterConnect(false), 0);
     return () => clearTimeout(stop);
   }, [connectFailed]);
+
+  // New tenders (lib/newTenders.js): each Sync's lists are recorded; rows not seen before are new until read.
+  // Bid Match counts only the tenders asking for our products.
+  const news = useTenderNews();
+  useEffect(() => {
+    const lists = data?.lists;
+    if (!lists) return;
+    if (lists.bidMatch) registerList('bidMatch', lists.bidMatch.rows.map((row) => `ps:${psRefOf(row) || row.cells[0]}`));
+    if (lists.opportunities) registerList('opportunities', lists.opportunities.rows.map((row) => `psopp:${row.cells[0]}`));
+    if (lists.awards) registerList('awards', lists.awards.rows.map((row) => `psaward:${row.cells[0]}`));
+  }, [data]);
+  const ours = (row) => {
+    const ref = psRefOf(row);
+    return Boolean(data?.notices?.[ref]?.matched?.length || data?.analysis?.[ref]?.result?.items?.length);
+  };
+  const unreadBid = news.ready && data?.lists?.bidMatch ? data.lists.bidMatch.rows.filter((row) => ours(row) && news.isNewPs(`ps:${psRefOf(row) || row.cells[0]}`)).length : null;
+  const unreadOpp = news.ready && data?.lists?.opportunities ? data.lists.opportunities.rows.filter((row) => news.isNewPs(`psopp:${row.cells[0]}`)).length : null;
+  const unreadAward = news.ready && data?.lists?.awards ? data.lists.awards.rows.filter((row) => news.isNewPs(`psaward:${row.cells[0]}`)).length : null;
+  useEffect(() => {
+    if (unreadBid != null) reportUnread('/ps-philgeps', unreadBid);
+    if (unreadOpp != null) reportUnread('/ps-philgeps/opportunities', unreadOpp);
+    if (unreadAward != null) reportUnread('/ps-philgeps/awards', unreadAward);
+  }, [unreadBid, unreadOpp, unreadAward]);
 
   return (
     <PsContext.Provider value={{ data, search, setSearch, reload: loadData, connected, syncing, sync }}>
