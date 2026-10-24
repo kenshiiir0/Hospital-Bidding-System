@@ -180,7 +180,6 @@ export default function TenderDetails({ bid, onClose }) {
           </PanelSection>
           {/* When the tender was first fetched, last re-checked by the automatic update, and its documents checked */}
           <FetchedSection
-            minute={0}
             items={[
               ['First fetched', formatInstant(bid.created_at)],
               ['Last re-checked', d.supplements_checked_at && `${formatInstant(d.supplements_checked_at)} · Automatic`],

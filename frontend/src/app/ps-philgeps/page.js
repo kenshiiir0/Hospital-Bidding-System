@@ -176,7 +176,6 @@ export default function BidMatchPage() {
               </PanelSection>
               {/* When this tender was fetched (the last Sync's list) and its documents read, and the automatic schedule */}
               <FetchedSection
-                minute={15}
                 items={[
                   ['Last fetched', data?.syncedAt && [formatInstant(data.syncedAt), lastSyncBy].filter(Boolean).join(' · ')],
                   ['Documents read', readingOf(selected)?.analyzed_at && `${formatInstant(readingOf(selected).analyzed_at)} · Automatic`],
