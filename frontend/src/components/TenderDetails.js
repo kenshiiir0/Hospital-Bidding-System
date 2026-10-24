@@ -4,7 +4,7 @@ import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/for
 import { supabase } from '@/lib/supabase';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ResponsiveTable from '@/components/ResponsiveTable';
-import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
+import PsDetailsPanel, { KeyValueList, ManualCheckNote, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -116,7 +116,6 @@ export default function TenderDetails({ bid, onClose }) {
           ...(descriptionItems || []).map((item) => ({ ...item, where: 'Description' })),
           ...(d.documents_items || []).map((item) => ({ ...item, products: item.our_products, where: item.source?.split(', ').pop() || 'Documents' })),
         ];
-  const unreadDocuments = (d.documents_read || []).filter((doc) => doc.kind !== 'text');
   const supplements = d.supplements || [];
   const documents = d.documents || [];
   const remark = documentsRemark(bid);
@@ -233,12 +232,8 @@ export default function TenderDetails({ bid, onClose }) {
           <span className="font-semibold">{remark.label}.</span> {remark.text}
           {d.documents_checked_at && <span className="text-black/46"> Last checked {formatInstant(d.documents_checked_at)}.</span>}
         </p>
-        {/* As in the PS-PhilGEPS bid data sheet note: files whose text couldn't be read for our products */}
-        {unreadDocuments.length > 0 && (
-          <p className="text-xs text-black/46">
-            Not readable as text (scanned or old Word format), check by hand: {unreadDocuments.map((doc) => doc.name).join(', ')}
-          </p>
-        )}
+        {/* As on PS-PhilGEPS: files whose text couldn't be read for our products (lib/manualCheck.js) */}
+        <ManualCheckNote read={d.documents_read} />
       </PanelSection>
 
       {/* Full notice text, collapsed unless there are no requested items to show */}

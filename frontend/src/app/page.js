@@ -11,6 +11,7 @@ import TenderDetails from '@/components/TenderDetails';
 import TypeBadge from '@/components/TypeBadge';
 import { philgepsType } from '@/lib/tenderType';
 import { activeTenders } from '@/lib/activeProducts';
+import { UNREAD_KINDS, needsManualCheck } from '@/lib/manualCheck';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
 import { philgepsTender } from '@/lib/opportunityWorkbook';
@@ -55,7 +56,11 @@ const DOC_GROUPS = [
   { key: 'files', label: 'With documents' },
   { key: 'pickup', label: 'Pick-up only' },
   { key: 'none', label: 'No documents yet' },
+  // Downloaded documents that couldn't be read (lib/manualCheck.js), also of tenders with no product found
+  { key: 'check', label: 'Need manual check' },
 ];
+
+const needsCheck = (bid) => needsManualCheck(bid.details?.documents_read);
 
 function docGroupOf(bid) {
   if (bid.details?.documents?.length) return 'files';
@@ -80,7 +85,13 @@ function readStoredExcluded() {
 function DocumentCount({ bid }) {
   const d = bid.details || {};
   const n = d.documents?.length || 0;
-  if (n) return <span className="text-xs text-[#3F6F2C]">📎 {n} file{n > 1 ? 's' : ''}</span>;
+  if (n)
+    return (
+      <span className="text-xs text-[#3F6F2C]">
+        📎 {n} file{n > 1 ? 's' : ''}
+        {needsCheck(bid) && <span className="block font-medium text-[#B3312C]">Check by hand</span>}
+      </span>
+    );
   if (d.documents_status === 'pick-up') return <span className="text-xs text-black/62">Pick-up only</span>;
   if (d.documents_status === 'closed') return <span className="text-xs text-black/46">Closed</span>;
   if (!d.documents_checked_at) return <span className="text-xs text-black/46">Not checked</span>;
@@ -126,6 +137,8 @@ const fieldClass =
 
 export default function Home() {
   const [bids, setBids] = useState([]);
+  // Tenders with no product found whose documents couldn't be read: only under "Need manual check"
+  const [checkBids, setCheckBids] = useState([]);
   const [loading, setLoading] = useState(true);
   // When the shown list was loaded from Supabase (null until the cache or the first load arrives), and whether a reload is running
   const [updatedAt, setUpdatedAt] = useState(null);
@@ -185,12 +198,17 @@ export default function Home() {
 
   // Initial load uses this directly after showing the cached list.
   // Only tenders that ask for our products in our dosages (matched_molecules, lib/products.mjs).
+  // Plus, for "Need manual check", the tenders with no product found whose documents couldn't be read.
   const loadBids = async () => {
-    const { data, error } = await supabase
-      .from('philgeps_opportunities')
-      .select('*')
-      .not('matched_molecules', 'eq', '{}')
-      .order('id', { ascending: false });
+    const [{ data, error }, unread] = await Promise.all([
+      supabase.from('philgeps_opportunities').select('*').not('matched_molecules', 'eq', '{}').order('id', { ascending: false }),
+      supabase
+        .from('philgeps_opportunities')
+        .select('*')
+        .eq('matched_molecules', '{}')
+        .or(UNREAD_KINDS.map((kind) => `details->documents_read.cs.[{"kind":"${kind}"}]`).join(','))
+        .order('id', { ascending: false }),
+    ]);
 
     if (error) {
       console.error('Error fetching bids:', error.message);
@@ -199,6 +217,8 @@ export default function Home() {
       setBids(data || []);
       setUpdatedAt(Date.now());
     }
+    if (unread.error) console.error('Error fetching tenders to check by hand:', unread.error.message);
+    else setCheckBids(unread.data || []);
     setLoading(false);
     setReloading(false);
   };
@@ -371,13 +391,16 @@ export default function Home() {
         (payload) => {
           // A Sync saving a tender's documents: swap in the new row so its circle and details update at once.
           // A tender that no longer asks for our products in our dosages (products.mjs) leaves the list, and one
-          // that newly does (e.g. found in its documents) joins it.
+          // that newly does (e.g. found in its documents) joins it. One with no product found but unreadable
+          // documents goes to the "Need manual check" tenders.
           const ours = (payload.new.matched_molecules || []).length > 0;
-          setBids((prevBids) => {
-            const listed = prevBids.some((bid) => bid.id === payload.new.id);
-            if (!ours) return listed ? prevBids.filter((bid) => bid.id !== payload.new.id) : prevBids;
-            return listed ? prevBids.map((bid) => (bid.id === payload.new.id ? payload.new : bid)) : [payload.new, ...prevBids];
-          });
+          const place = (keep) => (prev) => {
+            const listed = prev.some((bid) => bid.id === payload.new.id);
+            if (!keep) return listed ? prev.filter((bid) => bid.id !== payload.new.id) : prev;
+            return listed ? prev.map((bid) => (bid.id === payload.new.id ? payload.new : bid)) : [payload.new, ...prev];
+          };
+          setBids(place(ours));
+          setCheckBids(place(!ours && needsCheck(payload.new)));
         }
       )
       .subscribe();
@@ -415,16 +438,16 @@ export default function Home() {
   // Search the reference number, tender title, procuring entity (hospital) and matched products,
   // keep the published-date range, then order by published date (latest first unless reversed)
   const query = search.toLowerCase();
-  const matchingBids = visibleBids
-    .filter((bid) =>
-      `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`
-        .toLowerCase()
-        .includes(query)
-    )
-    .filter((bid) => {
-      const published = bid.publish_date || '';
-      return (!dateFrom || published >= dateFrom) && (!dateTo || (published && published <= dateTo));
-    });
+  const matchesSearchAndDates = (bid) => {
+    const published = bid.publish_date || '';
+    return (
+      `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`.toLowerCase().includes(query) &&
+      (!dateFrom || published >= dateFrom) &&
+      (!dateTo || (published && published <= dateTo))
+    );
+  };
+  // "Need manual check" also lists the tenders with no product found (checkBids)
+  const matchingBids = (docFilter === 'check' ? [...visibleBids, ...checkBids] : visibleBids).filter(matchesSearchAndDates);
   // Type filter (ITB, RFQ...): options are the types in the searched list, most common first, with counts
   const typeOf = (bid) => philgepsType(bid.details?.notice_type).code;
   const typeCounts = {};
@@ -432,12 +455,15 @@ export default function Home() {
   const typeOptions = Object.keys(typeCounts)
     .sort((a, b) => typeCounts[b] - typeCounts[a])
     .map((code) => ({ value: code, label: code, count: typeCounts[code] }));
-  const searchedBids = matchingBids.filter((bid) => !typeFilter || typeOf(bid) === typeFilter);
-  // Counts for the documents filter follow the search and date filter
-  const docCounts = { all: searchedBids.length, files: 0, pickup: 0, none: 0 };
-  for (const bid of searchedBids) docCounts[docGroupOf(bid)]++;
+  const ofType = (bid) => !typeFilter || typeOf(bid) === typeFilter;
+  const searchedBids = matchingBids.filter(ofType);
+  // Counts for the documents filter follow the search, date and type filters
+  const ourSearched = visibleBids.filter((bid) => matchesSearchAndDates(bid) && ofType(bid));
+  const docCounts = { all: ourSearched.length, files: 0, pickup: 0, none: 0 };
+  for (const bid of ourSearched) docCounts[docGroupOf(bid)]++;
+  docCounts.check = [...ourSearched, ...checkBids.filter((bid) => matchesSearchAndDates(bid) && ofType(bid))].filter(needsCheck).length;
   const filteredBids = searchedBids
-    .filter((bid) => docFilter === 'all' || docGroupOf(bid) === docFilter)
+    .filter((bid) => docFilter === 'all' || (docFilter === 'check' ? needsCheck(bid) : docGroupOf(bid) === docFilter))
     .sort((a, b) => {
       const byDate = (a.publish_date || '').localeCompare(b.publish_date || '') || (a.ref_no || '').localeCompare(b.ref_no || '');
       return oldestFirst ? byDate : -byDate;
@@ -676,7 +702,7 @@ export default function Home() {
 
       {selectedBid && (
         // The freshest copy of the open tender (the list reloads while a Sync saves each result)
-        <TenderDetails bid={ourBids.find((b) => b.id === selectedBid.id) || selectedBid} onClose={() => setSelectedBid(null)} />
+        <TenderDetails bid={[...ourBids, ...checkBids].find((b) => b.id === selectedBid.id) || selectedBid} onClose={() => setSelectedBid(null)} />
       )}
       <ScrapeProgress job={syncView} raised={Boolean(autoView)} onDismiss={() => (localSync ? setLocalSync(null) : dismissFetch())} />
       <AutoFetchBar job={autoView} onDismiss={dismissFetch} />

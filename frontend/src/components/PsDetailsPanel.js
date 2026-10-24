@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import HospitalLinks from '@/components/HospitalLinks';
 import { StatusBadge } from '@/components/FilterControls';
+import { MANUAL_CHECK, unreadDocuments, unreadReason } from '@/lib/manualCheck';
 
 // The View details drawer for one list row, shared by PS-PhilGEPS (Bid Match, My Opportunities, Award
 // Notices) and PhilGEPS (TenderDetails), so every details panel looks the same:
@@ -158,6 +159,25 @@ export function PanelSection({ title, count, tone, plain = false, children }) {
 }
 
 /** Muted tag for a value that isn't known ("Not on the notice page"). */
+/** "Documents need a manual check" with each file that couldn't be read and why (read: documents_read) */
+export function ManualCheckNote({ read }) {
+  const unread = unreadDocuments(read);
+  if (!unread.length) return null;
+  return (
+    <div role="note" className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3 text-xs">
+      <p className="font-semibold text-[#B3312C]">{MANUAL_CHECK}</p>
+      <p className="mt-0.5 text-black/62">Our products can&rsquo;t be looked for in these files; open them and check by hand:</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-black/80">
+        {unread.map((doc) => (
+          <li key={doc.name} className="break-all">
+            {doc.name} <span className="text-black/46">({unreadReason(doc)})</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function MissingTag({ children }) {
   return <span className="inline-block rounded-md bg-[#E2E8F0]/50 px-2 py-0.5 text-xs text-black/46">{children}</span>;
 }

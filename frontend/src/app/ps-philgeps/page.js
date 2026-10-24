@@ -5,7 +5,8 @@ import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsListTable from '@/components/PsListTable';
 import ResponsiveTable from '@/components/ResponsiveTable';
-import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
+import PsDetailsPanel, { ChecklistList, KeyValueList, ManualCheckNote, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
+import { needsManualCheck } from '@/lib/manualCheck';
 import { usePsFilters } from '@/components/PsFilters';
 import { ProductChips as Products, SegmentedTabs } from '@/components/FilterControls';
 import { psRefOf } from '@/lib/opportunityWorkbook';
@@ -19,6 +20,7 @@ import { psType } from '@/lib/tenderType';
 // against each notice's full page), with the notice's downloaded documents
 export default function BidMatchPage() {
   const { data, search = '' } = usePsPhilgeps() || {};
+  // Which tenders: true = our products, false = all, 'check' = documents that couldn't be read (lib/manualCheck.js)
   const [onlyOurs, setOnlyOurs] = useState(true);
   const [selected, setSelected] = useState(null);
   const list = data?.lists?.bidMatch;
@@ -29,6 +31,9 @@ export default function BidMatchPage() {
   // "Drugs and Medicines" lists its items in the documents)
   const productsOf = (row) => [...new Set([...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)])];
   const ours = (list?.rows || []).filter((row) => productsOf(row).length);
+  const needsCheck = (row) => needsManualCheck(readingOf(row)?.documents_read);
+  // Also the tenders with no product found: our products may be in the files that couldn't be read
+  const toCheck = (list?.rows || []).filter(needsCheck);
   const filters = usePsFilters(list, {
     selects: [
       { label: 'Our product', valuesOf: productsOf },
@@ -53,7 +58,7 @@ export default function BidMatchPage() {
       { label: 'Highest budget', column: 'Approve Budget Contract', kind: 'number', dir: 'desc' },
     ],
   });
-  const rows = filters.apply((onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' '))));
+  const rows = filters.apply((onlyOurs === 'check' ? toCheck : onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' '))));
 
   // The sidebar's Export Excel uses these rows (all filters applied) plus the PhilGEPS tenders matching the
   // same search (lib/exportScope.js, lib/unifiedExport.js). Until the data loads, it exports everything.
@@ -88,6 +93,7 @@ export default function BidMatchPage() {
             options={[
               { value: true, label: 'Our products', count: ours.length },
               { value: false, label: 'All', count: list.rows.length },
+              { value: 'check', label: 'Need manual check', count: toCheck.length },
             ]}
           />
         )}
@@ -101,7 +107,7 @@ export default function BidMatchPage() {
         extraColumns={[
           { label: 'Type', after: 'Notice Reference Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Mode of Procurement')])} /> },
           { label: 'Our products', render: (row) => <Products names={productsOf(row)} /> },
-          { label: 'Remarks', render: (row) => <DocumentCount notice={noticeOf(row)} /> },
+          { label: 'Remarks', render: (row) => <DocumentCount notice={noticeOf(row)} check={needsCheck(row)} /> },
         ]}
         onDetails={setSelected}
       />
@@ -181,7 +187,6 @@ const BDS_FIELDS = [
 const peso = (n) => (n == null ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 }));
 
 function FromDocuments({ reading }) {
-  const scanned = (reading?.documents_read || []).filter((d) => d.kind === 'scanned');
   return (
     <>
       <PanelSection title="Bid data sheet (from the documents)">
@@ -192,10 +197,10 @@ function FromDocuments({ reading }) {
         ) : (
           <ChecklistList items={BDS_FIELDS.map(([label, key]) => [label, reading.result.bid_data_sheet[key]])} />
         )}
-        {scanned.length > 0 && (
-          <p className="text-xs text-black/46 mt-2">
-            Scanned (not readable as text): {scanned.map((d) => d.name).join(', ')}
-          </p>
+        {needsManualCheck(reading?.documents_read) && (
+          <div className="mt-2">
+            <ManualCheckNote read={reading.documents_read} />
+          </div>
         )}
       </PanelSection>
       {reading?.status === 'done' && (
@@ -224,11 +229,17 @@ function FromDocuments({ reading }) {
   );
 }
 
-function DocumentCount({ notice }) {
+function DocumentCount({ notice, check }) {
   if (!notice) return <span className="text-black/46">—</span>;
   if (notice.error) return <span className="text-xs text-[#B3312C]">Not read</span>;
   const n = notice.documents?.length || 0;
-  return n ? <span className="text-xs text-[#3F6F2C]">📎 {n} file{n > 1 ? 's' : ''}</span> : <span className="text-xs text-black/46">None found</span>;
+  if (!n) return <span className="text-xs text-black/46">None found</span>;
+  return (
+    <span className="text-xs text-[#3F6F2C]">
+      📎 {n} file{n > 1 ? 's' : ''}
+      {check && <span className="block font-medium text-[#B3312C]">Check by hand</span>}
+    </span>
+  );
 }
 
 // Same rule as ps-philgeps-sync.js: the row's link to its notice page, else a numeric first cell
