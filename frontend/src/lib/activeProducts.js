@@ -2,11 +2,13 @@
 // hourly update, the Syncs and the keep-alive. Until then a product archived on the Product List would still
 // show, so every screen keeps only the molecules on today's list (/api/products: active products' names).
 
+import { authFetch } from '@/lib/authFetch';
+
 let cached = null;
 
 /** Names of our active molecules; one request per page load. Rejects if the list can't be loaded. */
 export function loadActiveNames() {
-  cached ??= fetch('/api/products')
+  cached ??= authFetch('/api/products')
     .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`Error ${res.status}`))))
     .then((names) => new Set(names))
     .catch((e) => {

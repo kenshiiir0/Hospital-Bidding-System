@@ -359,8 +359,8 @@ export default function Home() {
     })();
 
     // All our products (molecules.json) for the exclusion filter, plus the saved exclusions
-    fetch('/api/products')
-      .then((res) => res.json())
+    authFetch('/api/products')
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`Error ${res.status}`))))
       .then((names) => {
         setProducts(names);
         setExcluded(readStoredExcluded());

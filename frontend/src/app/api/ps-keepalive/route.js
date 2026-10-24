@@ -1,4 +1,5 @@
 import { after } from 'next/server';
+import { hasCronSecret } from '@/lib/auth';
 import { keepAlive } from '@/lib/psSync.mjs';
 import { analyzePending } from '@/lib/psDocs.mjs';
 import { checkHospitals } from '@/lib/hospitals.mjs';
@@ -15,8 +16,7 @@ export const maxDuration = 300;
 //    (psDocs.mjs), for up to 3 minutes; the rest wait for the next call,
 // 3. then checks hospitals' own procurement pages that are due (hospitals.mjs, every 3 hours each).
 export async function GET(request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!hasCronSecret(request)) {
     return Response.json({ ok: false }, { status: 401 });
   }
   after(async () => {

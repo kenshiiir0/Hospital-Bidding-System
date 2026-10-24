@@ -12,7 +12,7 @@ node_modules/
 .philgeps/
 .ps-philgeps/
 .schema-applied
-documents/
+/documents/
 captures/
 
 # Build output of the pre-push safety gate (tools/safety-gate.sh)

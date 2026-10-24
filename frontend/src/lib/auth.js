@@ -1,4 +1,15 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+
+// Server side: is this request from a schedule ("Authorization: Bearer <CRON_SECRET>")? False when
+// CRON_SECRET is not set. Compared in constant time (as hashes, so the lengths match) so the answer
+// time gives nothing away about the secret.
+export function hasCronSecret(request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const hash = (s) => createHash('sha256').update(s).digest();
+  return timingSafeEqual(hash(request.headers.get('authorization') || ''), hash(`Bearer ${secret}`));
+}
 
 // Server side: the signed-in team member behind an API request. The browser sends its Supabase access
 // token (see authFetch.js); Supabase confirms it is valid and still signed in, and the account must be

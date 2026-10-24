@@ -8,13 +8,13 @@ function admin() {
 }
 
 // Our products (table products: the PRODUCT LIST plus Add Molecule). Default: the molecule names tenders are
-// matched by (the dashboard's exclusion filter, as before); ?rows=1: every row, archived ones too, for signed-in
-// team members.
+// matched by (the dashboard's exclusion filter, as before); ?rows=1: every row, archived ones too. Both for
+// signed-in team members only: the list is what we bid on, which competitors must not see.
 export async function GET(request) {
+  const { response } = await requireUser(request);
+  if (response) return response;
   try {
     if (new URL(request.url).searchParams.get('rows')) {
-      const { response } = await requireUser(request);
-      if (response) return response;
       return Response.json(await loadProducts(admin(), { includeArchived: true }));
     }
     const products = await loadProducts(admin());

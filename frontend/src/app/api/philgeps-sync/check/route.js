@@ -1,3 +1,5 @@
+import { hasCronSecret } from '@/lib/auth';
+
 // Diagnostic for the server-side PhilGEPS Sync: can this server reach notices.philgeps.gov.ph, and how fast?
 // Reads public pages only (no log-in). Needs "Authorization: Bearer <CRON_SECRET>".
 export const maxDuration = 120;
@@ -9,8 +11,7 @@ const PAGES = [
 ];
 
 export async function GET(request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) return Response.json({ ok: false }, { status: 401 });
+  if (!hasCronSecret(request)) return Response.json({ ok: false }, { status: 401 });
   const results = [];
   for (const url of PAGES) {
     const started = Date.now();

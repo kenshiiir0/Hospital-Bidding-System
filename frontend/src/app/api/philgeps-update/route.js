@@ -1,4 +1,5 @@
 import { after } from 'next/server';
+import { hasCronSecret } from '@/lib/auth';
 import { runPublicUpdate } from '@/lib/philgepsUpdate.mjs';
 import { createClient } from '@supabase/supabase-js';
 
@@ -19,7 +20,7 @@ const HOURLY_DOCUMENTS = false;
 // after the response. Then the documents Sync starts (HOURLY_DOCUMENTS).
 export async function GET(request) {
   const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!hasCronSecret(request)) {
     return Response.json({ ok: false }, { status: 401 });
   }
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;

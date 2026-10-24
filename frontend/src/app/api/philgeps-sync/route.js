@@ -1,4 +1,4 @@
-import { requireUser } from '@/lib/auth';
+import { hasCronSecret, requireUser } from '@/lib/auth';
 import { runRoundsAfterResponse, startServerSync } from '@/lib/philgepsRounds';
 
 // One round may use the whole limit (philgepsSync.mjs stops starting tenders after ROUND_MS)
@@ -9,9 +9,8 @@ export const maxDuration = 300;
 // <CRON_SECRET>" the Sync's own next round ({ continue: true }) or a schedule ({ start: true }) calls it.
 export async function POST(request) {
   const origin = new URL(request.url).origin;
-  const secret = process.env.CRON_SECRET;
   try {
-    if (secret && request.headers.get('authorization') === `Bearer ${secret}`) {
+    if (hasCronSecret(request)) {
       const body = await request.json().catch(() => ({}));
       if (body.continue) {
         runRoundsAfterResponse(origin);

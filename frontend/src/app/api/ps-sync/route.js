@@ -1,5 +1,5 @@
 import { after } from 'next/server';
-import { requireUser } from '@/lib/auth';
+import { hasCronSecret, requireUser } from '@/lib/auth';
 import { claimSync, runSync } from '@/lib/psSync.mjs';
 
 // The Sync reads every list page, notice and new document; give it the longest time the host allows
@@ -10,9 +10,8 @@ export const maxDuration = 300;
 // reuses the saved PS-PhilGEPS session (no new log-in). Answers at once; the Sync runs after the response and
 // reports through ps_sync_status (every dashboard reads it).
 export async function POST(request) {
-  const secret = process.env.CRON_SECRET;
   let by;
-  if (secret && request.headers.get('authorization') === `Bearer ${secret}`) by = 'schedule';
+  if (hasCronSecret(request)) by = 'schedule';
   else {
     const { user, response } = await requireUser(request);
     if (response) return response;
