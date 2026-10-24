@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
-import { supabase } from '@/lib/supabase';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import PsDetailsPanel, { ChecklistList, KeyValueList, ManualCheckNote, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import { needsManualCheck } from '@/lib/manualCheck';
@@ -16,6 +15,7 @@ import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ScreenButton from '@/components/ScreenButton';
 import TypeBadge from '@/components/TypeBadge';
 import FetchedSection, { startedByLabel } from '@/components/FetchedSection';
+import DocumentsPanel from '@/components/DocumentsPanel';
 import { formatInstant } from '@/lib/format';
 import { psType } from '@/lib/tenderType';
 
@@ -199,9 +199,7 @@ export default function BidMatchPage() {
             <ProductPills names={productsOf(selected)} />
           </PanelSection>
           <FromDocuments reading={readingOf(selected)} />
-          <PanelSection title="Documents">
-            <Documents ref_={refOf(selected)} notice={noticeOf(selected)} />
-          </PanelSection>
+          <PsDocuments ref_={refOf(selected)} notice={noticeOf(selected)} syncedAt={data?.syncedAt} />
         </PsDetailsPanel>
       )}
     </section>
@@ -315,43 +313,31 @@ function DocumentCount({ notice, check }) {
 const refOf = psRefOf;
 
 
-function Documents({ ref_, notice }) {
-  if (!notice) return <span className="text-black/46">—</span>;
-  if (notice.error) return <span className="text-xs text-[#B3312C]">{notice.error}</span>;
-  if (!notice.documents?.length) return <span className="text-xs text-black/46">None found</span>;
+// The notice's files (psSync.mjs, Storage bucket ps-documents) in the shared Attached documents section
+function PsDocuments({ ref_, notice, syncedAt }) {
+  const documents = notice?.documents || [];
+  const status = !notice
+    ? { label: 'Not read yet', tone: 'blue' }
+    : notice.error
+      ? { label: 'Not read', tone: 'red' }
+      : documents.length
+        ? { label: '✓ Downloaded', tone: 'green' }
+        : { label: 'None found', tone: 'grey' };
+  const footer = notice?.error || [
+    notice && 'From the PS-PhilGEPS notice page',
+    syncedAt && `Last Sync ${formatInstant(syncedAt)}`,
+  ].filter(Boolean).join(' · ');
   return (
-    <ul className="space-y-1">
-      {notice.documents.map((d) => (
-        <li key={d.name}>
-          <button
-            onClick={() => openDocument(ref_, d)}
-            className="text-left text-xs text-[#12769F] hover:text-[#0E5C7C] hover:underline break-all"
-          >
-            📄 {d.name}
-          </button>
-        </li>
-      ))}
-    </ul>
+    <DocumentsPanel
+      documents={documents}
+      bucket="ps-documents"
+      tenderRef={ref_}
+      source="ps"
+      status={status}
+      footer={footer}
+      empty={notice ? 'None found' : 'Sync again to read this notice.'}
+    />
   );
-}
-
-// Documents live in the private Supabase bucket "ps-documents" (see tools/ps-publish.js): open a
-// short-lived signed link. The tab is opened first so the browser doesn't block it as a pop-up.
-// Documents from before the upload existed only on the computer that synced (/api/documents there).
-async function openDocument(ref, doc) {
-  if (!doc.path) {
-    window.open(`/api/documents?source=ps&ref=${ref}&name=${encodeURIComponent(doc.name)}`, '_blank', 'noopener');
-    return;
-  }
-  const tab = window.open('', '_blank');
-  const { data, error } = await supabase.storage.from('ps-documents').createSignedUrl(doc.path, 3600);
-  if (error || !data?.signedUrl) {
-    tab?.close();
-    alert(`Could not open ${doc.name}: ${error?.message || 'no link'}`);
-    return;
-  }
-  if (tab) tab.location.href = data.signedUrl;
-  else window.location.href = data.signedUrl;
 }
 
 // The notice number links to the notice on PS-PhilGEPS

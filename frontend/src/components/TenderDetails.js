@@ -1,10 +1,10 @@
 'use client';
 
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
-import { supabase } from '@/lib/supabase';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import FetchedSection from '@/components/FetchedSection';
+import DocumentsPanel from '@/components/DocumentsPanel';
 import ScreenButton from '@/components/ScreenButton';
 import { philgepsTender } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { KeyValueList, ManualCheckNote, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
@@ -30,7 +30,7 @@ const DOCUMENT_STATUS_NOTE = {
   'none-found': 'The order exists but no document file came through yet. Sync tries again next time.',
 };
 
-// Status label, colour and reason for the Remarks box. Uses the Sync's own remark when there is one,
+// Status pill, colour (DocumentsPanel tones) and reason for the Documents section. Uses the Sync's own remark when there is one,
 // otherwise a general explanation (older results, or tenders not checked yet).
 const REMARK_LABELS = {
   downloaded: ['Documents downloaded', 'green'],
@@ -42,13 +42,6 @@ const REMARK_LABELS = {
   'none-found': ['No file yet', 'red'],
   'needs-order': ['Not ordered yet', 'blue'],
 };
-// Same colours as the PS-PhilGEPS panel's small notes
-const REMARK_TONE = {
-  green: 'text-[#3F6F2C]',
-  grey: 'text-black/62',
-  red: 'text-[#B3312C]',
-  blue: 'text-[#12769F]',
-};
 
 function documentsRemark(bid) {
   const d = bid.details || {};
@@ -57,6 +50,7 @@ function documentsRemark(bid) {
   if (!d.documents_checked_at || !status) {
     return {
       label: 'Not checked yet',
+      pill: 'Not checked yet',
       tone: 'blue',
       text: 'The system has not looked for this tender\'s documents yet. The next Sync (or the first automatic update of the day) orders them on PhilGEPS for free and downloads them.',
     };
@@ -66,26 +60,8 @@ function documentsRemark(bid) {
   const fallback = status === 'downloaded'
     ? `${docs.length} file${docs.length === 1 ? '' : 's'} downloaded from PhilGEPS${orders.length ? ` (order ${orders.join(', ')})` : ''}.`
     : DOCUMENT_STATUS_NOTE[status] || 'No documents yet.';
-  return { label, tone, text: d.documents_remark || fallback };
-}
-
-// Documents uploaded to the private Storage bucket "philgeps-documents" open by a short-lived signed link
-// (works on any computer and the deployed dashboard); older ones only from this computer (/api/documents).
-// The tab is opened first so the browser doesn't block it as a pop-up.
-async function openDocument(ref, doc) {
-  if (!doc.path) {
-    window.open(`/api/documents?ref=${ref}&name=${encodeURIComponent(doc.name)}`, '_blank', 'noopener');
-    return;
-  }
-  const tab = window.open('', '_blank');
-  const { data, error } = await supabase.storage.from('philgeps-documents').createSignedUrl(doc.path, 3600);
-  if (error || !data?.signedUrl) {
-    tab?.close();
-    alert(`Could not open ${doc.name}: ${error?.message || 'no link'}`);
-    return;
-  }
-  if (tab) tab.location.href = data.signedUrl;
-  else window.location.href = data.signedUrl;
+  const pill = status === 'downloaded' ? `✓ Downloaded${orders.length ? ` (Order #${orders.join(', #')})` : ''}` : label;
+  return { label, pill, tone, text: d.documents_remark || fallback };
 }
 
 // Wrap mentions of our matched products in <mark> so they stand out in the item list
@@ -222,35 +198,18 @@ export default function TenderDetails({ bid, onClose }) {
         )}
       </PanelSection>
 
-      {/* Files downloaded by Sync; the remark says why there are files or not */}
-      <PanelSection title="Documents">
-        {documents.length > 0 ? (
-          <ul className="space-y-1">
-            {documents.map((doc) => (
-              <li key={doc.name}>
-                {validRef ? (
-                  <button
-                    onClick={() => openDocument(bid.ref_no, doc)}
-                    className="text-left text-xs text-[#12769F] hover:text-[#0E5C7C] hover:underline break-all"
-                  >
-                    📄 {doc.title || doc.name}
-                  </button>
-                ) : (
-                  <span className="text-xs">📄 {doc.title || doc.name}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <span className="text-xs text-black/46">None found</span>
-        )}
-        <p className={`text-xs ${REMARK_TONE[remark.tone]}`}>
-          <span className="font-semibold">{remark.label}.</span> {remark.text}
-          {d.documents_checked_at && <span className="text-black/46"> Last checked {formatInstant(d.documents_checked_at)}.</span>}
-        </p>
+      {/* Files downloaded by Sync: status pill, one card per file (View / Save), and the remark on why there are
+          files or not with the last check */}
+      <DocumentsPanel
+        documents={documents}
+        bucket="philgeps-documents"
+        tenderRef={bid.ref_no}
+        status={{ label: remark.pill, tone: remark.tone }}
+        footer={`${remark.text}${d.documents_checked_at ? ` Last checked ${formatInstant(d.documents_checked_at)}.` : ''}`}
+      >
         {/* As on PS-PhilGEPS: files whose text couldn't be read for our products (lib/manualCheck.js) */}
         <ManualCheckNote read={d.documents_read} />
-      </PanelSection>
+      </DocumentsPanel>
 
       {/* Full notice text, collapsed unless there are no requested items to show */}
       <PanelSection title="Full description">

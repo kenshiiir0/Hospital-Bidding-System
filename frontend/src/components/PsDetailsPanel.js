@@ -138,12 +138,21 @@ function readableDate(text) {
 /**
  * A titled card in the drawer. tone 'blue' tints it (bidding dates); plain drops the card (pill groups).
  */
-export function PanelSection({ title, count, tone, plain = false, children }) {
-  const heading = (
-    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-black/62">
+export function PanelSection({ title, count, tone, plain = false, aside, children }) {
+  const title_ = (
+    <h3 className={`${aside ? '' : 'mb-2 '}text-xs font-semibold uppercase tracking-wider text-black/62`}>
       {title}
       {count != null && ` (${count})`}
     </h3>
+  );
+  // aside: shown at the heading's right (e.g. a status pill); wraps under the title in a narrow drawer
+  const heading = aside ? (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+      {title_}
+      {aside}
+    </div>
+  ) : (
+    title_
   );
   if (plain) {
     return (
