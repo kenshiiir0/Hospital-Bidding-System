@@ -4,15 +4,16 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { DetailsButton } from '@/components/FilterControls';
 
 // Columns without a set width need at least this much room to stay readable in the table
-const FLEX_COLUMN_REM = 9;
-const DETAILS_COLUMN_REM = 7;
+const FLEX_COLUMN_REM = 8;
+const DETAILS_COLUMN_REM = 6.5;
 const rem = (value) => (value ? parseFloat(value) : FLEX_COLUMN_REM);
 
 /**
- * Every list in the dashboard: a table when its box is wide enough for all its columns (set widths, plus 9rem
- * for each column without one), else one card per row (phones, tablets, a half-width window beside the sidebar,
- * the details drawer). The box is measured, so this follows the space the list really has, whatever the
- * screen. Nothing scrolls sideways: table cells wrap, cards stack their values.
+ * Every list in the dashboard: a table when its box is wide enough for its columns (set widths, plus 8rem for
+ * each column without one). When it is a little short, the table first leaves out the `optional` columns
+ * (lowest number first; they stay on the cards and in View details); only when even that doesn't fit does it
+ * become one card per row (phones, tablets, a narrow window, the details drawer). The box is measured, so this
+ * follows the space the list really has, whatever the screen or zoom. Nothing scrolls sideways.
  *
  * columns: [{ label, render(row, index), lead?, title?, badge?, wide?, nowrap?, align?, width? }]
  *   lead   - shown before the card's title (e.g. the row number circle)
@@ -21,6 +22,7 @@ const rem = (value) => (value ? parseFloat(value) : FLEX_COLUMN_REM);
  *   wide   - takes the card's full width (long text, product pills)
  *   nowrap - keeps the table cell on one line (short values like amounts)
  *   width  - the table column's width (e.g. '8rem'); columns without one share the rest
+ *   optional - a number: the table may leave this column out when space is short (1 goes first)
  * onDetails(row): adds the "View details" action (last table column, full-width button on cards).
  * rowKey(row, index): React key.
  */
@@ -31,8 +33,7 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
   const body = columns.filter((c) => !c.lead && !c.title && !c.badge);
   const text = size === 'xs' ? 'text-xs' : 'text-sm';
 
-  // Room the table needs, and the width of the list's box (cards until it has been measured)
-  const needed = (columns.reduce((sum, c) => sum + rem(c.width), 0) + (onDetails ? DETAILS_COLUMN_REM : 0)) * 16;
+  // The list's box width (cards until it has been measured)
   const box = useRef(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -42,7 +43,14 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const asTable = width >= needed;
+  // Table columns: all of them if they fit, else without the optional ones (lowest number first)
+  const fits = (cols) => (cols.reduce((sum, c) => sum + rem(c.width), 0) + (onDetails ? DETAILS_COLUMN_REM : 0)) * 16 <= width;
+  let tableColumns = columns;
+  for (const drop of columns.filter((c) => c.optional).sort((a, b) => a.optional - b.optional)) {
+    if (fits(tableColumns)) break;
+    tableColumns = tableColumns.filter((c) => c !== drop);
+  }
+  const asTable = width > 0 && fits(tableColumns);
 
   return (
     <div ref={box} className="@container min-w-0">
@@ -51,7 +59,7 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
         <table className={`w-full table-fixed ${text}`}>
           <thead className="bg-[#1EA0DA]/5 text-left text-xs font-semibold uppercase tracking-wide text-black/62">
             <tr>
-              {columns.map((c) => (
+              {tableColumns.map((c) => (
                 <th
                   key={c.label}
                   style={c.width ? { width: c.width } : undefined}
@@ -66,7 +74,7 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
           <tbody>
             {rows.map((row, i) => (
               <tr key={rowKey(row, i)} className="border-t border-[#E2E8F0] align-top bg-white transition-colors hover:bg-[#1EA0DA]/6">
-                {columns.map((c) => (
+                {tableColumns.map((c) => (
                   <td
                     key={c.label}
                     className={`px-3 py-2.5 ${c.nowrap ? 'whitespace-nowrap' : 'break-words [overflow-wrap:anywhere]'} ${c.align === 'right' ? 'text-right' : ''}`}

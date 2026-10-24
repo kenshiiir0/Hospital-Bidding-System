@@ -674,13 +674,13 @@ export default function Home() {
                   ),
                 },
                 { label: 'Reference Number', title: true, nowrap: true, width: '6.5rem', render: (bid) => <RefLink bid={bid} /> },
-                { label: 'Type', badge: true, width: '5rem', render: (bid) => <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} /> },
+                { label: 'Type', badge: true, width: '5rem', optional: 3, render: (bid) => <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} /> },
                 { label: 'Agency name', wide: true, render: (bid) => bid.procuring_entity || bid.title },
                 { label: 'Approved Budget', nowrap: true, width: '8rem', render: (bid) => (bid.abc_amount ? formatPeso(bid.abc_amount) : '—') },
-                { label: 'Publish Date', width: '6.5rem', render: (bid) => formatDate(bid.publish_date) || '—' },
+                { label: 'Publish Date', width: '6.5rem', optional: 1, render: (bid) => formatDate(bid.publish_date) || '—' },
                 { label: 'Closing Date', width: '7rem', render: (bid) => formatDateTime(bid.closing_date) || '—' },
                 { label: 'Our products', wide: true, render: (bid) => <Products names={bid.matched_molecules} /> },
-                { label: 'Remarks', width: '6.5rem', render: (bid) => <DocumentCount bid={bid} /> },
+                { label: 'Remarks', width: '6.5rem', optional: 2, render: (bid) => <DocumentCount bid={bid} /> },
               ]}
             />
           )}

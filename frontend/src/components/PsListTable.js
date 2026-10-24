@@ -27,13 +27,20 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
   const firstStatus = shown.find((c) => !c.render && STATUS_COLUMN.test(c.h));
   const tableColumns = shown.map((col, n) =>
     col.render
-      ? { label: col.label, render: col.render, wide: /products|remarks/i.test(col.label), width: /products/i.test(col.label) ? undefined : '6.5rem' }
+      ? {
+          label: col.label,
+          render: col.render,
+          wide: /products|remarks/i.test(col.label),
+          width: /products/i.test(col.label) ? undefined : '6.5rem',
+          optional: optionalRank(col.label),
+        }
       : {
           label: col.h,
           title: n === 0,
           badge: col === firstStatus,
           nowrap: /budget|amount/i.test(col.h),
           width: columnWidth(col.h),
+          optional: optionalRank(col.h),
           render: (row) =>
             STATUS_COLUMN.test(col.h) ? (
               <StatusBadge text={row.cells[col.i]} />
@@ -50,10 +57,20 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
 
 // Table widths for the short columns; the rest (agency, title, products) share what is left
 function columnWidth(header) {
-  if (/budget|amount/i.test(header)) return '8rem';
+  if (/budget|amount/i.test(header)) return '7.5rem';
   if (/date/i.test(header)) return '7rem';
   if (/status|acceptance|type|mode/i.test(header)) return '7rem';
   if (/number|ref/i.test(header)) return '6.5rem';
+  return undefined;
+}
+
+// Columns the table may leave out when space is short (they stay on the cards and in View details):
+// publish date first, then mode, remarks, type
+function optionalRank(header) {
+  if (/publish/i.test(header)) return 1;
+  if (/mode/i.test(header)) return 2;
+  if (/remarks/i.test(header)) return 3;
+  if (/^type$/i.test(header)) return 4;
   return undefined;
 }
 
