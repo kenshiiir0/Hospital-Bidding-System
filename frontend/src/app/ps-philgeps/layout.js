@@ -155,7 +155,7 @@ export default function PsPhilgepsLayout({ children }) {
   }, [connectFailed]);
 
   return (
-    <PsContext.Provider value={{ data, search, reload: loadData, connected, syncing }}>
+    <PsContext.Provider value={{ data, search, reload: loadData, connected, syncing, sync }}>
       <div className="min-h-screen bg-white text-black antialiased">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
           <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">

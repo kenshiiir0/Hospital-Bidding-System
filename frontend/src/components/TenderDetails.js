@@ -4,6 +4,7 @@ import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/for
 import { supabase } from '@/lib/supabase';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ResponsiveTable from '@/components/ResponsiveTable';
+import FetchedSection from '@/components/FetchedSection';
 import PsDetailsPanel, { KeyValueList, ManualCheckNote, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -174,6 +175,15 @@ export default function TenderDetails({ bid, onClose }) {
               missing={documents.length ? 'Not in the notice or its documents' : 'Not on the notice page'}
             />
           </PanelSection>
+          {/* When the tender was first fetched, last re-checked by the automatic update, and its documents checked */}
+          <FetchedSection
+            minute={0}
+            items={[
+              ['First fetched', formatInstant(bid.created_at)],
+              ['Last re-checked', d.supplements_checked_at && `${formatInstant(d.supplements_checked_at)} · Automatic`],
+              ['Documents checked', formatInstant(d.documents_checked_at)],
+            ]}
+          />
         </>
       }
     >

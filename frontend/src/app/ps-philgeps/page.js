@@ -14,12 +14,14 @@ import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { psTenders } from '@/lib/unifiedExport';
 import { useExportScope } from '@/lib/exportScope';
 import TypeBadge from '@/components/TypeBadge';
+import FetchedSection, { startedByLabel } from '@/components/FetchedSection';
+import { formatInstant } from '@/lib/format';
 import { psType } from '@/lib/tenderType';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
 export default function BidMatchPage() {
-  const { data, search = '' } = usePsPhilgeps() || {};
+  const { data, search = '', sync } = usePsPhilgeps() || {};
   // Which tenders: true = our products, false = all, 'check' = documents that couldn't be read (lib/manualCheck.js)
   const [onlyOurs, setOnlyOurs] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -27,6 +29,8 @@ export default function BidMatchPage() {
   const notices = data?.notices || {};
   const noticeOf = (row) => notices[refOf(row)];
   const readingOf = (row) => data?.analysis?.[refOf(row)];
+  // Who started the Sync that fetched the current list (the status row describes the last run)
+  const lastSyncBy = sync?.finished_at && data?.syncedAt && Math.abs(new Date(sync.finished_at) - new Date(data.syncedAt)) < 10 * 60 * 1000 ? startedByLabel(sync.started_by) : null;
   // Our products of a tender: matched on the notice page or named in its documents (a notice titled only
   // "Drugs and Medicines" lists its items in the documents)
   const productsOf = (row) => [...new Set([...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)])];
@@ -121,9 +125,19 @@ export default function BidMatchPage() {
           wide
           onClose={() => setSelected(null)}
           lead={
-            <PanelSection title="Bidding dates" tone="blue">
-              <ScheduleList schedule={noticeOf(selected)?.schedule} reading={readingOf(selected)} />
-            </PanelSection>
+            <>
+              <PanelSection title="Bidding dates" tone="blue">
+                <ScheduleList schedule={noticeOf(selected)?.schedule} reading={readingOf(selected)} />
+              </PanelSection>
+              {/* When this tender was fetched (the last Sync's list) and its documents read, and the automatic schedule */}
+              <FetchedSection
+                minute={15}
+                items={[
+                  ['Last fetched', data?.syncedAt && [formatInstant(data.syncedAt), lastSyncBy].filter(Boolean).join(' · ')],
+                  ['Documents read', readingOf(selected)?.analyzed_at && `${formatInstant(readingOf(selected).analyzed_at)} · Automatic`],
+                ]}
+              />
+            </>
           }
         >
           <PanelSection title="Our products" count={productsOf(selected).length} plain>
