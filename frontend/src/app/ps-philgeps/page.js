@@ -7,7 +7,7 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import PsDetailsPanel, { ChecklistList, KeyValueList, ManualCheckNote, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import { needsManualCheck } from '@/lib/manualCheck';
 import { usePsFilters } from '@/components/PsFilters';
-import { ProductChips as Products, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
 import { psRefOf, psTender } from '@/lib/opportunityWorkbook';
@@ -141,8 +141,8 @@ export default function BidMatchPage() {
               label: 'Dates',
               width: '10rem',
               render: (row) => (
-                <div className="space-y-0.5 text-xs">
-                  <div><span className="text-black/46">Pub:</span> {shortPsDate(cell(row, 'Publish Date'), syncYear)}</div>
+                <div className="space-y-1 text-xs">
+                  <PublishedTag text={shortPsDate(cell(row, 'Publish Date'), syncYear)} />
                   <div><span className="text-black/46">Close:</span> <span className="font-medium">{shortPsDate(cell(row, 'Closing Date'), syncYear)}</span></div>
                 </div>
               ),

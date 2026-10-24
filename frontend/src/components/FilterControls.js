@@ -947,3 +947,16 @@ export function DateRangeDropdown({ fields, ranges, onChange, className = '' }) 
     </div>
   );
 }
+
+/** The published date as a highlighted tag, so it stands out in the Dates column ("📅 Pub: Oct 23"). */
+export function PublishedTag({ text }) {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-[#1EA0DA]/25 bg-[#1EA0DA]/10 px-1.5 py-0.5 text-xs font-semibold text-[#12769F]">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="h-3 w-3 shrink-0" aria-hidden>
+        <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
+        <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
+      </svg>
+      Pub: {text || '—'}
+    </span>
+  );
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { CustomSelect, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
+import { CustomSelect, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
 import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, plainAction } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
 import { downloadOpportunityWorkbook, philgepsTender } from '@/lib/opportunityWorkbook';
@@ -686,8 +686,8 @@ export default function Home() {
                   label: 'Dates',
                   width: '10rem',
                   render: (bid) => (
-                    <div className="space-y-0.5 text-xs">
-                      <div><span className="text-black/46">Pub:</span> {shortDay(bid.publish_date, thisYear) || '—'}</div>
+                    <div className="space-y-1 text-xs">
+                      <PublishedTag text={shortDay(bid.publish_date, thisYear)} />
                       <div><span className="text-black/46">Close:</span> <span className="font-medium">{shortDayTime(bid.closing_date, thisYear) || '—'}</span></div>
                     </div>
                   ),
