@@ -8,8 +8,9 @@ import { routeAward } from './awardRouting.mjs';
 // a failed send is tried again by the next Syncs, at most MAX_ATTEMPTS times.
 // The award list has no agency column: the award's own page (/BidAwards/viewAwardNotice/<no>) is read for the
 // hospital, contract amount and award date (one page per new award, read only).
-// Sent through the company's Google Workspace (SMTP with an app password): SMTP_USER, SMTP_PASS, optional
-// MAIL_FROM. Not set = nothing is sent or recorded, so the waiting awards go out once it is set.
+// Sent by SMTP with an app password: SMTP_USER, SMTP_PASS, optional MAIL_FROM, optional SMTP_HOST for an account
+// that isn't Gmail / Google Workspace (Zoho: smtp.zoho.com, or smtppro.zoho.com for a paid Zoho organisation;
+// port 465, SMTP_PORT to change it). Not set = nothing is sent or recorded, so the waiting awards go out once it is set.
 // Plain .mjs (no Next imports) so tools/check-award-routing.mjs can run it with node.
 
 const HOST = 'https://philgeps.gov.ph';
@@ -76,7 +77,11 @@ ${copied ? `<p style="color:#555">${esc(copied)}</p>` : ''}<p style="color:#888;
 
 let transport;
 async function send({ to, cc, subject, text, html }) {
-  transport ||= nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
+  const auth = { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS };
+  const port = Number(process.env.SMTP_PORT) || 465;
+  transport ||= process.env.SMTP_HOST
+    ? nodemailer.createTransport({ host: process.env.SMTP_HOST, port, secure: port === 465, auth })
+    : nodemailer.createTransport({ service: 'gmail', auth });
   const who = (people) => people.map((p) => `"${p.name}" <${p.email}>`).join(', ');
   const from = process.env.MAIL_FROM || `"Hospital Bidding System" <${process.env.SMTP_USER}>`;
   await transport.sendMail({ from, to: who(to), cc: cc.length ? who(cc) : undefined, subject, text, html });
