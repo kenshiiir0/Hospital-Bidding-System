@@ -12,8 +12,7 @@ import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
 import { KpiRow } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
-import { markRead, useTenderNews } from '@/lib/newTenders';
-import { MarkReadButton } from '@/components/FilterControls';
+import { useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 
 // My Award Notices: awards the hospitals posted for us, with their acceptance status. An award still "Pending
 // for Acceptance" can be accepted or refused only inside its View details drawer (components/PsAwardResponse.js),
@@ -38,9 +37,10 @@ export default function AwardNoticesPage() {
   // New since last read (lib/newTenders.js; the PS-PhilGEPS layout records each Sync's rows)
   const news = useTenderNews();
   const newKey = (row) => `psaward:${row.cells[0]}`;
-  const unread = (list?.rows || []).filter((row) => news.isNewPs(newKey(row)));
+  // Opening this page reads them: labelled NEW for this visit, gone from the sidebar count
+  const seenNow = useSeenOnOpen((list?.rows || []).filter((row) => news.isNewPs(newKey(row))).map(newKey));
+  const isNew = (row) => news.isNewPs(newKey(row)) || seenNow.has(newKey(row));
   const filters = usePsFilters(list, {
-    headTabs: unread.length > 0 && <MarkReadButton count={unread.length} onClick={() => markRead(unread.map(newKey))} />,
     selects: [
       { label: 'Acceptance', column: 'Award Acceptance' },
       { label: 'Status', column: 'Status' },
@@ -54,7 +54,7 @@ export default function AwardNoticesPage() {
     ],
   });
   // New, unread tenders first (a stable sort keeps the chosen order otherwise)
-  const rows = [...(filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row))))].sort((a, b) => Number(news.isNewPs(newKey(b))) - Number(news.isNewPs(newKey(a))));
+  const rows = [...(filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row))))].sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
   const selected = selectedNo && list?.rows.find((row) => row.cells[0] === selectedNo);
   const waiting = (list?.rows || []).filter(pending).length;
   const total = list ? list.rows.length : null;
@@ -80,11 +80,8 @@ export default function AwardNoticesPage() {
           { label: 'Type', after: 'Award Notice Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Procurement Mode')])} /> },
           { label: 'Emailed to', render: (row) => <EmailedTo note={emails[row.cells[0]]} /> },
         ]}
-        isNew={(row) => news.isNewPs(newKey(row))}
-        onDetails={(row) => {
-          markRead(newKey(row));
-          setSelectedNo(row.cells[0]);
-        }}
+        isNew={isNew}
+        onDetails={(row) => setSelectedNo(row.cells[0])}
       />
       {selected && (
         <PsDetailsPanel

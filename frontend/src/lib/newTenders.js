@@ -8,7 +8,8 @@ import { setNavCount } from '@/lib/navCounts';
 //   24 hours) and not yet read;
 // - PS-PhilGEPS lists have no fetch time, so a row is new when a Sync brings one this browser hadn't seen
 //   (the first time a list is seen, everything in it is the starting point, not new);
-// - opening a tender's View details, or "Mark all as read", reads it.
+// - opening the page that lists a tender reads it (useSeenOnOpen): the NEW label stays for that visit,
+//   the sidebar's "N new" clears at once, and next time it is no longer new.
 // The unread counts go to the sidebar badges as navCounts "new:<href>".
 const KEY = 'tenderNews';
 const EVENT = 'tendernews:change';
@@ -120,4 +121,23 @@ export function unreadPhilgeps(rows) {
   const state = load();
   const cutoff = state.cutoff.philgeps;
   return cutoff ? rows.filter((r) => !state.read[`philgeps:${r.id}`] && instant(r.created_at) >= cutoff).length : 0;
+}
+
+/**
+ * Call on a list page with the keys of its unread tenders: marks them read at once (the sidebar badge clears)
+ * and returns the keys to keep labelled NEW for the rest of this visit (also those arriving while open).
+ */
+export function useSeenOnOpen(unreadKeys) {
+  const [shown, setShown] = useState(() => new Set());
+  const signature = unreadKeys.join('|');
+  useEffect(() => {
+    if (!signature) return;
+    const keys = signature.split('|');
+    const timer = setTimeout(() => {
+      setShown((prev) => new Set([...prev, ...keys]));
+      markRead(keys);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [signature]);
+  return shown;
 }

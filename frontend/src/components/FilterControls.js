@@ -964,23 +964,8 @@ export function PublishedTag({ text }) {
 /** "NEW" on a tender fetched since it was last read (lib/newTenders.js). */
 export function NewPill() {
   return (
-    <span className="inline-flex items-center rounded-md bg-[#61A644] px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-wide text-white" title="Fetched since you last looked: open View details to mark it read">
+    <span className="inline-flex items-center rounded-md bg-[#61A644] px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-wide text-white" title="Fetched since you last opened this page">
       New
     </span>
-  );
-}
-
-/** "✓ Mark 3 as read", shown while a list has new tenders. */
-export function MarkReadButton({ count, onClick }) {
-  if (!count) return null;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full border border-[#61A644]/30 bg-[#61A644]/10 px-3 py-1.5 text-xs font-semibold text-[#3F6F2C] transition hover:bg-[#61A644]/20"
-    >
-      <span className="rounded-full bg-[#61A644] px-1.5 text-[10px] font-bold text-white">{count}</span>
-      new · Mark all as read
-    </button>
   );
 }

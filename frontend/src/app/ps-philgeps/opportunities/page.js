@@ -9,8 +9,7 @@ import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
-import { markRead, useTenderNews } from '@/lib/newTenders';
-import { MarkReadButton } from '@/components/FilterControls';
+import { useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 
 // My Opportunities: the notices the team already took up on PS-PhilGEPS, with their bid submission status
 export default function MyOpportunitiesPage() {
@@ -20,9 +19,10 @@ export default function MyOpportunitiesPage() {
   // New since last read (lib/newTenders.js; the PS-PhilGEPS layout records each Sync's rows)
   const news = useTenderNews();
   const newKey = (row) => `psopp:${row.cells[0]}`;
-  const unread = (list?.rows || []).filter((row) => news.isNewPs(newKey(row)));
+  // Opening this page reads them: labelled NEW for this visit, gone from the sidebar count
+  const seenNow = useSeenOnOpen((list?.rows || []).filter((row) => news.isNewPs(newKey(row))).map(newKey));
+  const isNew = (row) => news.isNewPs(newKey(row)) || seenNow.has(newKey(row));
   const filters = usePsFilters(list, {
-    headTabs: unread.length > 0 && <MarkReadButton count={unread.length} onClick={() => markRead(unread.map(newKey))} />,
     selects: [
       // ITB / RFQ from the mode of procurement (lib/tenderType.js), as in the Type column
       { label: 'Type', valuesOf: (row) => [psType(row.cells[list.headers.indexOf('Mode of Procurement')]).code].filter(Boolean) },
@@ -40,7 +40,7 @@ export default function MyOpportunitiesPage() {
     ],
   });
   // New, unread tenders first (a stable sort keeps the chosen order otherwise)
-  const rows = [...(filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row))))].sort((a, b) => Number(news.isNewPs(newKey(b))) - Number(news.isNewPs(newKey(a))));
+  const rows = [...(filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row))))].sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
   const cell = (row, name) => row.cells[list.headers.indexOf(name)] || '';
   const total = list ? list.rows.length : null;
   useEffect(() => {
@@ -64,11 +64,8 @@ export default function MyOpportunitiesPage() {
         extraColumns={[
           { label: 'Type', after: 'Notice Reference Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Mode of Procurement')])} /> },
         ]}
-        isNew={(row) => news.isNewPs(newKey(row))}
-        onDetails={(row) => {
-          markRead(newKey(row));
-          setSelected(row);
-        }}
+        isNew={isNew}
+        onDetails={(row) => setSelected(row)}
       />
       {selected && (
         <PsDetailsPanel
