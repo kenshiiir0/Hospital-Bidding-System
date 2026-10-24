@@ -1,15 +1,19 @@
 require('dotenv').config({ path: require('node:path').join(__dirname, '..', '.env'), quiet: true });
 const { Client } = require('pg');
 
-// Schedules the hourly public PhilGEPS update in Supabase (pg_cron + pg_net): every hour 6 AM–5 PM Philippine
-// time the database calls <site>/api/philgeps-update with the CRON_SECRET from .env (at 6 AM that also starts
-// the documents Sync). Replaces cron.js on the office PC. Re-run after changing the site address or
-// CRON_SECRET; --remove unschedules. The PS-PhilGEPS keep-alive has its own tool (setup-keepalive.js).
+// Schedules the hourly jobs in Supabase (pg_cron + pg_net), every hour 6 AM–5 PM Philippine time, with the
+// CRON_SECRET from .env:
+// - on the hour: <site>/api/philgeps-update (PhilGEPS tenders, then the documents Sync when switched on),
+// - a quarter past: <site>/api/ps-sync (the PS-PhilGEPS Sync, with the saved session).
+// Replaces cron.js on the office PC. Re-run after changing the site address or CRON_SECRET; --remove
+// unschedules. The PS-PhilGEPS keep-alive has its own tool (setup-keepalive.js).
 //   node tools/setup-schedules.js https://hospital-bidding-automation.vercel.app
 // (Kept out of schema.sql because the job contains the secret.)
-const JOB = 'philgeps-hourly-update';
 // 6 AM–5 PM in Manila (UTC+8) = 22:00–09:00 UTC
-const SCHEDULE = '0 22,23,0-9 * * *';
+const JOBS = [
+    { name: 'philgeps-hourly-update', schedule: '0 22,23,0-9 * * *', path: '/api/philgeps-update', method: 'get' },
+    { name: 'ps-philgeps-hourly-sync', schedule: '15 22,23,0-9 * * *', path: '/api/ps-sync', method: 'post' },
+];
 
 async function main() {
     const site = process.argv[2];
@@ -22,12 +26,20 @@ async function main() {
     try {
         await db.query('CREATE EXTENSION IF NOT EXISTS pg_cron');
         await db.query('CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions');
-        await db.query('SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = $1', [JOB]);
-        if (remove) return console.log('Hourly update removed.');
-        const command = `SELECT net.http_get(url := ${literal(`${site.replace(/\/$/, '')}/api/philgeps-update`)}, ` +
-            `headers := jsonb_build_object('Authorization', ${literal(`Bearer ${process.env.CRON_SECRET}`)}), timeout_milliseconds := 30000)`;
-        await db.query('SELECT cron.schedule($1, $2, $3)', [JOB, SCHEDULE, command]);
-        console.log(`Hourly update scheduled (6 AM–5 PM Manila) → ${site}/api/philgeps-update`);
+        for (const job of JOBS) {
+            await db.query('SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = $1', [job.name]);
+            if (remove) {
+                console.log(`${job.name} removed.`);
+                continue;
+            }
+            const auth = `headers := jsonb_build_object('Authorization', ${literal(`Bearer ${process.env.CRON_SECRET}`)}, 'Content-Type', 'application/json')`;
+            const url = `url := ${literal(`${site.replace(/\/$/, '')}${job.path}`)}`;
+            const command = job.method === 'post'
+                ? `SELECT net.http_post(${url}, body := '{}'::jsonb, ${auth}, timeout_milliseconds := 30000)`
+                : `SELECT net.http_get(${url}, ${auth}, timeout_milliseconds := 30000)`;
+            await db.query('SELECT cron.schedule($1, $2, $3)', [job.name, job.schedule, command]);
+            console.log(`${job.name} scheduled (${job.schedule} UTC = hourly 6 AM-5 PM Manila) -> ${site}${job.path}`);
+        }
     } finally {
         await db.end();
     }

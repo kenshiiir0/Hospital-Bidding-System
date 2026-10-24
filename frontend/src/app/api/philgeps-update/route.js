@@ -7,13 +7,16 @@ export const maxDuration = 300;
 
 // An update whose progress hasn't moved for this long was cut off and may start again
 const STALE_MS = 6 * 60 * 1000;
-// The 6 AM documents Sync (logs in to PhilGEPS). Off until a real Sync proves the new log-out frees the account
-// (2026-10-23: the old log-out left the account "in use"); the hourly update itself never logs in.
-const MORNING_SYNC = false;
+// Every hour after the update, the documents Sync (philgepsSync.mjs): it logs in only when tenders wait for
+// documents, and when the account is in use it is refused at the door and the next hour tries again (the log-in
+// guard lets a schedule try 30 minutes after "in use"). OFF until a real Sync is followed by a successful log-in
+// by hand, proving the new log-out frees the account (2026-10-23: the old log-out left the account "in use" for
+// hours). The hourly update itself never logs in.
+const HOURLY_DOCUMENTS = false;
 
 // The hourly public PhilGEPS update (lib/philgepsUpdate.mjs), called by a Supabase cron job every hour
 // 6 AM–5 PM (tools/setup-schedules.js) with "Authorization: Bearer <CRON_SECRET>". Answers at once and runs
-// after the response. At 6 AM the PhilGEPS Sync (documents, one log-in) starts after the update (MORNING_SYNC).
+// after the response. Then the documents Sync starts (HOURLY_DOCUMENTS).
 export async function GET(request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
@@ -33,8 +36,8 @@ export async function GET(request) {
     } catch (e) {
       console.error(`[philgeps-update] ${e.message}`);
     }
-    // 6 AM: the documents Sync, through its own route so it gets a fresh time limit
-    if (MORNING_SYNC && hour === 6) {
+    // The documents Sync, through its own route so it gets a fresh time limit (it skips itself when one runs)
+    if (HOURLY_DOCUMENTS) {
       await fetch(`${origin}/api/philgeps-sync`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
@@ -42,5 +45,5 @@ export async function GET(request) {
       }).catch((e) => console.error(`[philgeps-update] Sync: ${e.message}`));
     }
   });
-  return Response.json({ ok: true, started: true, withSync: MORNING_SYNC && hour === 6 }, { status: 202 });
+  return Response.json({ ok: true, started: true, withDocuments: HOURLY_DOCUMENTS, hour }, { status: 202 });
 }
