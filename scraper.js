@@ -113,25 +113,35 @@ async function fetchSupplements(page, ref) {
 // "7 1000 bottle Cetirizine 5mg/5ml, 60ml SYRUP 113.98 113,980.00" -> columns.
 // Item lists aren't uniform across agencies, so lines that don't fit keep only the raw text.
 function parseItemLine({ line, products }) {
-    const parsed = parseItemColumns({ line, products });
-    if (parsed.unit_price != null) return parsed;
-
-    // Any other layout ending in "<unit price> <total>": accept the pair only when a quantity in the line
-    // times the unit price gives the total, e.g. "500 TABLET Amlodipine 5 mg Tablet 2 1,000.00"
     const num = (s) => Number(s.replace(/,/g, ''));
+    // quantity × unit price gives the total (1% for rounded prices)
+    const adds = (quantity, unitPrice, total) => quantity > 0 && Math.abs(quantity * unitPrice - total) <= total * 0.01;
+    const parsed = parseItemColumns({ line, products });
+    // A priced row is taken as is when its quantity × unit price gives its total (a row whose own numbers
+    // never add up keeps these columns)
+    if (parsed.unit_price != null && adds(parsed.quantity, parsed.unit_price, parsed.total)) return parsed;
+
+    // Any other layout ending in "<unit price> <total>": the quantity is the number that times the unit price
+    // gives the total, the one nearest the price when several do, e.g. "500 TABLET Amlodipine 5 mg Tablet 2
+    // 1,000.00", or "55100000 vial Vancomycin ..., 1gram 3000 450.00 1,350,000.00" (55100000 is a stock number)
     const tail = /^(.*\S)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2})$/.exec(line);
     if (!tail) return parsed;
     const [, rest, priceText, totalText] = tail;
     const unitPrice = num(priceText);
     const total = num(totalText);
-    const quantity = (rest.match(/\d[\d,]*/g) || []).map(num).find((q) => q > 0 && Math.abs(q * unitPrice - total) <= total * 0.01);
+    const quantity = (rest.match(/\d[\d,]*/g) || []).map(num).findLast((q) => adds(q, unitPrice, total));
     if (quantity == null) return parsed;
+    // "<stock no.> <unit> <description> <quantity>" (PhilGEPS RFQ tables: Stock/Property No. | Unit | Description | Qty)
+    const stock = /^(\S*\d\S*)\s+([A-Za-z][A-Za-z.'’]*)\s+(.+?)\s+([\d,]+)$/.exec(rest);
+    if (stock && num(stock[4]) === quantity) {
+        return { line, products, item_no: stock[1], unit: stock[2], description: stock[3], quantity, unit_price: unitPrice, total };
+    }
     const base = parseItemColumns({ line: rest, products });
     return {
         ...base,
         line,
         description: base.description || rest,
-        quantity: base.quantity ?? quantity,
+        quantity: adds(base.quantity, unitPrice, total) ? base.quantity : quantity,
         unit_price: unitPrice,
         total
     };

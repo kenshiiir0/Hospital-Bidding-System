@@ -109,11 +109,15 @@ export default function TenderDetails({ bid, onClose }) {
   // Lines naming our products: from the notice's item list (scraper; missing until the next update) and from
   // the downloaded documents (Sync, philgepsSync.mjs), as in the PS-PhilGEPS molecule tracker
   const descriptionItems = d.matched_items;
+  // The documents are trusted over the notice: a product with lines in the documents shows only those
+  const inDocuments = new Set((d.documents_items || []).flatMap((item) => item.our_products || []));
   const items =
     descriptionItems === undefined && !d.documents_items
       ? undefined
       : [
-          ...(descriptionItems || []).map((item) => ({ ...item, where: 'Description' })),
+          ...(descriptionItems || [])
+            .filter((item) => !(item.products || []).length || !item.products.every((p) => inDocuments.has(p)))
+            .map((item) => ({ ...item, where: 'Description' })),
           ...(d.documents_items || []).map((item) => ({ ...item, products: item.our_products, where: item.source?.split(', ').pop() || 'Documents' })),
         ];
   const supplements = d.supplements || [];
