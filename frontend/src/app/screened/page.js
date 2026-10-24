@@ -6,8 +6,12 @@ import { usePsFilters } from '@/components/PsFilters';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import TypeBadge from '@/components/TypeBadge';
+import TenderDetails from '@/components/TenderDetails';
+import PsBidMatchDetails from '@/components/PsBidMatchDetails';
+import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
+import ScreenButton from '@/components/ScreenButton';
 import WorkingDots from '@/components/WorkingDots';
-import { exportScreened, removeScreened, useScreened } from '@/lib/screened';
+import { exportScreened, loadScreenedDetails, removeScreened, useScreened } from '@/lib/screened';
 import { formatDate, formatDateTime, formatInstant, instantDay } from '@/lib/format';
 import { displayName } from '@/lib/username';
 
@@ -97,6 +101,18 @@ export default function ScreenedPage() {
     }
     setRemoving(null);
   };
+
+  // View details: the same drawer as on the tender's own page (PhilGEPS Bid Match / PS-PhilGEPS Bid Match),
+  // loaded fresh; the saved copy shows while it loads and when the tender is no longer in the latest data.
+  // details = { r, result?: { kind, ... }, error? }
+  const [details, setDetails] = useState(null);
+  const openDetails = (r) => {
+    setDetails({ r });
+    loadScreenedDetails(r)
+      .then((result) => setDetails((d) => (d?.r === r ? { r, result } : d)))
+      .catch((err) => setDetails((d) => (d?.r === r ? { r, result: { kind: 'saved' }, error: err.message } : d)));
+  };
+  const closeDetails = () => setDetails(null);
 
   const columns = [
     { label: 'Source', width: '7.5rem', badge: true, render: (r) => <SourceTag source={r.source} /> },
@@ -195,7 +211,7 @@ export default function ScreenedPage() {
                       · {perDay[day]} tender{perDay[day] === 1 ? '' : 's'}
                     </span>
                   </h2>
-                  <ResponsiveTable columns={columns} rows={items} rowKey={(r) => `${r.source}:${r.ref}`} />
+                  <ResponsiveTable columns={columns} rows={items} rowKey={(r) => `${r.source}:${r.ref}`} onDetails={openDetails} />
                 </section>
               ))}
               {shown.length > PAGE_SIZES[0] && (
@@ -214,6 +230,14 @@ export default function ScreenedPage() {
           )}
         </div>
       </div>
+
+      {details?.result?.kind === 'philgeps' ? (
+        <TenderDetails bid={details.result.bid} onClose={closeDetails} />
+      ) : details?.result?.kind === 'ps' ? (
+        <PsBidMatchDetails data={details.result.data} row={details.result.row} onClose={closeDetails} />
+      ) : details ? (
+        <SavedDetails r={details.r} loading={!details.result} error={details.error} onClose={closeDetails} />
+      ) : null}
     </div>
   );
 }
@@ -253,6 +277,72 @@ function toListRow(r) {
     cells: [SOURCES[r.source] || r.source, t.type || '', t.hospital || '', displayName(r.added_by || ''), philgepsDay(t.published), philgepsDay(t.closing), r.added_at || '', philgepsDay(instantDay(r.added_at))],
     searchText: `${r.ref} ${r.title || ''} ${t.hospital || ''} ${(t.products || []).join(' ')} ${(t.molecules || []).map((m) => m[0]).join(' ')}`.toLowerCase(),
   };
+}
+
+// The screened tender as it was saved (no longer in the latest update / Sync, or while the latest loads)
+function SavedDetails({ r, loading, error, onClose }) {
+  const t = r.tender || {};
+  const headers = ['Notice Title', 'Agency name', 'Reference Number', 'Source', 'Type', 'Solicitation No.', 'Publish Date', 'Closing Date'];
+  const cells = [r.title, t.hospital, r.ref, SOURCES[r.source], t.type, t.solicitationNo, formatDate(t.published), formatDateTime(typeof t.closing === 'string' ? t.closing : '')];
+  return (
+    <PsDetailsPanel
+      list={{ headers }}
+      row={{ cells: cells.map((c) => c || ''), links: [] }}
+      titleColumn="Notice Title"
+      subtitleColumn="Agency name"
+      wide
+      onClose={onClose}
+      action={<ScreenButton source={r.source} tenderRef={r.ref} title={r.title} products={t.products} getTender={() => t} />}
+      lead={
+        loading ? (
+          <Notice>
+            Loading the latest details <WorkingDots />
+          </Notice>
+        ) : (
+          <Notice tone={error ? 'error' : 'info'}>
+            {error || 'This tender is no longer in the latest PhilGEPS update / PS-PhilGEPS Sync, so this is the copy saved when it was screened.'}
+          </Notice>
+        )
+      }
+    >
+      <PanelSection title="Bidding dates" tone="blue">
+        <KeyValueList
+          missing="Not found"
+          items={[
+            ['Pre-bid conference', t.preBid],
+            ['Bid opening', t.bidOpening],
+            ['Delivery period', t.deliveryPeriod],
+          ]}
+        />
+      </PanelSection>
+      <PanelSection title="Our products" count={(t.products || []).length} plain>
+        <ProductPills names={t.products} />
+      </PanelSection>
+      <PanelSection title="Molecules (as exported)">
+        <ResponsiveTable
+          size="xs"
+          rows={t.molecules || []}
+          columns={[
+            { label: 'Molecule', title: true, render: (m) => m[0] },
+            { label: 'Qty', nowrap: true, render: (m) => m[1] || '—' },
+            { label: 'ABC/Unit', nowrap: true, render: (m) => m[2] || '—' },
+            { label: 'ABC Total', nowrap: true, render: (m) => (m[3] != null ? Number(m[3]).toLocaleString('en-PH', { minimumFractionDigits: 2 }) : '—') },
+          ]}
+        />
+      </PanelSection>
+      <PanelSection title="Contact person">
+        <KeyValueList
+          items={[
+            ['Name', t.contactName],
+            ['Designation', t.designation],
+            ['Contact no.', t.phone],
+            ['Email', t.email],
+            ['Address', t.address],
+          ]}
+        />
+      </PanelSection>
+    </PsDetailsPanel>
+  );
 }
 
 function SourceTag({ source }) {

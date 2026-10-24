@@ -73,12 +73,29 @@ export async function removeScreened(source, ref) {
 // PS-PhilGEPS Bid Match: the last Sync's list, notices and document readings (as app/ps-philgeps/layout.js loads them)
 async function loadPsData() {
   const [{ data: snap, error: err }, { data: readings }] = await Promise.all([
-    supabase.from('ps_philgeps_snapshot').select('lists, notices').eq('id', 'latest').maybeSingle(),
-    supabase.from('ps_tender_analysis').select('ref, status, result'),
+    supabase.from('ps_philgeps_snapshot').select('synced_at, lists, notices').eq('id', 'latest').maybeSingle(),
+    supabase.from('ps_tender_analysis').select('ref, status, result, documents_read, error, analyzed_at'),
   ]);
   if (err) throw new Error(`Could not load PS-PhilGEPS data: ${err.message}`);
   const active = await loadActiveNames().catch(() => null);
-  return activePsData({ lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) }, active);
+  return activePsData(
+    { syncedAt: snap?.synced_at, lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) },
+    active
+  );
+}
+
+// What View details on the Screened Tenders page opens for a screened row:
+// { kind: 'philgeps', bid } (the PhilGEPS Dashboard's drawer), { kind: 'ps', data, row } (Bid Match's drawer),
+// or { kind: 'saved' } when the tender is no longer in the latest update / Sync (only the saved copy is left)
+export async function loadScreenedDetails(r) {
+  if (r.source === 'philgeps') {
+    const { data, error: err } = await supabase.from('philgeps_opportunities').select('*').eq('ref_no', r.ref).limit(1);
+    if (err) throw new Error(`Could not load the tender: ${err.message}`);
+    return data?.[0] ? { kind: 'philgeps', bid: data[0] } : { kind: 'saved' };
+  }
+  const data = await loadPsData();
+  const row = (data.lists?.bidMatch?.rows || []).find((x) => psRefOf(x) === r.ref);
+  return row ? { kind: 'ps', data, row } : { kind: 'saved' };
 }
 
 // The stored copy's dates come back from JSON as text; the workbook needs Date objects

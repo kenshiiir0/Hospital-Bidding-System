@@ -3,20 +3,16 @@
 import { useEffect, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import ResponsiveTable from '@/components/ResponsiveTable';
-import PsDetailsPanel, { ChecklistList, KeyValueList, ManualCheckNote, MissingTag, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
+import PsBidMatchDetails from '@/components/PsBidMatchDetails';
 import { needsManualCheck } from '@/lib/manualCheck';
 import { usePsFilters } from '@/components/PsFilters';
 import { NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
 import { useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
-import { psRefOf, psTender } from '@/lib/opportunityWorkbook';
-import { bidDateText, deliveryText } from '@/lib/bidDates';
-import ScreenButton from '@/components/ScreenButton';
+import { psRefOf } from '@/lib/opportunityWorkbook';
 import TypeBadge from '@/components/TypeBadge';
-import FetchedSection, { startedByLabel } from '@/components/FetchedSection';
-import DocumentsPanel from '@/components/DocumentsPanel';
-import { formatInstant } from '@/lib/format';
+import { startedByLabel } from '@/components/FetchedSection';
 import { psType } from '@/lib/tenderType';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
@@ -162,139 +158,13 @@ export default function BidMatchPage() {
           ]}
         />
       )}
-      {selected && (
-        <PsDetailsPanel
-          list={list}
-          row={selected}
-          titleColumn="Notice Title"
-          subtitleColumn="Agency name"
-          link={selected.links.find((l) => /viewBidNotice/.test(l.href))?.href}
-          wide
-          onClose={() => setSelected(null)}
-          action={
-            <ScreenButton
-              source="ps"
-              tenderRef={refOf(selected)}
-              title={selected.cells[list.headers.indexOf('Notice Title')]}
-              products={productsOf(selected)}
-              getTender={() => psTender(selected, list.headers, noticeOf(selected), readingOf(selected))}
-            />
-          }
-          lead={
-            <>
-              <PanelSection title="Bidding dates" tone="blue">
-                <ScheduleList schedule={noticeOf(selected)?.schedule} reading={readingOf(selected)} />
-              </PanelSection>
-              {/* When this tender was fetched (the last Sync's list) and its documents read, and the automatic schedule */}
-              <FetchedSection
-                items={[
-                  ['Last fetched', data?.syncedAt && [formatInstant(data.syncedAt), lastSyncBy].filter(Boolean).join(' · ')],
-                  ['Documents read', readingOf(selected)?.analyzed_at && `${formatInstant(readingOf(selected).analyzed_at)} · Automatic`],
-                ]}
-              />
-            </>
-          }
-        >
-          <PanelSection title="Our products" count={productsOf(selected).length} plain>
-            <ProductPills names={productsOf(selected)} />
-          </PanelSection>
-          <FromDocuments reading={readingOf(selected)} />
-          <PsDocuments ref_={refOf(selected)} notice={noticeOf(selected)} syncedAt={data?.syncedAt} />
-        </PsDetailsPanel>
-      )}
+      {selected && <PsBidMatchDetails data={data} row={selected} lastSyncBy={lastSyncBy} onClose={() => setSelected(null)} />}
     </section>
   );
 }
 
 // The list shows the hospital; the long notice title, mode and classification are in View details
 const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Closing Date', 'Status'];
-
-// The top of View details, where the team looks first: every date and term needed to bid. Each comes from
-// the notice page (Sync, psSync.mjs readSchedule) or, when the notice page doesn't give it, from the bid
-// documents (psDocs.mjs bid data sheet, tagged "from documents"). The full sections stay further down.
-function ScheduleList({ schedule, reading }) {
-  if (!schedule && !reading) return <MissingTag>Not read yet (Sync again)</MissingTag>;
-  const bds = reading?.status === 'done' ? reading.result.bid_data_sheet : {};
-  const pick = (fromPage, fromDocs) => fromPage || (fromDocs && <FromDocs text={fromDocs} />) || null;
-  return (
-    <KeyValueList
-      missing="Not found"
-      items={[
-        ['Pre-bid conference', pick(schedule?.prebid && [schedule.prebid, schedule.prebidVenue].filter(Boolean).join(' · '), bidDateText(bds.prebid_conference))],
-        ['Request for clarification', pick(schedule?.clarification)],
-        ['Bid opening', pick(schedule?.bidOpening, bidDateText(bds.bid_opening))],
-        ['Submission deadline', pick(schedule?.deadline, bidDateText(bds.bid_submission_deadline))],
-        ['Closing', pick(schedule?.closing)],
-        ['Delivery period', pick(null, deliveryText(bds.delivery_period))],
-        ['Bid validity', pick(null, bds.bid_validity)],
-        ['Bid security', pick(null, bds.bid_security)],
-        ['Last updated', pick(schedule?.lastUpdated)],
-      ]}
-    />
-  );
-}
-
-function FromDocs({ text }) {
-  return (
-    <>
-      {text} <span className="ml-1 whitespace-nowrap rounded bg-[#61A644]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#3F6F2C]">from documents</span>
-    </>
-  );
-}
-
-// What was read in the tender's PDFs (lib/psDocs.mjs: free text rules; scanned PDFs can't be read)
-const BDS_FIELDS = [
-  ['Pre-bid conference', 'prebid_conference'],
-  ['Bid opening', 'bid_opening'],
-  ['Submission deadline', 'bid_submission_deadline'],
-  ['Delivery period', 'delivery_period'],
-  ['Bid validity', 'bid_validity'],
-  ['Bid security', 'bid_security'],
-];
-const peso = (n) => (n == null ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 }));
-
-function FromDocuments({ reading }) {
-  return (
-    <>
-      <PanelSection title="Bid data sheet (from the documents)">
-        {!reading ? (
-          <p className="text-xs text-black/46">The documents haven&rsquo;t been read yet (this happens within a few minutes of a Sync).</p>
-        ) : reading.status !== 'done' ? (
-          <MissingTag>{reading.error || 'Not read'}</MissingTag>
-        ) : (
-          <ChecklistList items={BDS_FIELDS.map(([label, key]) => [label, reading.result.bid_data_sheet[key]])} />
-        )}
-        {needsManualCheck(reading?.documents_read) && (
-          <div className="mt-2">
-            <ManualCheckNote read={reading.documents_read} />
-          </div>
-        )}
-      </PanelSection>
-      {reading?.status === 'done' && (
-        <PanelSection title={`Molecule tracker (${reading.result.items.length} lines naming our products)`}>
-          {reading.result.items.length === 0 ? (
-            <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
-          ) : (
-            <ResponsiveTable
-              size="xs"
-              rows={reading.result.items}
-              columns={[
-                { label: 'Product', title: true, render: (it) => <span className="text-[#3F6F2C]">{it.our_products.join(', ')}</span> },
-                { label: 'Item', render: (it) => it.item_no ?? '—' },
-                { label: 'Qty', nowrap: true, render: (it) => (it.quantity != null ? it.quantity.toLocaleString('en-PH') : '—') },
-                { label: 'Unit', render: (it) => it.unit ?? '—' },
-                { label: 'Unit price', nowrap: true, render: (it) => peso(it.unit_price) },
-                { label: 'Total', nowrap: true, render: (it) => peso(it.total) },
-                { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{it.quantity != null ? it.line : it.context}</span> },
-                { label: 'Page', render: (it) => <span className="text-black/46">{it.source.split(', ').pop()}</span> },
-              ]}
-            />
-          )}
-        </PanelSection>
-      )}
-    </>
-  );
-}
 
 function DocumentCount({ notice, check }) {
   if (!notice) return <span className="text-black/46">—</span>;
@@ -312,33 +182,6 @@ function DocumentCount({ notice, check }) {
 // Same rule as ps-philgeps-sync.js: the row's link to its notice page, else a numeric first cell
 const refOf = psRefOf;
 
-
-// The notice's files (psSync.mjs, Storage bucket ps-documents) in the shared Attached documents section
-function PsDocuments({ ref_, notice, syncedAt }) {
-  const documents = notice?.documents || [];
-  const status = !notice
-    ? { label: 'Not read yet', tone: 'blue' }
-    : notice.error
-      ? { label: 'Not read', tone: 'red' }
-      : documents.length
-        ? { label: '✓ Downloaded', tone: 'green' }
-        : { label: 'None found', tone: 'grey' };
-  const footer = notice?.error || [
-    notice && 'From the PS-PhilGEPS notice page',
-    syncedAt && `Last Sync ${formatInstant(syncedAt)}`,
-  ].filter(Boolean).join(' · ');
-  return (
-    <DocumentsPanel
-      documents={documents}
-      bucket="ps-documents"
-      tenderRef={ref_}
-      source="ps"
-      status={status}
-      footer={footer}
-      empty={notice ? 'None found' : 'Sync again to read this notice.'}
-    />
-  );
-}
 
 // The notice number links to the notice on PS-PhilGEPS
 function RefLink({ row }) {
