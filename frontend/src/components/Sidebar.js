@@ -48,20 +48,21 @@ async function signOut() {
   await supabase.auth.signOut();
 }
 
-// The navigation: groups of links (with item counts), the signed-in user and Sign out.
+// The navigation: the app title, groups of links (with item counts, a divider above every group after the
+// first), and the signed-in account with Sign out at the bottom.
 // onNavigate: called when a link is followed (closes the phone menu).
 function SidebarContent({ pathname, user, counts, onNavigate }) {
   return (
-    <div className="flex h-full flex-col justify-between gap-6 p-4">
-      <div className="min-h-0">
-        <div className="px-2 pt-2">
-          <div className="text-base font-bold tracking-tight text-black">Opportunity Radar</div>
+    <div className="flex min-h-full flex-col justify-between p-5">
+      <div>
+        <div className="mb-6 border-b border-[#E2E8F0] pb-4">
+          <div className="text-lg font-bold tracking-tight text-black">Opportunity Radar</div>
           <div className="mt-0.5 text-xs text-black/46">PhilGEPS · Drugs &amp; Medicines</div>
         </div>
-        <nav className="mt-2">
-          {GROUPS.map((group) => (
-            <div key={group.label} className="flex flex-col gap-0.5">
-              <div className="mb-1 mt-4 px-3 text-[10px] font-bold uppercase tracking-wider text-black/46">{group.label}</div>
+        <nav aria-label="Main">
+          {GROUPS.map((group, g) => (
+            <div key={group.label} className={g ? 'mt-4 border-t border-[#E2E8F0] pt-4' : ''}>
+              <div className={`mb-2 select-none px-3.5 text-[10px] font-bold uppercase tracking-wider text-black/46 ${g ? 'mt-1' : ''}`}>{group.label}</div>
               {group.links.map(({ href, label, icon }) => {
                 const active = pathname === href;
                 const count = counts[href];
@@ -71,18 +72,28 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
                     href={href}
                     onClick={onNavigate}
                     aria-current={active ? 'page' : undefined}
-                    className={`flex items-center justify-between gap-2 border-l-4 px-3 py-2 text-xs transition-all ${
-                      active
-                        ? 'rounded-r-lg border-[#1EA0DA] bg-[#1EA0DA]/10 font-semibold text-[#12769F]'
-                        : 'rounded-lg border-transparent font-medium text-black/62 hover:bg-[#1EA0DA]/5 hover:text-[#12769F]'
+                    className={`group mb-1 flex items-center rounded-xl px-3.5 py-2.5 text-xs transition-all ${
+                      active ? 'bg-[#1EA0DA]/10 font-semibold text-[#12769F]' : 'font-medium text-black/62 hover:bg-[#1EA0DA]/6 hover:text-[#12769F]'
                     }`}
                   >
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <span aria-hidden className="w-4 shrink-0 text-center">{icon}</span>
-                      <span className="truncate">{label}</span>
+                    <span
+                      aria-hidden
+                      className={`mr-3 flex h-4 w-4 shrink-0 items-center justify-center transition-colors ${
+                        active ? 'text-[#12769F]' : 'text-black/46 group-hover:text-[#12769F]'
+                      }`}
+                    >
+                      {icon}
                     </span>
+                    <span className="min-w-0 truncate">{label}</span>
                     {count != null && (
-                      <span className="shrink-0 rounded-full bg-[#61A644]/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-[#3F6F2C]" aria-label={`${count} items`}>
+                      <span
+                        aria-label={`${count} items`}
+                        className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[10px] tabular-nums ${
+                          active
+                            ? 'border border-[#61A644]/30 bg-[#61A644]/15 font-bold text-[#3F6F2C]'
+                            : 'bg-[#1EA0DA]/8 font-medium text-[#12769F]'
+                        }`}
+                      >
                         {count}
                       </span>
                     )}
@@ -93,12 +104,9 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
           ))}
         </nav>
       </div>
-      <div className="flex flex-col gap-2 border-t border-[#E2E8F0] pt-4">
-        <div className="truncate px-3 text-xs text-black/62" title={user?.email}>{displayName(user?.email)}</div>
-        <button
-          onClick={signOut}
-          className="rounded-lg px-3 py-2 text-left text-xs font-medium text-black/62 transition hover:bg-[#1EA0DA]/5 hover:text-[#12769F]"
-        >
+      <div className="mt-6 flex items-center justify-between gap-3 border-t border-[#E2E8F0] pt-4 text-xs">
+        <span className="min-w-0 truncate font-medium text-black/62" title={user?.email}>{displayName(user?.email)}</span>
+        <button onClick={signOut} className="shrink-0 rounded-lg px-2 py-1 text-black/46 transition-colors hover:text-[#B3312C]">
           Sign out
         </button>
       </div>
@@ -155,7 +163,7 @@ export default function Sidebar({ user }) {
 
   return (
     <>
-      <aside className="hidden md:block md:w-64 md:shrink-0 md:h-screen md:sticky md:top-0 bg-white border-r border-[#E2E8F0] overflow-y-auto">
+      <aside className="hidden md:block md:w-64 md:shrink-0 md:h-screen md:sticky md:top-0 bg-white border-r border-[#E2E8F0] overflow-y-auto [&>div]:min-h-screen">
         <SidebarContent pathname={pathname} user={user} counts={counts} />
       </aside>
 
