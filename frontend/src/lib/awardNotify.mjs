@@ -63,8 +63,7 @@ export function composeEmail({ award, lineItem, details, route }) {
   const awardLink = `${HOST}/BidAwards/viewAwardNotice/${award}`;
   const dash = dashboardUrl();
   const next = `Please sign in to the Hospital Bidding System and accept or refuse it (Award Notices → Accept / Refuse): ${dash}`;
-  const copied = route.cc.length ? `${route.cc.map((p) => p.name).join(' and ')} are copied as back-up.` : '';
-  const text = [greeting, '', intro, '', ...rows.map(([k, v]) => `${k}: ${v}`), '', next, `Award notice on PS-PhilGEPS: ${awardLink}`, '', copied, '', 'Hospital Bidding System (automatic message)']
+  const text = [greeting, '', intro, '', ...rows.map(([k, v]) => `${k}: ${v}`), '', next, `Award notice on PS-PhilGEPS: ${awardLink}`, '', 'Hospital Bidding System (automatic message)']
     .join('\n')
     .replace(/\n{3,}/g, '\n\n');
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">
@@ -73,7 +72,7 @@ export function composeEmail({ award, lineItem, details, route }) {
 <p>Please sign in to the Hospital Bidding System and accept or refuse it (Award Notices → Accept / Refuse).</p>
 <table role="presentation" cellspacing="0" cellpadding="0" style="margin:16px 0"><tr><td style="border-radius:8px;background:#1EA0DA"><a href="${esc(dash)}" style="display:inline-block;padding:12px 24px;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px">Log in to Hospital Bidding System</a></td></tr></table>
 <p style="font-size:13px"><a href="${esc(awardLink)}" style="color:#12769F">Open the award notice on PS-PhilGEPS</a></p>
-${copied ? `<p style="color:#555">${esc(copied)}</p>` : ''}<p style="color:#888;font-size:12px">Hospital Bidding System (automatic message)</p></div>`;
+<p style="color:#888;font-size:12px">Hospital Bidding System (automatic message)</p></div>`;
   return { subject: `Award notice waiting for our answer: ${hospital} · ${lineItem} (No. ${award})`, text, html };
 }
 
