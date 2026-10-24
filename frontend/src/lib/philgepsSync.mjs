@@ -3,6 +3,7 @@ import { parse } from 'node-html-parser';
 import { checkLogin, recordLogin } from './loginGuard.mjs';
 import { logActivity } from './activityLog.mjs';
 import { loadMatcher, ocrPending, readDocuments } from './psDocs.mjs';
+import { triggerOcr } from './ocrTrigger.mjs';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
 // server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
@@ -792,6 +793,8 @@ export async function finishSync() {
   });
   await saveJob(supabase, job);
   await optional(job, 'History', () => logRun(job));
+  // Scanned documents this Sync read without OCR: read them now on GitHub (ocrTrigger.mjs; never throws)
+  await triggerOcr('philgeps-sync');
 }
 
 // ---------- 5-minute clean-up ----------

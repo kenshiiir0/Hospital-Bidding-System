@@ -6,6 +6,7 @@ import { checkHospitals } from '@/lib/hospitals.mjs';
 import { sweepSession } from '@/lib/philgepsSync.mjs';
 import { visionBackfill } from '@/lib/ocrVision.mjs';
 import { admin } from '@/lib/ocrQueue.mjs';
+import { triggerOcr } from '@/lib/ocrTrigger.mjs';
 
 // Reading documents and hospital pages takes a while; the work below stops well before this limit
 export const maxDuration = 300;
@@ -26,7 +27,11 @@ export async function GET(request) {
     // 0. PhilGEPS (notices) Sync: log out a session a cut-off round left behind (never while a Sync runs)
     await sweepSession().then((r) => r.loggedOut && console.log('[philgeps] logged out a leftover session'));
     await analyzePending({ maxMs: 180000 })
-      .then((r) => (r.read || r.failed) && console.log(`[ps-docs] read ${r.read}, failed ${r.failed}, waiting ${r.left}`))
+      .then(async (r) => {
+        if (r.read || r.failed) console.log(`[ps-docs] read ${r.read}, failed ${r.failed}, waiting ${r.left}`);
+        // New PS-PhilGEPS documents were just read (a Sync brought them): scanned ones are read now on GitHub
+        if (r.read) await triggerOcr('ps-documents');
+      })
       .catch((e) => console.error(`[ps-docs] ${e.message}`));
     await checkHospitals({ maxMs: 60000 })
       .then((r) => r.checked && console.log(`[hospitals] checked ${r.checked}, new postings ${r.found}`))

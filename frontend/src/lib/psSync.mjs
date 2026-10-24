@@ -5,6 +5,7 @@ import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
 import { analyzePending } from './psDocs.mjs';
 import { notifyPendingAwards } from './awardNotify.mjs';
+import { triggerOcr } from './ocrTrigger.mjs';
 
 // PS-PhilGEPS (philgeps.gov.ph) Sync without a browser, so it runs on the deployed dashboard's server.
 // PhilGEPS's lists, notices and document lists are plain HTML; they are fetched with the log-in session
@@ -425,6 +426,8 @@ export async function runSync() {
     const first = await summarize(undefined);
     await setStatus(supabase, { status: 'success', percent: 100, stage: first.stage, finished_at: new Date().toISOString() });
     await logActivity({ event: 'ps-sync', status: 'success', by: started?.started_by, summary: first.stage, details: { duration_ms: tookMs(), ...first.details } });
+    // Scanned documents already waiting: read them now on GitHub (ocrTrigger.mjs; never fails the Sync)
+    await triggerOcr('ps-sync');
 
     // Awards waiting for our answer: email the hospital's representative, once per award (awardNotify.mjs)
     await notifyPendingAwards(supabase, lists.awards, (url) => withSession(() => getPage(session, url))).catch(() => {});

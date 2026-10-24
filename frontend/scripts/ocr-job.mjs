@@ -16,6 +16,8 @@ const supabase = admin();
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 async function main() {
+  // The dashboard shows "Reading scanned documents" while this is set (cleared below when the run ends)
+  await supabase.from('ocr_status').update({ github_running_since: new Date().toISOString() }).eq('id', 'latest');
   // PS-PhilGEPS: at most half the time, so PhilGEPS gets its turn too
   const ps = await analyzePending({ maxMs: RUN_MS / 2, onProgress: (done, total) => log(`PS-PhilGEPS tender ${done} of ${total}`) });
   log('PS-PhilGEPS:', JSON.stringify(ps));
@@ -49,11 +51,11 @@ async function main() {
 
 main()
   .then(async (result) => {
-    const waiting = await saveOcrStatus(supabase, { github_last_run_at: new Date().toISOString(), github_last_result: result });
+    const waiting = await saveOcrStatus(supabase, { github_last_run_at: new Date().toISOString(), github_last_result: result, github_running_since: null });
     log(`Done: ${result}. Scanned documents still waiting: ${waiting.length}`);
   })
   .catch(async (e) => {
     console.error(e);
-    await saveOcrStatus(supabase, { github_last_run_at: new Date().toISOString(), github_last_result: `Failed: ${e.message}`.slice(0, 300) }).catch(() => {});
+    await saveOcrStatus(supabase, { github_last_run_at: new Date().toISOString(), github_last_result: `Failed: ${e.message}`.slice(0, 300), github_running_since: null }).catch(() => {});
     process.exit(1);
   });

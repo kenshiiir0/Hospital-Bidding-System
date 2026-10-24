@@ -381,3 +381,8 @@ CREATE POLICY "dashboard can read" ON ocr_status FOR SELECT TO authenticated
 REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ocr_status FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ocr_status FROM authenticated;
 INSERT INTO ocr_status (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;
+-- github_requested_at: a Sync asked GitHub to run the OCR job now (lib/ocrTrigger.mjs);
+-- github_running_since: the job is reading (set at its start, cleared at its end). The dashboard shows
+-- "Reading scanned documents" while either is recent.
+ALTER TABLE ocr_status ADD COLUMN IF NOT EXISTS github_requested_at TIMESTAMPTZ;
+ALTER TABLE ocr_status ADD COLUMN IF NOT EXISTS github_running_since TIMESTAMPTZ;
