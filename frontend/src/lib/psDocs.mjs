@@ -24,6 +24,10 @@ const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
 const TENDERS_AT_ONCE = 3;
 const OCR_MAX_MS = 90 * 1000; // OCR time per readDocuments call when the caller gives no deadline
+// OCR is heavy on CPU. On the deployed server (Vercel Hobby: 4 h of CPU a month, 98% used on 2026-10-24, mostly
+// by OCR retried every 5 minutes) it runs only with the setting OCR_ON_SERVER=on; on a team computer always.
+// Pages OCR'd before stay in use from the cache.
+export const OCR_ENABLED = !process.env.VERCEL || process.env.OCR_ON_SERVER === 'on';
 const OCR_MAX_PAGES = 40; // pages per document; a longer scan is read up to here
 // OCR text is kept in the same bucket under _ocr/<document path>.json (per page), so a re-read (e.g. after a
 // product list change) or a reading cut short by time doesn't OCR the same pages again
@@ -186,6 +190,11 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
     }
   }
   const todo = scanned.filter((n) => cached[n] == null);
+  if (todo.length && !OCR_ENABLED) {
+    // No new OCR here: what the cache has, and the document counts as read (no retry every few minutes)
+    const merged = pages.map((p, i) => (cached[i + 1] != null && letterCount(cached[i + 1]) > letterCount(p) ? cached[i + 1] : p));
+    return { pages: merged, ocrPages: scanned.filter((n) => letterCount(cached[n]) > letterCount(pages[n - 1])).length, complete: true, error: 'OCR is off on the server' };
+  }
   if (todo.length) {
     let texts;
     try {
@@ -208,7 +217,8 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
 }
 
 // Documents read before OCR, or by an older OCR, that were scanned: read them again
-export const ocrPending = (read) => (read || []).some((d) => d.kind === 'scanned' && d.ocr !== OCR_VERSION);
+// (never while OCR is off here: they would be queued again every few minutes)
+export const ocrPending = (read) => OCR_ENABLED && (read || []).some((d) => d.kind === 'scanned' && d.ocr !== OCR_VERSION);
 
 // ---------- one tender ----------
 
