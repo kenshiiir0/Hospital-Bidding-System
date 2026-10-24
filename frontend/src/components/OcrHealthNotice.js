@@ -37,8 +37,17 @@ export default function OcrHealthNotice() {
           }
         });
     load();
+    // Live: the bar appears and goes the moment an OCR run starts or ends (Supabase Realtime); the timer also
+    // turns the "reading" bar into the 6-hour warning as time passes
+    const channel = supabase
+      .channel(`ocr_status_live_${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ocr_status' }, load)
+      .subscribe();
     const timer = setInterval(load, 60 * 1000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   if (!view) return null;

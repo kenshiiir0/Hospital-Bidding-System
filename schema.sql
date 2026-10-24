@@ -386,3 +386,15 @@ INSERT INTO ocr_status (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;
 -- "Reading scanned documents" while either is recent.
 ALTER TABLE ocr_status ADD COLUMN IF NOT EXISTS github_requested_at TIMESTAMPTZ;
 ALTER TABLE ocr_status ADD COLUMN IF NOT EXISTS github_running_since TIMESTAMPTZ;
+
+-- Live updates (Supabase Realtime) for the PS-PhilGEPS pages and the OCR bar: the dashboards change the
+-- moment a Sync finishes, its documents are read, or scanned documents are read with OCR, without a refresh
+DO $$
+DECLARE t TEXT;
+BEGIN
+    FOREACH t IN ARRAY ARRAY['ps_philgeps_snapshot', 'ps_tender_analysis', 'ps_sync_status', 'ocr_status'] LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = t) THEN
+            EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', t);
+        END IF;
+    END LOOP;
+END $$;

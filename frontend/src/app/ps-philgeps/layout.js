@@ -23,6 +23,9 @@ import { psRefOf } from '@/lib/opportunityWorkbook';
 //   real browser) on this laptop: through POST /api/ps-philgeps where the dashboard runs on this computer,
 //   else through the "ps-philgeps-connect:" link (set up once per laptop by tools/register-connect-link.js,
 //   runs "Connect PS-PhilGEPS.cmd"). Once the session is saved the Sync starts by itself.
+// Wait after the last live change before reloading the data (one reload for a burst of changes)
+const DATA_RELOAD_WAIT_MS = 2000;
+
 export default function PsPhilgepsLayout({ children }) {
   const [data, setData] = useState(null);
   const [sync, setSync] = useState(null);
@@ -108,7 +111,28 @@ export default function PsPhilgepsLayout({ children }) {
     };
   }, [loadSync, loadConnect, syncing, connecting, syncAfterConnect]);
 
-  // Data: on open, every 5 minutes, and whenever a Sync finishes
+  // Live updates (Supabase Realtime, schema.sql): the page changes the moment the Sync status moves, a Sync saves
+  // its lists, or a tender's documents are read (incl. OCR of scanned ones), without a refresh. Bursts (an OCR
+  // run saving many tenders) reload the data once, DATA_RELOAD_WAIT_MS after the last change.
+  useEffect(() => {
+    let reloadTimer;
+    const reloadSoon = () => {
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(loadData, DATA_RELOAD_WAIT_MS);
+    };
+    const channel = supabase
+      .channel('ps_philgeps_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_sync_status' }, (payload) => payload.new?.id && setSync(payload.new))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_philgeps_snapshot' }, reloadSoon)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_tender_analysis' }, reloadSoon)
+      .subscribe();
+    return () => {
+      clearTimeout(reloadTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [loadData]);
+
+  // Data: on open, every 5 minutes (in case a live update was missed), and whenever a Sync finishes
   const finishedAt = sync?.finished_at;
   useEffect(() => {
     const first = setTimeout(loadData, 0);
