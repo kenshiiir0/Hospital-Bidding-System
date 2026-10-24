@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatInstant } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
-import { StatusPill } from '@/components/PageHeader';
 
 const LATE_MS = 6 * 60 * 60 * 1000;
 const RUN_MAX_MS = 70 * 60 * 1000; // the OCR job stops at 60 minutes
@@ -71,16 +70,11 @@ export default function OcrHealthNotice() {
   );
 }
 
-const CIRCLE = {
-  error: 'bg-[#B3312C] text-white',
-  busy: 'bg-[#1EA0DA] text-white',
-  ok: 'bg-[#61A644] text-white',
-  off: 'border border-[#CBD5E1] bg-white text-black/62',
-};
+const DOT = { error: 'bg-[#B3312C]', busy: 'bg-[#1EA0DA] animate-pulse', ok: 'bg-[#61A644]', off: 'bg-black/30' };
 
-// Report Log page: the OCR state of both sites as a numbered log, always shown. Each row: its number in a
-// circle coloured by its state (red = needs attention, blue = working, green = fine, grey = not used yet),
-// what it is, a status pill and the details, so the cause of a late document is visible at a glance.
+// Report Log page: the OCR state of both sites as log lines, newest first: when it happened, a dot coloured by
+// its state (red = needs attention, blue = working, green = fine, grey = not used yet) and what happened, so
+// the cause of a late document is visible at a glance.
 export function OcrReport() {
   const view = useOcrStatus();
   if (!view) {
@@ -95,62 +89,46 @@ export function OcrReport() {
   const docs = `${n} scanned document${n === 1 ? '' : 's'}`;
   const running = view.kind === 'reading';
 
-  const rows = [
-    {
-      title: 'Scanned documents waiting',
-      tone: view.kind === 'late' ? 'error' : running ? 'busy' : 'ok',
-      pill: view.kind === 'late' ? 'Waited over 6 hours' : running ? 'Reading now' : n ? 'On time' : 'None waiting',
-      detail:
+  const logs = [
+    n > 0 && {
+      at: status.oldest_waiting_since,
+      tone: view.kind === 'late' ? 'error' : 'busy',
+      text:
         view.kind === 'late'
-          ? `${docs} ${n === 1 ? 'has' : 'have'} waited more than 6 hours to be read.`
-          : running
-            ? `Reading ${docs} (OCR); their products and dates appear in View details when it finishes.`
-            : n
-              ? `${docs} waiting, less than 6 hours.`
-              : 'Every scanned document has been read.',
-      note: n > 0 && status.oldest_waiting_since ? `Oldest waiting since ${formatInstant(status.oldest_waiting_since)}` : null,
+          ? `${docs} ${n === 1 ? 'has' : 'have'} waited more than 6 hours to be read (the oldest since this time).`
+          : `${docs} waiting to be read (the oldest since this time).`,
     },
-    {
-      title: 'OCR on GitHub',
-      tone: running ? 'busy' : status.github_last_run_at ? 'ok' : 'off',
-      pill: running ? 'Running' : status.github_last_run_at ? 'Ran' : 'Not run yet',
-      detail: status.github_last_run_at ? status.github_last_result || 'Finished.' : 'Has not run yet.',
-      note: running && status.github_running_since
-        ? `Started ${formatInstant(status.github_running_since)}`
-        : status.github_last_run_at ? `Last run ${formatInstant(status.github_last_run_at)}` : null,
+    running && status.github_running_since && { at: status.github_running_since, tone: 'busy', text: `OCR on GitHub started reading ${docs}.` },
+    status.github_requested_at && { at: status.github_requested_at, tone: 'off', text: 'A Sync asked OCR on GitHub to read the new scanned documents.' },
+    status.github_last_run_at && { at: status.github_last_run_at, tone: 'ok', text: `OCR on GitHub: ${status.github_last_result || 'finished'}.` },
+    status.vision_last_run_at && {
+      at: status.vision_last_run_at,
+      tone: 'ok',
+      text: `Google Vision backup: ${status.vision_last_result || 'finished'}${status.vision_pages ? ` (${status.vision_pages} pages this month)` : ''}.`,
     },
-    {
-      title: 'Google Vision backup',
-      tone: status.vision_last_run_at ? 'ok' : 'off',
-      pill: status.vision_last_run_at ? 'Used' : 'Not used yet',
-      detail: status.vision_last_run_at
-        ? status.vision_last_result || 'Finished.'
-        : 'Reads documents still waiting after 6 hours; it has not been needed yet.',
-      note: [
-        status.vision_last_run_at && `Last run ${formatInstant(status.vision_last_run_at)}`,
-        status.vision_pages ? `${status.vision_pages} pages this month` : null,
-      ].filter(Boolean).join(' · ') || null,
-    },
-  ];
+  ]
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  // What has not happened yet goes at the end, without a time
+  if (!status.github_last_run_at) logs.push({ tone: 'off', text: 'OCR on GitHub has not run yet.' });
+  if (!status.vision_last_run_at) logs.push({ tone: 'off', text: 'Google Vision backup: not used yet.' });
+  if (!n) logs.unshift({ at: status.updated_at, tone: 'ok', text: 'No scanned documents waiting to be read.' });
 
   return (
-    <ol className="divide-y divide-[#E2E8F0] overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-white">
-      {rows.map((row, i) => (
-        <li key={row.title} role={row.tone === 'error' ? 'alert' : undefined} className={`flex items-start gap-3 px-4 py-3.5 ${row.tone === 'error' ? 'bg-[#B3312C]/4' : ''}`}>
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-mono text-xs font-semibold ${CIRCLE[row.tone]}`} aria-hidden>
-            {i + 1}
+    <ul className="divide-y divide-[#E2E8F0] overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-white">
+      {logs.map((log) => (
+        <li
+          key={log.text}
+          role={log.tone === 'error' ? 'alert' : undefined}
+          className={`flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:items-baseline sm:gap-4 ${log.tone === 'error' ? 'bg-[#B3312C]/4' : ''}`}
+        >
+          <span className="shrink-0 text-xs tabular-nums text-black/46 sm:w-44">{log.at ? formatInstant(log.at) : '—'}</span>
+          <span className={`flex min-w-0 items-baseline gap-2 ${log.tone === 'error' ? 'font-medium text-[#B3312C]' : 'text-black/70'}`}>
+            <span className={`h-1.5 w-1.5 shrink-0 -translate-y-px rounded-full ${DOT[log.tone]}`} aria-hidden />
+            {log.text}
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-              <span className="text-sm font-semibold text-black">{row.title}</span>
-              <StatusPill tone={row.tone} text={row.pill} />
-              {row.tone === 'busy' && <WorkingDots />}
-            </div>
-            <p className={`mt-1 text-sm ${row.tone === 'error' ? 'font-medium text-[#B3312C]' : 'text-black/70'}`}>{row.detail}</p>
-            {row.note && <p className="mt-0.5 text-xs text-black/46">{row.note}</p>}
-          </div>
         </li>
       ))}
-    </ol>
+    </ul>
   );
 }
