@@ -10,7 +10,7 @@ import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
 
 // My Award Notices: awards the hospitals posted for us, with their acceptance status. An award still "Pending
-// for Acceptance" can be accepted or refused from its View details drawer (components/PsAwardResponse.js),
+// for Acceptance" can be accepted or refused only inside its View details drawer (components/PsAwardResponse.js),
 // which sends the answer to PS-PhilGEPS.
 export default function AwardNoticesPage() {
   const { data, search = '', reload, connected, syncing } = usePsPhilgeps() || {};
@@ -51,19 +51,6 @@ export default function AwardNoticesPage() {
         columns={COLUMNS}
         extraColumns={[
           { label: 'Type', after: 'Award Notice Number', render: (row) => <TypeBadge type={psType(row.cells[list.headers.indexOf('Procurement Mode')])} /> },
-          {
-            label: 'Answer',
-            render: (row) =>
-              pending(row) ? (
-                <button
-                  type="button"
-                  onClick={() => setSelectedNo(row.cells[0])}
-                  className="whitespace-nowrap rounded-lg border border-[#1EA0DA]/30 px-3 py-1 text-xs font-semibold text-[#12769F] transition hover:bg-[#1EA0DA]/8"
-                >
-                  Accept / Refuse
-                </button>
-              ) : null,
-          },
         ]}
         onDetails={(row) => setSelectedNo(row.cells[0])}
       />
