@@ -356,3 +356,28 @@ CREATE POLICY "team can remove" ON screened_tenders FOR DELETE TO authenticated
 REVOKE ALL ON screened_tenders FROM anon;
 REVOKE UPDATE, TRUNCATE ON screened_tenders FROM authenticated;
 GRANT SELECT, INSERT, DELETE ON screened_tenders TO authenticated;
+
+-- Reading scanned documents (OCR), row 'latest'. Layer 1: the GitHub Actions job (.github/workflows/ocr.yml,
+-- tools/ocr-job.mjs) reads them with tesseract every hour; layer 2: Google Cloud Vision from the deployed
+-- server (frontend/src/lib/ocrVision.mjs) for documents still waiting after 6 hours, at most
+-- VISION_MONTHLY_PAGES pages a month (below Google's free amount). waiting / oldest_waiting_since: scanned
+-- documents not read yet (the dashboard warns when one has waited more than 6 hours). Team read only.
+CREATE TABLE IF NOT EXISTS ocr_status (
+    id TEXT PRIMARY KEY,
+    github_last_run_at TIMESTAMPTZ,
+    github_last_result TEXT,
+    vision_last_run_at TIMESTAMPTZ,
+    vision_last_result TEXT,
+    vision_month TEXT,                    -- 'YYYY-MM' the page count below belongs to
+    vision_pages INT NOT NULL DEFAULT 0,
+    waiting INT NOT NULL DEFAULT 0,
+    oldest_waiting_since TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE ocr_status ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON ocr_status;
+CREATE POLICY "dashboard can read" ON ocr_status FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ocr_status FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ocr_status FROM authenticated;
+INSERT INTO ocr_status (id) VALUES ('latest') ON CONFLICT (id) DO NOTHING;

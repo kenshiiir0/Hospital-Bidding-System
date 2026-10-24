@@ -4,6 +4,8 @@ import { keepAlive } from '@/lib/psSync.mjs';
 import { analyzePending } from '@/lib/psDocs.mjs';
 import { checkHospitals } from '@/lib/hospitals.mjs';
 import { sweepSession } from '@/lib/philgepsSync.mjs';
+import { visionBackfill } from '@/lib/ocrVision.mjs';
+import { admin } from '@/lib/ocrQueue.mjs';
 
 // Reading documents and hospital pages takes a while; the work below stops well before this limit
 export const maxDuration = 300;
@@ -14,7 +16,8 @@ export const maxDuration = 300;
 //    after well under an hour without use),
 // 2. after answering, reads the bid documents of tenders that are new or changed since the last reading
 //    (psDocs.mjs), for up to 3 minutes; the rest wait for the next call,
-// 3. then checks hospitals' own procurement pages that are due (hospitals.mjs, every 3 hours each).
+// 3. then checks hospitals' own procurement pages that are due (hospitals.mjs, every 3 hours each),
+// 4. then the Google Vision backup for scanned documents (ocrVision.mjs).
 export async function GET(request) {
   if (!hasCronSecret(request)) {
     return Response.json({ ok: false }, { status: 401 });
@@ -28,6 +31,12 @@ export async function GET(request) {
     await checkHospitals({ maxMs: 60000 })
       .then((r) => r.checked && console.log(`[hospitals] checked ${r.checked}, new postings ${r.found}`))
       .catch((e) => console.error(`[hospitals] ${e.message}`));
+    // 4. Scanned documents: Google Vision backup for the ones the hourly GitHub OCR job (layer 1) hasn't
+    //    read within 6 hours or found no text in (ocrVision.mjs; off without GOOGLE_VISION_API_KEY), and the
+    //    waiting count the dashboard warns about
+    await visionBackfill(admin(), { maxMs: 30000 })
+      .then((r) => (r.read || r.error) && console.log(`[ocr-vision] read ${r.read} (${r.pages} pages)${r.error ? `, error: ${r.error}` : ''}`))
+      .catch((e) => console.error(`[ocr-vision] ${e.message}`));
   });
   try {
     return Response.json({ ok: true, ...(await keepAlive()) });

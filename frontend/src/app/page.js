@@ -10,6 +10,7 @@ import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import ScrapeProgress from '@/components/ScrapeProgress';
+import OcrHealthNotice from '@/components/OcrHealthNotice';
 import TenderDetails from '@/components/TenderDetails';
 import TypeBadge from '@/components/TypeBadge';
 import { philgepsType } from '@/lib/tenderType';
@@ -544,6 +545,7 @@ export default function Home() {
         />
 
         {scrapeError && <Notice tone="error">{scrapeError}</Notice>}
+        <OcrHealthNotice />
 
         <KpiRow
           items={[

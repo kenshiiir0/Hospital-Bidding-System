@@ -9,6 +9,7 @@ import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
 import ScrapeProgress from '@/components/ScrapeProgress';
+import OcrHealthNotice from '@/components/OcrHealthNotice';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 import { registerList, reportUnread, useTenderNews } from '@/lib/newTenders';
 import { psRefOf } from '@/lib/opportunityWorkbook';
@@ -216,6 +217,7 @@ export default function PsPhilgepsLayout({ children }) {
           {requestError && <Notice tone="error">{requestError}</Notice>}
           <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
           <SyncNotice sync={sync} ringShowing={Boolean(ringJob)} />
+          <OcrHealthNotice />
           {children}
         </div>
       </div>
