@@ -7,7 +7,7 @@ import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import ScreenButton from '@/components/ScreenButton';
 import { moleculeText, philgepsTender } from '@/lib/opportunityWorkbook';
-import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
+import PsDetailsPanel, { ChecklistList, KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -171,6 +171,24 @@ export default function TenderDetails({ bid, onClose }) {
     >
       <PanelSection title="Our products" count={matched.length} plain>
         <ProductPills names={matched} />
+      </PanelSection>
+
+      {/* What the bid documents' bid data sheet gives, as a checklist (same section as PS-PhilGEPS) */}
+      <PanelSection title="Bid data sheet (from the documents)">
+        {documents.length ? (
+          <ChecklistList
+            items={[
+              ['Pre-bid conference', bidDateText(bds.prebid_conference)],
+              ['Bid opening', bidDateText(bds.bid_opening)],
+              ['Submission deadline', bidDateText(bds.bid_submission_deadline)],
+              ['Delivery period', deliveryText(bds.delivery_period)],
+              ['Bid validity', bds.bid_validity],
+              ['Bid security', bds.bid_security],
+            ]}
+          />
+        ) : (
+          <p className="text-xs text-black/46">No documents downloaded yet; the next Sync orders and reads them.</p>
+        )}
       </PanelSection>
 
       {/* Only the item lines that request our products */}
