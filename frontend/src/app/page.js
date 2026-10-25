@@ -714,7 +714,7 @@ export default function Home() {
                   label: 'Procuring Agency',
                   wide: true,
                   render: (bid) => (
-                    <span className="line-clamp-2 text-xs font-bold leading-tight text-black" title={bid.procuring_entity || bid.title}>
+                    <span className="line-clamp-2 text-[13px] font-medium leading-snug text-black" title={bid.procuring_entity || bid.title}>
                       {bid.procuring_entity || bid.title}
                     </span>
                   ),
@@ -724,7 +724,7 @@ export default function Home() {
                   width: '9rem',
                   align: 'right',
                   nowrap: true,
-                  render: (bid) => <span className="font-mono text-xs font-bold text-black">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</span>,
+                  render: (bid) => <span className="text-[13px] font-medium tabular-nums text-black">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</span>,
                 },
                 // Only the published date in the list; the closing date is in View details
                 {

@@ -82,9 +82,9 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
                 <PublishedTag text={dayText(row.cells[col.i])} />
               </span>
             ) : /budget|amount/i.test(col.h) ? (
-              <span className="font-mono text-xs font-bold text-black">{budgetText(row.cells[col.i])}</span>
+              <span className="text-[13px] font-medium tabular-nums text-black">{budgetText(row.cells[col.i])}</span>
             ) : /agency/i.test(col.h) ? (
-              <span className="line-clamp-2 text-xs font-bold leading-tight text-black" title={row.cells[col.i]}>
+              <span className="line-clamp-2 text-[13px] font-medium leading-snug text-black" title={row.cells[col.i]}>
                 {row.cells[col.i]}
               </span>
             ) : /date/i.test(col.h) ? (

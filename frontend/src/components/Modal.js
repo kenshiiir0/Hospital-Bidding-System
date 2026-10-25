@@ -54,7 +54,7 @@ export default function Modal({ title, subtitle, icon, busy = false, onClose, fo
         <header className="flex items-start gap-3 border-b border-[#E2E8F0] px-5 py-4">
           {icon && <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#61A644]/10 text-[#3F6F2C]">{icon}</span>}
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold leading-snug text-black">{title}</h2>
+            <h2 className="text-lg font-semibold leading-snug text-black">{title}</h2>
             {subtitle && <p className="mt-0.5 text-xs leading-snug text-black/62">{subtitle}</p>}
           </div>
           <button

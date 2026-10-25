@@ -47,7 +47,7 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
         {/* Header */}
         <header className="flex items-start gap-3 border-b border-[#E2E8F0] px-5 py-4">
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold leading-snug text-black">{agency || title}</h2>
+            <h2 className="text-lg font-semibold leading-snug text-black">{agency || title}</h2>
             {/* The agency's own website and latest postings */}
             {agency && <HospitalLinks name={agency} />}
             {agency && title && <p className="mt-1.5 text-sm leading-snug text-black/62">{title}</p>}
@@ -74,7 +74,7 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
               <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
                 {fields.map(({ h, v }) => (
                   <div key={h} className={String(v).length > 48 ? 'sm:col-span-2' : ''}>
-                    <dt className="text-xs font-semibold uppercase tracking-wider text-black/46">{h}</dt>
+                    <dt className="text-xs font-medium text-black/46">{h}</dt>
                     <dd className="mt-0.5 break-words text-sm font-medium text-black">
                       <FieldValue name={h} value={v} />
                     </dd>
@@ -122,7 +122,7 @@ function FieldValue({ name, value }) {
   if (/reference|ref\.? ?no|notice number|solicitation/i.test(name)) {
     return <span className="rounded-md border border-[#CBD5E1] bg-white px-2 py-0.5 font-mono text-xs text-black">{value}</span>;
   }
-  if (/budget|abc|amount|contract price/i.test(name)) return <span className="font-bold text-[#3F6F2C]">{/^[₱\d]/.test(value) && !value.startsWith('₱') ? `₱${value}` : value}</span>;
+  if (/budget|abc|amount|contract price/i.test(name)) return <span className="font-semibold text-[#3F6F2C]">{/^[₱\d]/.test(value) && !value.startsWith('₱') ? `₱${value}` : value}</span>;
   if (/date/i.test(name)) return readableDate(value);
   return value;
 }
@@ -141,7 +141,7 @@ function readableDate(text) {
  */
 export function PanelSection({ title, count, tone, plain = false, aside, children }) {
   const title_ = (
-    <h3 className={`${aside ? '' : 'mb-2 '}text-xs font-semibold uppercase tracking-wider text-black/62`}>
+    <h3 className={`${aside ? '' : 'mb-2 '}text-xs font-semibold text-black/70`}>
       {title}
       {count != null && ` (${count})`}
     </h3>

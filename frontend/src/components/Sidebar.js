@@ -64,13 +64,13 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
     <div className="flex min-h-full flex-col justify-between p-5">
       <div>
         <div className="mb-6 border-b border-[#E2E8F0] pb-4">
-          <div className="text-lg font-bold tracking-tight text-black">Opportunity Radar</div>
+          <div className="text-lg font-semibold tracking-tight text-black">Opportunity Radar</div>
           <div className="mt-0.5 text-xs text-black/46">PhilGEPS · Drugs &amp; Medicines</div>
         </div>
         <nav aria-label="Main">
           {GROUPS.map((group, g) => (
-            <div key={group.label} className={g ? 'mt-4 border-t border-[#E2E8F0] pt-4' : ''}>
-              <div className={`mb-2 select-none px-3.5 text-[10px] font-bold uppercase tracking-wider text-black/46 ${g ? 'mt-1' : ''}`}>{group.label}</div>
+            <div key={group.label} className={g ? 'mt-4 border-t border-[#EEF1F5] pt-4' : ''}>
+              <div className={`mb-2 select-none px-3.5 text-[11px] font-medium uppercase tracking-wider text-black/40 ${g ? 'mt-1' : ''}`}>{group.label}</div>
               {group.links.map(({ href, label, icon }) => {
                 const active = pathname === href;
                 const unread = counts[`new:${href}`] || 0;
@@ -80,8 +80,8 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
                     href={href}
                     onClick={onNavigate}
                     aria-current={active ? 'page' : undefined}
-                    className={`group mb-1 flex items-center rounded-xl px-3.5 py-2.5 text-xs transition-all ${
-                      active ? 'bg-[#1EA0DA]/10 font-semibold text-[#12769F]' : 'font-medium text-black/62 hover:bg-[#1EA0DA]/6 hover:text-[#12769F]'
+                    className={`group mb-1 flex items-center rounded-xl px-3.5 py-2.5 text-[13px] transition-all ${
+                      active ? 'bg-[#1EA0DA]/10 font-medium text-[#12769F]' : 'font-medium text-black/62 hover:bg-[#1EA0DA]/6 hover:text-[#12769F]'
                     }`}
                   >
                     <span

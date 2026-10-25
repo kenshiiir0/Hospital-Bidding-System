@@ -132,7 +132,7 @@ export default function ProductsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-black">Product List</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-black">Product List</h1>
             <p className="text-xs text-black/62 mt-1">
               PhilGEPS and PS-PhilGEPS tenders count when they ask for one of these molecules in one of these dosages
               {products ? ` · ${molecules} molecules, ${active.length} products` : ''}

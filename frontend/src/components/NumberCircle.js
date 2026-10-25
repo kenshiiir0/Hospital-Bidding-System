@@ -39,7 +39,7 @@ export default function NumberCircle({ n, state, percent = 0, error, hasDocs }) 
   return (
     <span className="relative inline-flex h-8 w-8 items-center justify-center" title={shown ? `${LABELS[shown] || shown}${error ? `: ${error}` : ''}` : undefined}>
       {shown === 'downloaded' && !working ? (
-        <span className="absolute inset-0 rounded-full bg-[#61A644]" aria-hidden />
+        <span className="absolute inset-0 rounded-full bg-[#61A644]/15 ring-1 ring-inset ring-[#61A644]/40" aria-hidden />
       ) : (
         <svg viewBox="0 0 32 32" className="absolute inset-0 h-8 w-8 -rotate-90" aria-hidden>
           <circle cx="16" cy="16" r={RADIUS} fill="none" strokeWidth={state === 'waiting' ? 2 : 1.5} className={state === 'waiting' ? 'stroke-[#1EA0DA]/25' : 'stroke-[#E2E8F0]'} />
@@ -58,7 +58,7 @@ export default function NumberCircle({ n, state, percent = 0, error, hasDocs }) 
           )}
         </svg>
       )}
-      <span className={`relative font-mono text-xs ${shown === 'downloaded' && !working ? 'text-white font-semibold' : working ? 'text-[#12769F] font-semibold' : 'text-black/62'}`}>
+      <span className={`relative font-mono text-xs ${shown === 'downloaded' && !working ? 'text-[#3F6F2C] font-semibold' : working ? 'text-[#12769F] font-semibold' : 'text-black/62'}`}>
         {n}
       </span>
     </span>

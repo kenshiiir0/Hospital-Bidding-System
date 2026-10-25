@@ -15,7 +15,7 @@ export default function PageHeader({ title, status, subtitle, actions }) {
     <header className="flex flex-col gap-4 border-b border-[#E2E8F0] pb-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <h1 className="text-xl font-bold tracking-tight text-black">{title}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-black">{title}</h1>
           {status && <StatusPill {...status} />}
         </div>
         {subtitle && <p className="mt-1 text-xs text-black/62">{subtitle}</p>}
@@ -54,26 +54,39 @@ export const plainAction =
   'inline-flex items-center justify-center gap-2 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs font-medium text-black/62 transition hover:border-[#1EA0DA] hover:text-[#12769F] disabled:cursor-wait disabled:opacity-60';
 
 /**
- * Summary cards under the header.
+ * Summary cards under the header: an icon in a soft circle, a quiet label, the number, one short note.
  * @param {Array<{ label: string, value: React.ReactNode, note?: React.ReactNode, tone?: 'black' | 'green' | 'blue' }>} props.items
  */
 export function KpiRow({ items }) {
-  const value = { black: 'text-2xl text-black', green: 'text-2xl text-[#3F6F2C]', blue: 'text-xl text-[#12769F]' };
-  const dot = { black: 'bg-black/30', green: 'bg-[#61A644]', blue: 'bg-[#1EA0DA]' };
+  const tile = { black: 'bg-[#1EA0DA]/8 text-[#12769F]', green: 'bg-[#61A644]/12 text-[#3F6F2C]', blue: 'bg-[#1EA0DA]/8 text-[#12769F]' };
+  const value = { black: 'text-black', green: 'text-[#3F6F2C]', blue: 'text-[#12769F]' };
+  const icon = {
+    // A list of tenders
+    black: <path d="M6 5.5h8M6 10h8M6 14.5h5M3.5 3.5h13v13h-13z" />,
+    // A product (capsule)
+    green: <path d="M7.3 15.7a3.8 3.8 0 0 1-5.4-5.4l5.3-5.3a3.8 3.8 0 0 1 5.4 5.4zM5.2 7.6l5.4 5.4" />,
+    // Money (peso)
+    blue: <path d="M6 16.5v-13h4.5a3.5 3.5 0 0 1 0 7H6M3.5 6.5h11M3.5 9h11" />,
+  };
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Summary">
-      {items.map((k) => (
-        <div key={k.label} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#E2E8F0] bg-white p-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-black/46">
-              <span className={`h-1.5 w-1.5 rounded-full ${dot[k.tone || 'black']}`} aria-hidden />
-              {k.label}
+    <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1" aria-label="Summary">
+      {items.map((k) => {
+        const tone = k.tone || 'black';
+        return (
+          <div key={k.label} className="flex min-w-0 items-start gap-3 rounded-[14px] border border-[#E2E8F0] bg-white p-3 sm:p-4">
+            <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-full sm:flex ${tile[tone]}`} aria-hidden>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                {icon[tone]}
+              </svg>
+            </span>
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-black/50">{k.label}</div>
+              <div className={`mt-0.5 truncate text-lg font-semibold tabular-nums sm:text-xl ${value[tone]}`}>{k.value}</div>
+              {k.note && <div className="mt-0.5 hidden truncate text-xs text-black/46 sm:block">{k.note}</div>}
             </div>
-            {k.note && <div className={`mt-1 truncate text-xs ${k.tone === 'green' ? 'text-[#61A644]' : 'text-black/46'}`}>{k.note}</div>}
           </div>
-          <div className={`shrink-0 font-bold tabular-nums ${value[k.tone || 'black']}`}>{k.value}</div>
-        </div>
-      ))}
+        );
+      })}
     </section>
   );
 }

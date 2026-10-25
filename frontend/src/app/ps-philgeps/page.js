@@ -161,7 +161,7 @@ export default function BidMatchPage() {
               label: 'Procuring Agency',
               wide: true,
               render: (row) => (
-                <span className="line-clamp-2 text-xs font-bold leading-tight text-black" title={cell(row, 'Agency name')}>
+                <span className="line-clamp-2 text-[13px] font-medium leading-snug text-black" title={cell(row, 'Agency name')}>
                   {cell(row, 'Agency name')}
                 </span>
               ),
@@ -171,7 +171,7 @@ export default function BidMatchPage() {
               width: '9rem',
               align: 'right',
               nowrap: true,
-              render: (row) => <span className="font-mono text-xs font-bold text-black">{budgetText(cell(row, 'Approve Budget Contract'))}</span>,
+              render: (row) => <span className="text-[13px] font-medium tabular-nums text-black">{budgetText(cell(row, 'Approve Budget Contract'))}</span>,
             },
             // Only the published date in the list; the closing date is in View details
             {

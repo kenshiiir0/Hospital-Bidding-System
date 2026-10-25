@@ -162,7 +162,7 @@ export default function ScreenedPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-black flex items-center gap-2">
+            <h1 className="text-xl font-semibold tracking-tight text-black flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-[#61A644]" aria-hidden />
               Screened Tenders
             </h1>

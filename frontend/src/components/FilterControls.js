@@ -620,11 +620,11 @@ export function SegmentedTabs({ label, value, onChange, options }) {
             aria-selected={on}
             onClick={() => onChange(o.value)}
             className={`rounded-full border px-4 py-1.5 transition ${
-              on ? 'border-[#1EA0DA] bg-[#1EA0DA] font-semibold text-white shadow-sm' : 'border-[#CBD5E1] bg-white text-black/62 hover:border-[#1EA0DA] hover:text-black'
+              on ? 'border-[#1EA0DA]/30 bg-[#1EA0DA]/10 text-[#12769F]' : 'border-[#E2E8F0] bg-white text-black/62 hover:border-[#1EA0DA]/40 hover:text-black'
             }`}
           >
             {o.label}
-            {o.count != null && <span className={`ml-1 tabular-nums ${on ? 'text-white/85' : 'text-black/46'}`}>({o.count})</span>}
+            {o.count != null && <span className={`ml-1 tabular-nums ${on ? 'text-[#12769F]/70' : 'text-black/40'}`}>({o.count})</span>}
           </button>
         );
       })}
@@ -638,7 +638,7 @@ export function ProductChips({ names }) {
   return (
     <div className="flex flex-wrap gap-1">
       {names.map((n) => (
-        <span key={n} className="rounded-full border border-[#61A644]/25 bg-[#61A644]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#3F6F2C] transition-colors hover:bg-[#61A644]/20">
+        <span key={n} className="rounded-full bg-[#61A644]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#3F6F2C] transition-colors hover:bg-[#61A644]/18">
           {n}
         </span>
       ))}
@@ -655,16 +655,16 @@ const ENDED = /(closed|cancel|fail|reject|refus|declin|expired|withdraw|lapsed|n
 export function StatusBadge({ text }) {
   if (!text) return <span className="text-black/46">—</span>;
   const tone = ENDED.test(text)
-    ? 'border-[#CBD5E1] bg-white text-black/62'
+    ? 'border-transparent bg-black/5 text-black/55'
     : WAITING.test(text)
-      ? 'border-[#1EA0DA]/25 bg-[#1EA0DA]/10 text-[#12769F]'
+      ? 'border-transparent bg-[#1EA0DA]/10 text-[#12769F]'
       : POSITIVE.test(text)
-        ? 'border-[#61A644] bg-[#61A644] text-white'
-        : 'border-[#CBD5E1] bg-white text-black';
+        ? 'border-transparent bg-[#61A644]/12 text-[#3F6F2C]'
+        : 'border-transparent bg-black/5 text-black/70';
   // Long statuses ("Pending for Acceptance") wrap inside the pill instead of spilling out of a narrow column
   const long = text.length > 14;
   return (
-    <span className={`inline-block max-w-full border px-2.5 py-0.5 text-[11px] font-semibold leading-snug ${long ? 'rounded-xl' : 'whitespace-nowrap rounded-full'} ${tone}`}>
+    <span className={`inline-block max-w-full border px-2.5 py-0.5 text-[11px] font-medium leading-snug ${long ? 'rounded-xl' : 'whitespace-nowrap rounded-full'} ${tone}`}>
       {text}
     </span>
   );
@@ -951,7 +951,7 @@ export function DateRangeDropdown({ fields, ranges, onChange, className = '' }) 
 /** The published date as a highlighted tag, so it stands out in the Dates column ("📅 Pub: Oct 23"). */
 export function PublishedTag({ text }) {
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-[#1EA0DA]/25 bg-[#1EA0DA]/10 px-1.5 py-0.5 text-xs font-semibold text-[#12769F]">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-[#1EA0DA]/8 px-1.5 py-0.5 text-xs font-medium text-[#12769F]">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="h-3 w-3 shrink-0" aria-hidden>
         <rect x="3" y="4.5" width="14" height="12.5" rx="2" />
         <path d="M3 8.5h14M7 2.5v4M13 2.5v4" />
@@ -964,7 +964,7 @@ export function PublishedTag({ text }) {
 /** "NEW" on a tender fetched since it was last read (lib/newTenders.js). */
 export function NewPill() {
   return (
-    <span className="inline-flex items-center rounded-md bg-[#61A644] px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-wide text-white" title="Fetched since you last opened this page">
+    <span className="inline-flex items-center rounded-md bg-[#1EA0DA]/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide text-[#12769F]" title="Fetched since you last opened this page">
       New
     </span>
   );
