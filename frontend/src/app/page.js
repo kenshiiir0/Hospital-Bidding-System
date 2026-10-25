@@ -131,14 +131,10 @@ function EmptyState({ children }) {
   );
 }
 
-// "Oct 24" (the year only when it isn't this year) and "Oct 27, 12:01 AM", for the stacked Dates column
+// "Oct 24" (the year only when it isn't this year), for the Published column
 function shortDay(value, thisYear) {
   const text = formatDate(value);
   return text && thisYear && text.endsWith(`, ${thisYear}`) ? text.slice(0, -6) : text;
-}
-function shortDayTime(value, thisYear) {
-  const text = formatDateTime(value);
-  return text && thisYear ? text.replace(`, ${thisYear} `, ', ') : text;
 }
 
 export default function Home() {
@@ -671,13 +667,13 @@ export default function Home() {
                   nowrap: true,
                   render: (bid) => <span className="font-mono text-xs font-bold text-black">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</span>,
                 },
+                // Only the published date in the list; the closing date is in View details
                 {
-                  label: 'Dates',
-                  width: '10rem',
+                  label: 'Published',
+                  width: '8rem',
                   render: (bid) => (
-                    <div className="space-y-1 text-xs">
+                    <div className="text-xs">
                       <PublishedTag text={shortDay(bid.publish_date, thisYear)} />
-                      <div><span className="text-black/46">Close:</span> <span className="font-medium">{shortDayTime(bid.closing_date, thisYear) || '—'}</span></div>
                     </div>
                   ),
                 },

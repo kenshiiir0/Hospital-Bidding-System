@@ -81,5 +81,5 @@ export default function MyOpportunitiesPage() {
   );
 }
 
-// Shown in the list; every other column is in View details
-const COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Closing Date', 'Status of Bid notice', 'Bid Submission Status'];
+// Shown in the list (published date only; the closing date is in View details with every other column)
+const COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Status of Bid notice', 'Bid Submission Status'];

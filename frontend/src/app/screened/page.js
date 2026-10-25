@@ -130,7 +130,6 @@ export default function ScreenedPage() {
     },
     { label: 'Molecules', wide: true, render: (r) => <Molecules lines={r.tender?.molecules} /> },
     { label: 'Published', width: '7.5rem', nowrap: true, optional: 2, render: (r) => formatDate(r.tender?.published) || '—' },
-    { label: 'Closing', width: '9.5rem', optional: 3, render: (r) => formatDateTime(typeof r.tender?.closing === 'string' ? r.tender.closing : '') || '—' },
     {
       label: 'Added',
       width: '9rem',

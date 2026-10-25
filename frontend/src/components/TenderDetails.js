@@ -6,7 +6,7 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import ScreenButton from '@/components/ScreenButton';
-import { philgepsTender } from '@/lib/opportunityWorkbook';
+import { moleculeText, philgepsTender } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -184,15 +184,13 @@ export default function TenderDetails({ bid, onClose }) {
             size="xs"
             rows={items}
             columns={[
-              { label: 'Product', title: true, render: (item) => <span className="text-[#3F6F2C]">{(item.products || []).join(', ') || '—'}</span> },
-              { label: 'Item', render: (item) => item.item_no || '—' },
-              { label: 'Qty', nowrap: true, render: (item) => (item.quantity != null ? item.quantity.toLocaleString('en-PH') : '—') },
-              { label: 'Unit', render: (item) => item.unit || '—' },
-              { label: 'Unit price', nowrap: true, render: (item) => formatPeso(item.unit_price) || '—' },
-              { label: 'Total', nowrap: true, render: (item) => formatPeso(item.total) || '—' },
-              // A line the scraper couldn't split into columns is shown as written
+              // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
+              { label: 'Molecule', title: true, render: (item) => <span className="font-medium text-[#3F6F2C]">{moleculeText(item.description || item.line)}</span> },
+              { label: 'Qty', nowrap: true, render: (item) => (item.quantity != null ? `${item.quantity.toLocaleString('en-PH')} ${item.unit || ''}`.trim() : '—') },
+              { label: 'ABC/Unit', nowrap: true, render: (item) => formatPeso(item.unit_price) || '—' },
+              { label: 'ABC Total', nowrap: true, render: (item) => formatPeso(item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null)) || '—' },
+              // The line exactly as the document or description gives it, to check against
               { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{item.where === 'Description' ? item.description || item.line : item.line}</span> },
-              { label: 'Found in', render: (item) => <span className="text-black/46">{item.where}</span> },
             ]}
           />
         )}

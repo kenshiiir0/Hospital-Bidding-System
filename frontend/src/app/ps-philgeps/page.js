@@ -142,13 +142,13 @@ export default function BidMatchPage() {
               nowrap: true,
               render: (row) => <span className="font-mono text-xs font-bold text-black">{budgetText(cell(row, 'Approve Budget Contract'))}</span>,
             },
+            // Only the published date in the list; the closing date is in View details
             {
-              label: 'Dates',
-              width: '10rem',
+              label: 'Published',
+              width: '8rem',
               render: (row) => (
-                <div className="space-y-1 text-xs">
+                <div className="text-xs">
                   <PublishedTag text={shortPsDate(cell(row, 'Publish Date'), syncYear)} />
-                  <div><span className="text-black/46">Close:</span> <span className="font-medium">{shortPsDate(cell(row, 'Closing Date'), syncYear)}</span></div>
                 </div>
               ),
             },

@@ -6,7 +6,7 @@ import ScreenButton from '@/components/ScreenButton';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
-import { psRefOf, psTender } from '@/lib/opportunityWorkbook';
+import { moleculeText, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { formatInstant } from '@/lib/format';
 
@@ -134,14 +134,13 @@ function FromDocuments({ reading }) {
               size="xs"
               rows={reading.result.items}
               columns={[
-                { label: 'Product', title: true, render: (it) => <span className="text-[#3F6F2C]">{it.our_products.join(', ')}</span> },
-                { label: 'Item', render: (it) => it.item_no ?? '—' },
-                { label: 'Qty', nowrap: true, render: (it) => (it.quantity != null ? it.quantity.toLocaleString('en-PH') : '—') },
-                { label: 'Unit', render: (it) => it.unit ?? '—' },
-                { label: 'Unit price', nowrap: true, render: (it) => peso(it.unit_price) },
-                { label: 'Total', nowrap: true, render: (it) => peso(it.total) },
+                // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
+                { label: 'Molecule', title: true, render: (it) => <span className="font-medium text-[#3F6F2C]">{moleculeText(it.description || it.line)}</span> },
+                { label: 'Qty', nowrap: true, render: (it) => (it.quantity != null ? `${it.quantity.toLocaleString('en-PH')} ${it.unit || ''}`.trim() : '—') },
+                { label: 'ABC/Unit', nowrap: true, render: (it) => peso(it.unit_price) },
+                { label: 'ABC Total', nowrap: true, render: (it) => peso(it.total ?? (it.quantity != null && it.unit_price != null ? it.quantity * it.unit_price : null)) },
+                // The line exactly as the document gives it, to check against
                 { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{it.quantity != null ? it.line : it.context}</span> },
-                { label: 'Page', render: (it) => <span className="text-black/46">{it.source.split(', ').pop()}</span> },
               ]}
             />
           )}

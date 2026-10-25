@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from 'react';
 import { supabase } from '@/lib/supabase';
-import { downloadOpportunityWorkbook, philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
+import { downloadOpportunityWorkbook, moleculeText, philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 
 // Screened Tenders (Supabase screened_tenders, shared by the team): tenders picked with "Add to Screened" in
@@ -100,12 +100,23 @@ export async function loadScreenedDetails(r) {
 
 // The stored copy's dates come back from JSON as text; the workbook needs Date objects
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T/;
-// Copies saved before 2026-10-24 may start molecule cells with a stock code ("55100000. "); only line numbers
-// of up to 4 digits are kept, as in the export (opportunityWorkbook.js itemRow)
-const STOCK_CODE = /^(?:\d{5,}|[A-Z]+\d+)\.\s*/;
+// Copies saved before 2026-10-25 may start cells with a line number or stock code ("3. ", "55100000. ") and hold
+// the price as text ("3. 108.00"); the export now writes neither (opportunityWorkbook.js itemRow), so old copies
+// are cleaned the same way: the molecule text again through moleculeText, the price back to a number
+const LINE_NUMBER = /^(?:\d+|[A-Z]+\d+)\.\s+/;
+const priceNumber = (cell) => {
+  if (typeof cell !== 'string') return cell;
+  const value = Number(cell.replace(LINE_NUMBER, '').replace(/,/g, ''));
+  return cell.trim() && Number.isFinite(value) ? value : null;
+};
 const revive = (tender) => ({
   ...tender,
-  molecules: (tender.molecules || []).map((cells) => cells.map((cell) => (typeof cell === 'string' ? cell.replace(STOCK_CODE, '') : cell))),
+  molecules: (tender.molecules || []).map(([molecule, qty, unitPrice, total]) => [
+    typeof molecule === 'string' ? moleculeText(molecule.replace(LINE_NUMBER, '')) : molecule,
+    typeof qty === 'string' ? qty.replace(LINE_NUMBER, '') : qty,
+    priceNumber(unitPrice),
+    total,
+  ]),
   closing: ISO_TIME.test(tender.closing || '') ? new Date(tender.closing) : tender.closing,
   lastUpdated: ISO_TIME.test(tender.lastUpdated || '') ? new Date(tender.lastUpdated) : tender.lastUpdated,
 });

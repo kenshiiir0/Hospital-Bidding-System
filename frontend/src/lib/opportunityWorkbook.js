@@ -84,7 +84,6 @@ function dmyTime(value) {
   return new Date(Date.UTC(+m[3], +m[2] - 1, +m[1], hour, +m[5]));
 }
 
-const amount = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Contact lines are [designation, address lines..., phone numbers, e-mail]
 function splitContact(info = []) {
@@ -107,12 +106,37 @@ const FORM_WORD =
   /\b(?:tab|tabs|tablets?|caps?|capsules?|vials?|amp|ampules?|ampoules?|polyamp|syringes?|pfs|pre-?filled|bottles?|sachets?|solution|suspension|syrup|oral|drops?|cream|ointment|oint|tube|bag|powder|inj|injection|emulsion|nebules?|patch|suppository|isobaric|heavy|plain|hyperbaric|spinal)\b/i;
 const STRENGTH = /\d\s*(?:mg|g|gm|mcg|ml|l|iu|%|units?|meq|mmol)\b/i;
 
+// A cell repeated back to back by a document table ("Epoeitin Alfa Epoeitin Alfa 4000iu", "X/ X/ 103 Box"): once
+function collapseRepeats(text) {
+  let s = text;
+  for (let before = ''; before !== s; ) {
+    before = s;
+    s = s.replace(/^(.{6,}?)[\s/,.]+\1(?=[\s/,.]|$)/i, '$1');
+  }
+  return s;
+}
+
 // The Molecule cell keeps the product as the team writes it (molecule, strength, form: "Cefazolin 1g vial"):
 // item codes, pack sizes, quantities, prices and requirements written after the product are dropped,
 // e.g. "DM290. Cefazolin Sodium Salt 1g Vial with up to date local assay among..." -> "Cefazolin Sodium Salt 1g Vial"
 export function moleculeText(text) {
   const original = String(text || '').replace(/\s+/g, ' ').trim();
   let s = original;
+  // Table debris from documents: a leading "|", quote marks, ", -" before a strength ("VANCOMYCIN , -1g")
+  s = s.replace(/^[|"'“”‘’\s]+|["'“”‘’\s]+$/g, '').replace(/\s*,\s*-\s*(?=\d)/g, ' ');
+  // A line read twice from a table ("Cetirizine 10mg tab / Cetirizine 10mg tab / 103 Box"): keep the first part
+  if (/\s\/\s/.test(s)) {
+    const [head] = s.split(/\s+\/\s+/);
+    if (/[A-Za-z]{3}/.test(head) && /\d/.test(head)) s = head;
+  }
+  s = s.replace(/\s+and other items?\b.*$/i, '');
+  s = collapseRepeats(s);
+  s = s.replace(/\s*\/\s*\d[\d,]*\s+[A-Za-z]+\.?$/, ''); // "... / 103 Box"
+  s = s.replace(/\s+:\s*/g, ' '); // "Cefazolin : 1g"
+  // Line numbers, a unit word or a stray "of" left in front by the table ("16. bottles Cetirizine ...")
+  s = s.replace(/^\d{1,4}[.)]\s+/, '');
+  s = s.replace(/^(?:bottles?|btls?|boxes|box|bxs?|vials?|tabs?|tablets?|caps?|capsules?|amps?|ampules?|ampoules?|pcs|pieces|sachets?|tubes?|packs?)\.?\s+(?=[A-Za-z])/i, '');
+  s = s.replace(/^(?:of|the|for|and)\s+/i, '');
   s = s.replace(/^[A-Z]{1,4}-?\d+[.):-]?\s+/, ''); // item codes such as "DM290."
   s = s.replace(/^[\d,]+(?:\.\d+)?\s+(?!(?:mg|g|gm|mcg|ml|l|iu|units?)\b)(?=[A-Za-z(])/i, ''); // a quantity or line number written first
   s = s.replace(/\s*[_….·\-–—]{3,}.*$/, ''); // fill-in lines "______", "………"
@@ -131,21 +155,22 @@ export function moleculeText(text) {
     s = [...parts.slice(0, first + 1), ...rest].join(', ');
   } else s = parts.join(', ');
   // Prices or quantities left at the end once a strength is given: "... 5 mg 450", "... 60 mL 46.00"
-  if (/\d.*\s[\d,]+(?:\.\d+)?$/.test(s)) s = s.replace(/(?:\s+[\d,]+(?:\.\d+)?)+$/, '');
+  if (/\d.*\s-?[\d,]+(?:\.\d+)?$/.test(s)) s = s.replace(/(?:\s+-?[\d,]+(?:\.\d+)?)+$/, '');
   s = s.replace(/[,\s]+\d[\d,]{2,}\s+(?:capsules?|tablets?|vials?|amp\w*|bottles?)(?:\/\w+)?$/i, ''); // "..., 1200 Vial"
   s = s.replace(/\s+([),])/g, '$1').replace(/[\s,;:.\-–/]+$/, '').replace(/^[\s,;:.\-–]+/, '').trim();
+  // Repeats that only show once pack sizes are gone ("X/100's X/100's" -> "X X")
+  s = collapseRepeats(s).replace(/\s*\/\s*\d[\d,]*\s+[A-Za-z]+\.?$/, '').replace(/[\s,;:.\-–/]+$/, '');
   return s || original;
 }
 
-// One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total], numbered "7. " like the original
+// One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total], as the team writes them in the original
+// sheet: "AMIKACIN 500MG/2ML" | "20 amp" | 88.78 | 5000 (no item numbers; prices as numbers)
 function itemRow(item) {
   const text = moleculeText(item.description || item.line);
-  if (item.quantity == null && item.unit_price == null) return [text, '', '', null];
-  // Only a line number (1–4 digits, as in the team's sheet); longer ones are stock codes such as 55100000
-  const n = /^\d{1,4}$/.test(String(item.item_no ?? '')) ? `${item.item_no}. ` : '';
-  const qty = item.quantity != null ? `${n}${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
+  if (item.quantity == null && item.unit_price == null) return [text, '', null, null];
+  const qty = item.quantity != null ? `${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
   const total = item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null);
-  return [`${n}${text}`, qty, item.unit_price != null ? `${n}${amount(item.unit_price)}` : '', total];
+  return [text, qty, item.unit_price ?? null, total];
 }
 
 // Molecule rows: the documents hold the real data, so a product with lines read in the bid documents (lines
@@ -158,7 +183,7 @@ function moleculeRows(noticeItems, documentItems, productNames) {
   const rows = [...fromDocs, ...fromNotice];
   if (rows.length) return rows.map(itemRow);
   // No item lines read yet (e.g. scanned documents still being read with OCR)
-  return [[productNames.join(', '), '', '', null]];
+  return [[productNames.join(', '), '', null, null]];
 }
 
 // A PhilGEPS tender (philgeps_opportunities row)
@@ -321,6 +346,7 @@ export function buildOpportunitySheet(workbook, tenders) {
       ws.getCell(`F${row}`).alignment = { wrapText: true };
       ws.getCell(`G${row}`).alignment = { vertical: 'middle', wrapText: true };
       ws.getCell(`H${row}`).alignment = { vertical: 'middle', wrapText: true };
+      ws.getCell(`H${row}`).numFmt = '#,##0.00';
       ws.getCell(`I${row}`).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
       ws.getCell(`I${row}`).numFmt = '#,##0.00';
 
