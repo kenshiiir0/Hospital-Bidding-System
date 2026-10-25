@@ -778,16 +778,39 @@ export async function runSyncRound() {
 }
 
 // Marks the Sync finished after its last round
+// Tender outcomes that mean the Sync did not get the documents, as they read in the Sync warning
+const PROBLEM_OUTCOMES = {
+  failed: 'failed',
+  'not-reached': 'not reached in time',
+  'order-flow-changed': 'stopped (PhilGEPS order page changed)',
+  'needs-payment': 'need a payment (order them by hand)',
+  'no-order-link': 'have no Order link on PhilGEPS yet',
+  ordered: 'ordered but no file found yet',
+  'already-ordered': 'ordered but no file found yet',
+};
+
 export async function finishSync() {
   const supabase = admin();
   const { job } = await readJob(supabase);
   if (!job || job.status !== 'running') return;
   for (const ref of Object.keys(job.tenders || {})) if (['waiting', 'working'].includes(job.tenders[ref])) job.tenders[ref] = 'not-reached';
+  // Tenders whose documents this Sync could not get: never report those as "up to date". The warning shows as
+  // "Synced with a warning" on the dashboard (ScrapeProgress) and goes to the History / Report Log.
+  const problems = {};
+  for (const outcome of Object.values(job.tenders || {})) {
+    if (PROBLEM_OUTCOMES[outcome]) problems[outcome] = (problems[outcome] || 0) + 1;
+  }
+  const problemCount = Object.values(problems).reduce((a, b) => a + b, 0);
+  if (problemCount) {
+    const detail = Object.entries(problems).map(([outcome, n]) => `${n} ${PROBLEM_OUTCOMES[outcome]}`).join(', ');
+    const message = `${problemCount} tender${problemCount > 1 ? 's' : ''} without documents this Sync (${detail}). Sync again, or check them on PhilGEPS.`;
+    job.warning = job.warning ? `${job.warning} ${message}` : message;
+  }
   Object.assign(job, {
     status: 'success',
     percent: 100,
     stage:
-      (job.files ? `${job.files} new document${job.files > 1 ? 's' : ''}` : 'Everything is up to date — no new documents') +
+      (job.files ? `${job.files} new document${job.files > 1 ? 's' : ''}` : problemCount ? 'No new documents' : 'Everything is up to date — no new documents') +
       (job.foundInDocuments ? ` · ${job.foundInDocuments} more tender${job.foundInDocuments > 1 ? 's' : ''} with our products found in the documents` : ''),
     finishedAt: Date.now(),
   });
