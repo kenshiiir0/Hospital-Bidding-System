@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import { formatInstant } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
-import PageHeader, { blueAction } from '@/components/PageHeader';
+import PageHeader, { blueAction, plainAction } from '@/components/PageHeader';
 import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsLiveLogin from '@/components/PsLiveLogin';
@@ -52,6 +52,14 @@ export default function PsPhilgepsLayout({ children }) {
       setData(activePsData({ syncedAt: row.synced_at, lists: row.lists, notices: row.notices, analysis }, active));
     }
   }, []);
+
+  // The header's Reload button (as on the PhilGEPS page)
+  const [reloading, setReloading] = useState(false);
+  const reloadNow = async () => {
+    setReloading(true);
+    await loadData().catch(() => {});
+    setReloading(false);
+  };
 
   const loadSync = useCallback(async () => {
     const { data: row } = await supabase.from('ps_sync_status').select('*').eq('id', 'latest').maybeSingle();
@@ -221,6 +229,11 @@ export default function PsPhilgepsLayout({ children }) {
                     : { tone: 'error', text: 'Not connected' }
             }
             actions={
+              <>
+              {/* Same two buttons as the PhilGEPS header: Reload (from the database) and Sync */}
+              <button onClick={reloadNow} disabled={reloading} title="Reload the lists from the database without contacting PhilGEPS" className={plainAction}>
+                {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
+              </button>
               <button
                 onClick={pressSync}
                 disabled={!sync || syncing || connecting || (syncAfterConnect && !connected)}
@@ -235,6 +248,7 @@ export default function PsPhilgepsLayout({ children }) {
                   '🔄 Sync PS-PhilGEPS'
                 )}
               </button>
+              </>
             }
           />
 

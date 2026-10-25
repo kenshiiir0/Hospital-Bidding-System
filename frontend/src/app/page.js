@@ -17,7 +17,7 @@ import { philgepsType } from '@/lib/tenderType';
 import { activeTenders } from '@/lib/activeProducts';
 import { stillReading } from '@/lib/documentsReading';
 import WorkingDots from '@/components/WorkingDots';
-import { formatDate, formatDateTime, formatPeso, instantDay } from '@/lib/format';
+import { formatDate, formatDateTime, formatInstant, formatPeso, instantDay } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { authFetch } from '@/lib/authFetch';
 
@@ -47,14 +47,8 @@ function readCachedBids() {
   }
 }
 
-// "10:32 AM" today, "Oct 20, 10:32 AM" on other days (browser local time)
-function formatUpdatedAt(timestamp) {
-  const date = new Date(timestamp);
-  const time = date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
-  return date.toDateString() === new Date().toDateString()
-    ? time
-    : `${date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}, ${time}`;
-}
+// "Oct 25, 2026 9:15 AM" in Philippine time, the same format as the PS-PhilGEPS header's status
+const formatUpdatedAt = (timestamp) => formatInstant(new Date(timestamp).toISOString());
 
 // Saved documents results shown on a row's circle outside a Sync (grey pick-up, red problems)
 const SAVED_CIRCLE_STATES = new Set(['pick-up', 'closed', 'needs-payment', 'order-flow-changed', 'no-order-link', 'none-found']);

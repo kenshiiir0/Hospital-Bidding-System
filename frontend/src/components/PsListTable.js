@@ -1,7 +1,31 @@
 'use client';
 
-import { NewPill, StatusBadge } from '@/components/FilterControls';
+import { useState } from 'react';
+import { NewPill, PublishedTag, StatusBadge } from '@/components/FilterControls';
 import ResponsiveTable from '@/components/ResponsiveTable';
+import Pagination, { PAGE_SIZES } from '@/components/Pagination';
+
+// The site's column names as the Bid Match lists (PhilGEPS and PS-PhilGEPS) write them
+const LABELS = {
+  'notice reference number': 'Ref No.',
+  'award notice number': 'Award No.',
+  'agency name': 'Procuring Agency',
+  'approve budget contract': 'Approved Budget (ABC)',
+  'publish date': 'Published',
+};
+const labelOf = (header) => LABELS[header.toLowerCase()] || header;
+
+const MONTHS = { jan: 'Jan', feb: 'Feb', mar: 'Mar', apr: 'Apr', may: 'May', jun: 'Jun', jul: 'Jul', aug: 'Aug', sep: 'Sep', oct: 'Oct', nov: 'Nov', dec: 'Dec' };
+// "23-Oct-2026 12:00 AM" -> "Oct 23, 2026" (date only, as the Bid Match lists)
+function dayText(text) {
+  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})/.exec(String(text || '').trim());
+  return m ? `${MONTHS[m[2].toLowerCase()] || m[2]} ${Number(m[1])}, ${m[3]}` : text || '—';
+}
+// "1906762" -> "₱1,906,762.00"
+function budgetText(text) {
+  const n = Number(String(text || '').replace(/[^\d.]/g, ''));
+  return text && Number.isFinite(n) && n > 0 ? `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : text || '—';
+}
 
 // A PS-PhilGEPS list as read by ps-philgeps-sync.js ({ headers, rows: [{ cells, links }] }).
 // columns: the site's column names to show, in order (default: all but "Actions", PhilGEPS's Select
@@ -9,7 +33,10 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 // open PhilGEPS in a new tab. extraColumns: [{ label, render(row), after? }] added after the site's columns,
 // or right after the site column named in `after`.
 // isNew(row): shows NEW next to the first column (lib/newTenders.js).
+// Long lists come in pages of 25 / 50 / 100, as on the Bid Match lists.
 export default function PsListTable({ list, rows = list?.rows || [], columns, extraColumns = [], onDetails, empty, isNew }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   if (!list) return <EmptyState>{empty}</EmptyState>;
   const indexOf = (name) => list.headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
   const siteColumns = (columns || list.headers.filter((h) => !/^actions?$/i.test(h)))
@@ -36,7 +63,7 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
           optional: optionalRank(col.label),
         }
       : {
-          label: col.h,
+          label: labelOf(col.h),
           title: n === 0,
           badge: col === firstStatus,
           nowrap: /budget|amount/i.test(col.h),
@@ -50,6 +77,16 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
               </span>
             ) : STATUS_COLUMN.test(col.h) ? (
               <StatusBadge text={row.cells[col.i]} />
+            ) : /publish/i.test(col.h) ? (
+              <span className="text-xs">
+                <PublishedTag text={dayText(row.cells[col.i])} />
+              </span>
+            ) : /budget|amount/i.test(col.h) ? (
+              <span className="font-mono text-xs font-bold text-black">{budgetText(row.cells[col.i])}</span>
+            ) : /agency/i.test(col.h) ? (
+              <span className="line-clamp-2 text-xs font-bold leading-tight text-black" title={row.cells[col.i]}>
+                {row.cells[col.i]}
+              </span>
             ) : /date/i.test(col.h) ? (
               <DateCell text={row.cells[col.i]} />
             ) : (
@@ -58,9 +95,27 @@ export default function PsListTable({ list, rows = list?.rows || [], columns, ex
         }
   );
 
-  // Row numbers first, as on the PhilGEPS list
-  const numbered = [{ label: '#', lead: true, width: '3rem', render: (_, i) => <span className="font-mono text-xs text-black/46">{i + 1}</span> }, ...tableColumns];
-  return <ResponsiveTable columns={numbered} rows={rows} onDetails={onDetails} />;
+  // Only the current page is drawn; the page is clamped in case the list shrank (a filter, a new Sync)
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  // Row numbers first, as on the PhilGEPS list (counting on across pages)
+  const numbered = [{ label: '#', lead: true, width: '3rem', render: (_, i) => <span className="font-mono text-xs text-black/46">{pageStart + i + 1}</span> }, ...tableColumns];
+  return (
+    <div className="space-y-4">
+      <ResponsiveTable columns={numbered} rows={rows.slice(pageStart, pageStart + pageSize)} onDetails={onDetails} />
+      <Pagination
+        page={currentPage}
+        pageSize={pageSize}
+        total={rows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
+    </div>
+  );
 }
 
 // Table widths for the short columns; the rest (agency, title, products) share what is left
