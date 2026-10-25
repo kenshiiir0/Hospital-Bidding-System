@@ -225,16 +225,6 @@ export default function TenderDetails({ bid, onClose }) {
         )}
       </PanelSection>
 
-      {/* Files downloaded by Sync: status pill, one card per file (View / Save), and the remark on why there are
-          files or not with the last check */}
-      <DocumentsPanel
-        documents={documents}
-        bucket="philgeps-documents"
-        tenderRef={bid.ref_no}
-        status={{ label: remark.pill, tone: remark.tone }}
-        footer={`${remark.text}${d.documents_checked_at ? ` Last checked ${formatInstant(d.documents_checked_at)}.` : ''}`}
-      />
-
       {/* Full notice text, collapsed unless there are no requested items to show */}
       <PanelSection title="Full description">
         {bid.items_text ? (
@@ -280,6 +270,16 @@ export default function TenderDetails({ bid, onClose }) {
           <span className="text-black/46">—</span>
         )}
       </PanelSection>
+
+      {/* Last, as on PS-PhilGEPS Bid Match, so the files are in the same place on both portals. Files downloaded
+          by Sync: status pill, one card per file (View / Save), and the remark on why there are files or not */}
+      <DocumentsPanel
+        documents={documents}
+        bucket="philgeps-documents"
+        tenderRef={bid.ref_no}
+        status={{ label: remark.pill, tone: remark.tone }}
+        footer={`${remark.text}${d.documents_checked_at ? ` Last checked ${formatInstant(d.documents_checked_at)}.` : ''}`}
+      />
     </PsDetailsPanel>
   );
 }
