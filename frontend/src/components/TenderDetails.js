@@ -5,6 +5,7 @@ import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
+import { stillReading } from '@/lib/documentsReading';
 import ScreenButton from '@/components/ScreenButton';
 import { moleculeText, philgepsTender } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { ChecklistList, KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
@@ -189,6 +190,12 @@ export default function TenderDetails({ bid, onClose }) {
         ) : (
           <p className="text-xs text-black/46">No documents downloaded yet; the next Sync orders and reads them.</p>
         )}
+        {/* As on PS-PhilGEPS: scanned files still being read automatically (lib/documentsReading.js) */}
+        {stillReading(d.documents_read) && (
+          <div className="mt-2">
+            <ReadingNote read={d.documents_read} />
+          </div>
+        )}
       </PanelSection>
 
       {/* Only the item lines that request our products */}
@@ -226,10 +233,7 @@ export default function TenderDetails({ bid, onClose }) {
         tenderRef={bid.ref_no}
         status={{ label: remark.pill, tone: remark.tone }}
         footer={`${remark.text}${d.documents_checked_at ? ` Last checked ${formatInstant(d.documents_checked_at)}.` : ''}`}
-      >
-        {/* As on PS-PhilGEPS: scanned files still being read automatically (lib/documentsReading.js) */}
-        <ReadingNote read={d.documents_read} />
-      </DocumentsPanel>
+      />
 
       {/* Full notice text, collapsed unless there are no requested items to show */}
       <PanelSection title="Full description">

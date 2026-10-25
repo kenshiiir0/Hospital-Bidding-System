@@ -125,27 +125,30 @@ function FromDocuments({ reading }) {
           </div>
         )}
       </PanelSection>
-      {reading?.status === 'done' && (
-        <PanelSection title={`Molecule tracker (${reading.result.items.length} lines naming our products)`}>
-          {reading.result.items.length === 0 ? (
-            <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
-          ) : (
-            <ResponsiveTable
-              size="xs"
-              rows={reading.result.items}
-              columns={[
-                // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
-                { label: 'Molecule', title: true, render: (it) => <span className="font-medium text-[#3F6F2C]">{moleculeText(it.description || it.line)}</span> },
-                { label: 'Qty', nowrap: true, render: (it) => (it.quantity != null ? `${it.quantity.toLocaleString('en-PH')} ${it.unit || ''}`.trim() : '—') },
-                { label: 'ABC/Unit', nowrap: true, render: (it) => peso(it.unit_price) },
-                { label: 'ABC Total', nowrap: true, render: (it) => peso(it.total ?? (it.quantity != null && it.unit_price != null ? it.quantity * it.unit_price : null)) },
-                // The line exactly as the document gives it, to check against
-                { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{it.quantity != null ? it.line : it.context}</span> },
-              ]}
-            />
-          )}
-        </PanelSection>
-      )}
+      {/* Always shown, as on PhilGEPS, so Attached documents sits in the same place on both portals */}
+      <PanelSection title={`Molecule tracker${reading?.status === 'done' && reading.result.items.length ? ` (${reading.result.items.length} lines naming our products)` : ''}`}>
+        {reading?.status !== 'done' ? (
+          <p className="text-sm text-black/46">
+            {reading ? 'The documents could not be read, so no item lines were picked out.' : 'The item lines naming our products show here once the documents are read.'}
+          </p>
+        ) : reading.result.items.length === 0 ? (
+          <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
+        ) : (
+          <ResponsiveTable
+            size="xs"
+            rows={reading.result.items}
+            columns={[
+              // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
+              { label: 'Molecule', title: true, render: (it) => <span className="font-medium text-[#3F6F2C]">{moleculeText(it.description || it.line)}</span> },
+              { label: 'Qty', nowrap: true, render: (it) => (it.quantity != null ? `${it.quantity.toLocaleString('en-PH')} ${it.unit || ''}`.trim() : '—') },
+              { label: 'ABC/Unit', nowrap: true, render: (it) => peso(it.unit_price) },
+              { label: 'ABC Total', nowrap: true, render: (it) => peso(it.total ?? (it.quantity != null && it.unit_price != null ? it.quantity * it.unit_price : null)) },
+              // The line exactly as the document gives it, to check against
+              { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{it.quantity != null ? it.line : it.context}</span> },
+            ]}
+          />
+        )}
+      </PanelSection>
     </>
   );
 }
