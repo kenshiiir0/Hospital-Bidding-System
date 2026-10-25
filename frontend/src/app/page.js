@@ -22,6 +22,13 @@ import { supabase } from '@/lib/supabase';
 import { authFetch } from '@/lib/authFetch';
 
 const EXCLUDED_KEY = 'excludedProducts';
+// Sort choices, the same as the PS-PhilGEPS lists (PsFilters.js PS_SORTS); the first is the default
+const SORTS = [
+  { value: 'latest', label: 'Latest published' },
+  { value: 'oldest', label: 'Oldest published' },
+  { value: 'closing', label: 'Closing soonest' },
+  { value: 'budget', label: 'Highest budget' },
+];
 // Last list loaded from Supabase, shown at once on the next visit while the fresh copy loads
 const BIDS_CACHE_KEY = 'bidsCache';
 // How often the page asks the server about PhilGEPS fetches: often while one runs, less when idle
@@ -156,10 +163,15 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [excluded, setExcluded] = useState([]);
   const [selectedBid, setSelectedBid] = useState(null);
-  // Published-date range filter ("YYYY-MM-DD" from the date inputs; empty = no limit) and sort direction
+  // Published and closing date ranges ("YYYY-MM-DD" from the date inputs; empty = no limit) and the sort,
+  // with the same choices as the PS-PhilGEPS lists (SORTS)
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [oldestFirst, setOldestFirst] = useState(false);
+  const [closingFrom, setClosingFrom] = useState('');
+  const [closingTo, setClosingTo] = useState('');
+  const [sortKey, setSortKey] = useState('latest');
+  // Our product filter: '' = all, else one product name
+  const [productFilter, setProductFilter] = useState('');
   // Documents filter: 'all' | 'files' (downloaded) | 'pickup' (pick-up only) | 'none' (no documents yet)
   const [docFilter, setDocFilter] = useState('all');
   // Tender type filter: '' = all, else a code from lib/tenderType.js (ITB, RFQ, RFP, Negotiated)
@@ -438,17 +450,37 @@ export default function Home() {
   }
 
   // Search the reference number, tender title, procuring entity (hospital) and matched products,
-  // keep the published-date range, then order by published date (latest first unless reversed)
+  // keep the published and closing date ranges and the chosen product, then the chosen sort
   const query = search.toLowerCase();
   const matchesSearchAndDates = (bid) => {
     const published = bid.publish_date || '';
+    const closing = String(bid.closing_date || '').slice(0, 10);
     return (
       `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`.toLowerCase().includes(query) &&
       (!dateFrom || published >= dateFrom) &&
-      (!dateTo || (published && published <= dateTo))
+      (!dateTo || (published && published <= dateTo)) &&
+      (!closingFrom || closing >= closingFrom) &&
+      (!closingTo || (closing && closing <= closingTo)) &&
+      (!productFilter || (bid.matched_molecules || []).includes(productFilter))
     );
   };
   const matchingBids = visibleBids.filter(matchesSearchAndDates);
+  // Our product filter: the products asked for in the listed tenders, most requested first, with counts
+  const productCounts = {};
+  for (const bid of visibleBids) for (const name of bid.matched_molecules || []) productCounts[name] = (productCounts[name] || 0) + 1;
+  const productOptions = Object.keys(productCounts)
+    .sort((a, b) => productCounts[b] - productCounts[a])
+    .map((name) => ({ value: name, label: name, count: productCounts[name] }));
+  const filtersActive = Boolean(typeFilter || productFilter || dateFrom || dateTo || closingFrom || closingTo);
+  const clearFilters = () => {
+    setTypeFilter('');
+    setProductFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setClosingFrom('');
+    setClosingTo('');
+    setPage(1);
+  };
   // Type filter (ITB, RFQ...): options are the types in the searched list, most common first, with counts
   const typeOf = (bid) => philgepsType(bid.details?.notice_type).code;
   const typeCounts = {};
@@ -468,7 +500,10 @@ export default function Home() {
       // New, unread tenders first, then the chosen order
       const byNew = Number(isNew(b)) - Number(isNew(a));
       const byDate = (a.publish_date || '').localeCompare(b.publish_date || '') || (a.ref_no || '').localeCompare(b.ref_no || '');
-      return byNew || (oldestFirst ? byDate : -byDate);
+      const byClosing = String(a.closing_date || '9999').localeCompare(String(b.closing_date || '9999'));
+      const byBudget = (Number(b.abc_amount) || 0) - (Number(a.abc_amount) || 0);
+      const chosen = { latest: -byDate, oldest: byDate, closing: byClosing || -byDate, budget: byBudget || -byDate }[sortKey];
+      return byNew || chosen;
     });
 
 
@@ -549,13 +584,25 @@ export default function Home() {
 
           {/* Tier 2: search, then the dropdowns. Phones: an even two-column grid under a full-width search */}
           <div className="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap sm:items-center">
+            {/* Same controls, order and words as the PS-PhilGEPS lists (PsFilters.js) */}
             <SearchPill
               className="col-span-2"
+              label="Search PhilGEPS"
               value={search}
               onChange={(value) => {
                 setSearch(value);
                 setPage(1);
               }}
+            />
+            <CustomSelect
+              label="Our product"
+              className="w-full sm:w-auto sm:max-w-[18rem]"
+              value={productFilter}
+              onChange={(value) => {
+                setProductFilter(value);
+                setPage(1);
+              }}
+              options={[{ value: '', label: 'All' }, ...productOptions]}
             />
             <CustomSelect
               label="Type"
@@ -578,27 +625,41 @@ export default function Home() {
             <CustomSelect
               label="Sort"
               className="w-full sm:w-auto"
-              value={oldestFirst ? 'oldest' : 'latest'}
+              value={sortKey}
               defaultValue="latest"
               onChange={(value) => {
-                setOldestFirst(value === 'oldest');
+                setSortKey(value);
                 setPage(1);
               }}
-              options={[
-                { value: 'latest', label: 'Latest first' },
-                { value: 'oldest', label: 'Oldest first' },
-              ]}
+              options={SORTS}
             />
             <DateRangeDropdown
-              className="w-full sm:w-auto"
-              fields={[{ key: 'published', label: 'Published' }]}
-              ranges={{ published: { from: dateFrom, to: dateTo } }}
-              onChange={(_, { from, to }) => {
-                setDateFrom(from);
-                setDateTo(to);
+              className="col-span-2 w-full sm:col-auto sm:w-auto"
+              fields={[
+                { key: 'published', label: 'Published' },
+                { key: 'closing', label: 'Closing' },
+              ]}
+              ranges={{ published: { from: dateFrom, to: dateTo }, closing: { from: closingFrom, to: closingTo } }}
+              onChange={(key, { from, to }) => {
+                if (key === 'closing') {
+                  setClosingFrom(from);
+                  setClosingTo(to);
+                } else {
+                  setDateFrom(from);
+                  setDateTo(to);
+                }
                 setPage(1);
               }}
             />
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="col-span-2 rounded-full px-3 py-1.5 text-xs font-medium text-[#12769F] hover:bg-[#1EA0DA]/6 sm:col-auto"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
 
           {excluded.length > 0 && (

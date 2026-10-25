@@ -143,12 +143,16 @@ export default function TenderDetails({ bid, onClose }) {
           <PanelSection title="Bidding dates" tone="blue">
             {/* The bid documents first (they hold the real data), else the description (PhilGEPS's notice page has no schedule) */}
             <KeyValueList
+              // Same rows, in the same order, as PS-PhilGEPS (PsBidMatchDetails.js ScheduleList), less "Request for
+              // clarification", which only the PS-PhilGEPS notice page gives
               items={[
                 ['Pre-bid conference', fromDocs(bidDateText(bds.prebid_conference)) || d.pre_bid],
                 ['Bid opening', fromDocs(bidDateText(bds.bid_opening)) || d.bid_opening],
                 ['Submission deadline', fromDocs(bidDateText(bds.bid_submission_deadline))],
                 ['Closing', formatDateTime(bid.closing_date)],
                 ['Delivery period', fromDocs(deliveryText(bds.delivery_period)) || d.delivery_period],
+                ['Bid validity', fromDocs(bds.bid_validity)],
+                ['Bid security', fromDocs(bds.bid_security)],
                 ['Last updated', d.last_updated],
               ]}
               missing={documents.length ? 'Not in the notice or its documents' : 'Not on the notice page'}
@@ -158,7 +162,7 @@ export default function TenderDetails({ bid, onClose }) {
           <FetchedSection
             items={[
               ['First fetched', formatInstant(bid.created_at)],
-              ['Last re-checked', d.supplements_checked_at && `${formatInstant(d.supplements_checked_at)} · Automatic`],
+              ['Last fetched', d.supplements_checked_at && `${formatInstant(d.supplements_checked_at)} · Automatic`],
               ['Documents checked', formatInstant(d.documents_checked_at)],
             ]}
           />

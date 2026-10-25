@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import PsBidMatchDetails from '@/components/PsBidMatchDetails';
+import NumberCircle from '@/components/NumberCircle';
+import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import { stillReading } from '@/lib/documentsReading';
-import { usePsFilters } from '@/components/PsFilters';
-import { NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { usePsFilters, PS_SORTS } from '@/components/PsFilters';
+import { MultiSelectDropdown, NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { useExcludedProducts } from '@/lib/excludedProducts';
 import { useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
@@ -34,7 +37,16 @@ export default function BidMatchPage() {
   // Our products of a tender: matched on the notice page or named in its documents (a notice titled only
   // "Drugs and Medicines" lists its items in the documents)
   const productsOf = (row) => [...new Set([...(noticeOf(row)?.matched || []), ...(readingOf(row)?.result?.items || []).flatMap((i) => i.our_products)])];
+  // Exclude products: shared with the PhilGEPS page (same saved list); a tender asking for one is hidden
+  const { products, excluded, update: updateExcluded } = useExcludedProducts();
+  const notExcluded = (row) => !productsOf(row).some((name) => excluded.includes(name));
   const ours = (list?.rows || []).filter((row) => productsOf(row).length);
+  const tendersPerProduct = {};
+  for (const row of ours) for (const name of productsOf(row)) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
+  // Pages of 25 / 50 / 100, as on the PhilGEPS list
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const listTop = useRef(null);
   // Scanned documents still being read automatically with OCR (lib/documentsReading.js)
   const reading = (row) => stillReading(readingOf(row)?.documents_read);
   // New since last read (lib/newTenders.js; the PS-PhilGEPS layout records each Sync's rows)
@@ -60,23 +72,30 @@ export default function BidMatchPage() {
       // ITB / RFQ from the mode of procurement (lib/tenderType.js), as in the Type column
       { label: 'Type', valuesOf: (row) => [psType(row.cells[list.headers.indexOf('Mode of Procurement')]).code].filter(Boolean) },
       { label: 'Status', column: 'Status' },
-      // Whether the Sync found and downloaded the notice's documents
+      // Whether the Sync found and downloaded the notice's documents (same words as the PhilGEPS tabs)
       {
         label: 'Documents',
         tabs: true,
-        options: ['With documents', 'Without documents'],
-        valuesOf: (row) => [noticeOf(row)?.documents?.length ? 'With documents' : 'Without documents'],
+        options: ['With documents', 'No documents yet'],
+        valuesOf: (row) => [noticeOf(row)?.documents?.length ? 'With documents' : 'No documents yet'],
       },
     ],
+    extraControls: (
+      <MultiSelectDropdown
+        label="Exclude products"
+        className="w-full sm:w-auto"
+        value={excluded}
+        onChange={updateExcluded}
+        hint="Checked products are left out: any tender asking for one of them is hidden."
+        options={products.map((name) => ({ value: name, count: tendersPerProduct[name] || 0 }))}
+      />
+    ),
     dates: [
       { label: 'Published', column: 'Publish Date' },
       { label: 'Closing', column: 'Closing Date' },
     ],
-    sorts: [
-      { label: 'Closing soonest', column: 'Closing Date', kind: 'date', dir: 'asc' },
-      { label: 'Latest published', column: 'Publish Date', kind: 'date', dir: 'desc' },
-      { label: 'Highest budget', column: 'Approve Budget Contract', kind: 'number', dir: 'desc' },
-    ],
+    // Same choices as the PhilGEPS list, latest published first
+    sorts: PS_SORTS,
   });
   // Sidebar badge: tenders asking for our products
   const oursCount = list ? ours.length : null;
@@ -84,11 +103,22 @@ export default function BidMatchPage() {
     if (oursCount != null) setNavCount('/ps-philgeps', oursCount);
   }, [oursCount]);
   // New, unread tenders first (a stable sort keeps the chosen order otherwise)
-  const rows = [...(filters.apply((onlyOurs ? ours : list?.rows || []).filter((row) => matchesSearch(search, row, productsOf(row).join(' ')))))].sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
+  const rows = [
+    ...filters.apply((onlyOurs ? ours : list?.rows || []).filter((row) => notExcluded(row) && matchesSearch(search, row, productsOf(row).join(' ')))),
+  ].sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
+  // Only the current page is drawn; the page is clamped in case the list shrank (a filter, a new Sync)
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageRows = rows.slice(pageStart, pageStart + pageSize);
+  const goToPage = (next) => {
+    setPage(next);
+    listTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
 
   return (
-    <section className="space-y-4">
+    <section ref={listTop} className="scroll-mt-6 space-y-4">
       <KpiRow
         items={[
           { label: 'Total opportunities', value: rows.length, note: list ? `of ${list.rows.length} in Bid Match · ${ours.length} ask for our products` : 'Waiting for the first Sync' },
@@ -103,11 +133,12 @@ export default function BidMatchPage() {
         <EmptyList>Nothing to show.</EmptyList>
       ) : (
         <ResponsiveTable
-          rows={rows}
+          rows={pageRows}
           rowKey={(row) => refOf(row) || row.cells[0]}
           onDetails={setSelected}
           columns={[
-            { label: '#', lead: true, width: '3rem', render: (_, i) => <span className="font-mono text-xs text-black/46">{i + 1}</span> },
+            // Same circle as the PhilGEPS list: green once the notice's documents are downloaded
+            { label: '#', lead: true, width: '3rem', render: (row, i) => <NumberCircle n={pageStart + i + 1} hasDocs={noticeOf(row)?.documents?.length > 0} /> },
             {
               label: 'Ref No. & Type',
               title: true,
@@ -148,7 +179,7 @@ export default function BidMatchPage() {
               width: '8rem',
               render: (row) => (
                 <div className="text-xs">
-                  <PublishedTag text={shortPsDate(cell(row, 'Publish Date'), syncYear)} />
+                  <PublishedTag text={shortPsDay(cell(row, 'Publish Date'), syncYear)} />
                 </div>
               ),
             },
@@ -156,19 +187,28 @@ export default function BidMatchPage() {
           ]}
         />
       )}
+      {list && rows.length > 0 && (
+        <Pagination
+          page={currentPage}
+          pageSize={pageSize}
+          total={rows.length}
+          onPageChange={goToPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
+      )}
       {selected && <PsBidMatchDetails data={data} row={selected} lastSyncBy={lastSyncBy} onClose={() => setSelected(null)} />}
     </section>
   );
 }
 
-// The list shows the hospital; the long notice title, mode and classification are in View details
-const LIST_COLUMNS = ['Notice Reference Number', 'Agency name', 'Approve Budget Contract', 'Publish Date', 'Closing Date', 'Status'];
-
 function DocumentCount({ notice, reading }) {
   if (!notice) return <span className="text-black/46">—</span>;
   if (notice.error) return <span className="text-xs text-[#B3312C]">Not read</span>;
   const n = notice.documents?.length || 0;
-  if (!n) return <span className="text-xs text-black/46">None found</span>;
+  if (!n) return <span className="text-xs text-[#B3312C]">None yet</span>;
   return (
     <span className="text-xs text-[#3F6F2C]">
       📎 {n} file{n > 1 ? 's' : ''}
@@ -194,12 +234,11 @@ function RefLink({ row }) {
 }
 
 const MONTH_SHORT = { jan: 'Jan', feb: 'Feb', mar: 'Mar', apr: 'Apr', may: 'May', jun: 'Jun', jul: 'Jul', aug: 'Aug', sep: 'Sep', oct: 'Oct', nov: 'Nov', dec: 'Dec' };
-// "27-Oct-2026 12:01 AM" -> "Oct 27, 12:01 AM" (the year only when it isn't `year`)
-function shortPsDate(text, year) {
-  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})(?:\s+(.+))?$/.exec(String(text || '').trim());
+// "27-Oct-2026 12:01 AM" -> "Oct 27" (the year only when it isn't `year`), as the PhilGEPS list's Published
+function shortPsDay(text, year) {
+  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})/.exec(String(text || '').trim());
   if (!m) return text || '—';
-  const day = `${MONTH_SHORT[m[2].toLowerCase()] || m[2]} ${Number(m[1])}${m[3] === year ? '' : `, ${m[3]}`}`;
-  return m[4] ? `${day}, ${m[4]}` : day;
+  return `${MONTH_SHORT[m[2].toLowerCase()] || m[2]} ${Number(m[1])}${m[3] === year ? '' : `, ${m[3]}`}`;
 }
 
 // "1906762" -> "₱1,906,762.00"

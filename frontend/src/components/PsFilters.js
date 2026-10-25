@@ -12,9 +12,19 @@ import { usePsPhilgeps } from '@/lib/psContext';
 // - sorts: [{ label, column, kind: 'date' | 'number', dir: 'asc' | 'desc' }], the first is the default.
 // Returns { apply(rows), bar, chosen } where bar is the filter rows to show above the list and chosen the
 // selected value of each select, by label ('' or missing = All).
+// The Sort choices of the tender lists, the same as on the PhilGEPS list (app/page.js SORTS): latest first
+export const PS_SORTS = [
+  { label: 'Latest published', column: 'Publish Date', kind: 'date', dir: 'desc' },
+  { label: 'Oldest published', column: 'Publish Date', kind: 'date', dir: 'asc' },
+  { label: 'Closing soonest', column: 'Closing Date', kind: 'date', dir: 'asc' },
+  { label: 'Highest budget', column: 'Approve Budget Contract', kind: 'number', dir: 'desc' },
+];
+
 // headTabs: tabs of the page itself (e.g. Our products / All) shown first in the tabs row (tier 1).
-// The bar: tier 1 = tabs; tier 2 = the search (from the PS-PhilGEPS layout), dropdowns, Sort and one Date range.
-export function usePsFilters(list, { selects = [], dates = [], sorts = [], headTabs = null }) {
+// extraControls: more tier-2 controls of the page (e.g. Exclude products), placed after the dropdowns, before Sort.
+// The bar: tier 1 = tabs; tier 2 = the search (from the PS-PhilGEPS layout), dropdowns, Sort and one Date range,
+// in the same order as the PhilGEPS page.
+export function usePsFilters(list, { selects = [], dates = [], sorts = [], headTabs = null, extraControls = null }) {
   const { search = '', setSearch } = usePsPhilgeps() || {};
   const [chosen, setChosen] = useState({});
   const [ranges, setRanges] = useState({});
@@ -102,6 +112,7 @@ export function usePsFilters(list, { selects = [], dates = [], sorts = [], headT
             />
           )
         )}
+        {extraControls}
         {sorts.length > 0 && (
           <CustomSelect
             label="Sort"

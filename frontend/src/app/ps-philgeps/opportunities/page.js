@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel from '@/components/PsDetailsPanel';
-import { usePsFilters } from '@/components/PsFilters';
+import { usePsFilters, PS_SORTS } from '@/components/PsFilters';
 import TypeBadge from '@/components/TypeBadge';
 import { psType } from '@/lib/tenderType';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
@@ -33,11 +33,8 @@ export default function MyOpportunitiesPage() {
       { label: 'Published', column: 'Publish Date' },
       { label: 'Closing', column: 'Closing Date' },
     ],
-    sorts: [
-      { label: 'Latest closing', column: 'Closing Date', kind: 'date', dir: 'desc' },
-      { label: 'Closing soonest', column: 'Closing Date', kind: 'date', dir: 'asc' },
-      { label: 'Highest budget', column: 'Approve Budget Contract', kind: 'number', dir: 'desc' },
-    ],
+    // Same choices as Bid Match and the PhilGEPS list, latest published first
+    sorts: PS_SORTS,
   });
   // New, unread tenders first (a stable sort keeps the chosen order otherwise)
   const rows = [...(filters.apply((list?.rows || []).filter((row) => matchesSearch(search, row))))].sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
