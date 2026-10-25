@@ -777,7 +777,22 @@ export async function runSyncRound() {
   }
 }
 
-// Marks the Sync finished after its last round
+// Ends a running Sync as failed with `message` (e.g. its next round could not be started), so the dashboard
+// shows the error at once instead of a Sync that looks busy until it goes stale
+export async function failSync(message) {
+  try {
+    const supabase = admin();
+    const { job } = await readJob(supabase);
+    if (!job || job.status !== 'running') return;
+    for (const ref of Object.keys(job.tenders || {})) if (['waiting', 'working'].includes(job.tenders[ref])) job.tenders[ref] = 'not-reached';
+    Object.assign(job, { status: 'failed', error: message, finishedAt: Date.now() });
+    await saveJob(supabase, job);
+    await optional(job, 'History', () => logRun(job));
+  } catch (e) {
+    console.error(`[philgeps-sync] could not record the failure: ${e.message}`);
+  }
+}
+
 // Tender outcomes that mean the Sync did not get the documents, as they read in the Sync warning
 const PROBLEM_OUTCOMES = {
   failed: 'failed',
@@ -789,6 +804,7 @@ const PROBLEM_OUTCOMES = {
   'already-ordered': 'ordered but no file found yet',
 };
 
+// Marks the Sync finished after its last round
 export async function finishSync() {
   const supabase = admin();
   const { job } = await readJob(supabase);
