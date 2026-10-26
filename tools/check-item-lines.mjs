@@ -99,7 +99,24 @@ expect(parseItemRow(PG13290623, 1), { item_no: '31', quantity: 500, unit: 'Vial'
 const PG13262985 = ['50 Tablet 1,000 Celecoxib 200mg', '51 Tablet 2,500 Cetirizine 10mg/tablet', '52 Tablet 500 Cinnarizine 25mg'];
 expect(parseItemRow(PG13262985, 1), { item_no: '51', quantity: 2500, unit: 'Tablet' }, 'Item | Unit | Quantity | Description');
 expect(parseItemRow(["1 092600000 Lapatinib 250mg tablet, bottle of 30’s 12,375.00 90 Bottle 1,113,750.00"], 0), { quantity: 90, unit_price: 12375, total: 1113750 }, 'price before quantity');
+// An amount with centavos is never the quantity (PhilGEPS 13301894 Bicol Regional, 13295249)
+const PG13301894 = ['2 186,600.00 Idarubicin 1 mg/ml, 10 ml vial 50 vial', '3 293,100.00 Oxaliplatin 5 mg/ml, 10 mi solution for injection vial 300 vial', '4 250,000.00 Paclitaxel 6 mg/ml, 16.7 ml vial (IV, IV infusion) 100 vial'];
+expect(parseItemRow(PG13301894, 1), { quantity: 300, unit: 'vial' }, 'price after the Item No.');
+expect(parseItemRow(PG13301894, 2), { quantity: 100, unit: 'vial' }, 'price after the Item No. (last row)');
+expect(parseItemRow(['vial 242,560.00 Propofol 10mg/ml.,20ml. Injection'], 0), { quantity: undefined }, 'amount after the unit');
+// Item | Quantity | Unit | Price | Description, a numbered row read again without its Item No. (PhilGEPS 13295249)
+const PG13295249 = ['13 1,000 amp/vial 120,000.00 Propofol 10mg/ml, 20ml', '14 2,500 amp/vial 287,225.00 Rocuronium Bromide 10mg/ml, 5ml injection', '15 500 amp/vial 45,000.00 Sevoflurane'];
+expect(parseItemRow(PG13295249, 1), { item_no: '14', quantity: 2500 }, 'quantity after the Item No., then a price');
+// Unit "Ampule/Vial" (PhilGEPS 13277448)
+const PG13277448b = ['2. 100 Ampule/Vial ADENOSINE 3 mg/mL, 2 mL', '3. 200 Ampule/Vial AMIKACIN 125 mg/mL (as sulfate), 2 mL ampule/vial 49.00', '4. 300 Ampule/Vial AMINOPHYLLINE 25 mg/mL'];
+expect(parseItemRow(PG13277448b, 1), { item_no: '3', quantity: 200, unit: 'Ampule/Vial' }, 'unit with a slash');
+// Quantity at the end of a numbered row after a pack size (PhilGEPS 13264900)
+const PG13264900 = ['27 Cefuroxime 500mg/tablet X 100 200', '28 Cetirizine 10mg/tablet X 100 340', '29 Ciprofloxacin 500mg/tablet X 100 100'];
+expect(parseItemRow(PG13264900, 1), { item_no: '28', quantity: 340 }, 'quantity after a pack size');
+// Item | Description | Quantity | Estimated Cost per Item (PhilGEPS 13262985): the quantity, not the cost
+const PG13262985b = ['50 Celecoxib 200mg/cap 500 15', '51 Cetirizine 10mg/tablet 2,500 10', '52 Cetirizine 1mg/ml 60ml 500 100'];
+expect(parseItemRow(PG13262985b, 1), { item_no: '51', quantity: 2500 }, 'quantity before the cost');
 // A quantity without its unit at the end of the line stays this row's
 expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "200MCG/1MG/ML NEBULE 30'S 40 BOX"], 0), { quantity: undefined }, 'bare quantity');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 27} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 34} rows).`);

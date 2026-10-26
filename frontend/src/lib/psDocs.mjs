@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-14';
+// rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-15';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -129,9 +129,19 @@ export function parseItemRow(rawLines, n) {
   const parsed = readRow(lines, n);
   if (parsed.unit_price != null) return parsed;
   const itemNo = itemNumberOf(lines, n);
-  // The row read with its Item No. as the quantity: read again without that number; no quantity if none is left
-  if (itemNo == null || parsed.quantity !== itemNo) return itemNo == null || parsed.item_no != null ? parsed : { ...parsed, item_no: String(itemNo) };
-  const read = (text) => ({ ...parseItemLine(text.replace(LEADING_NUMBER, '')), item_no: String(itemNo), written: text });
+  // The row read with its Item No. as the quantity, or with no quantity: read again without that number; no
+  // quantity if none is left
+  if (itemNo == null || (parsed.quantity != null && parsed.quantity !== itemNo)) return itemNo == null || parsed.item_no != null ? parsed : { ...parsed, item_no: String(itemNo) };
+  const read = (text) => {
+    const rest = text.replace(LEADING_NUMBER, '');
+    const columns = parseItemLine(rest);
+    // Item | Description | Quantity with no unit: the bare number ending the row ("28 Cetirizine 10mg/tablet X 100
+    // 340"), not a pack size; of two, the first ("51 Cetirizine 10mg/tablet 2,500 10": Quantity, then Estimated
+    // Cost per Item)
+    const bare = columns.quantity == null && /(?<![x×/]\s?)(?<=\s)(\d[\d,]*)(?:\s+\d[\d,]*)?$/i.exec(rest);
+    const found = bare ? { description: rest.slice(0, bare.index).trim(), quantity: num(bare[1]) } : columns;
+    return { ...found, item_no: String(itemNo), written: text };
+  };
   const alone = read(lines[n]);
   const row = rowText(lines, n);
   const whole = row === lines[n] ? alone : read(row);
@@ -190,9 +200,11 @@ function priceBeforeQuantity(line, parsed) {
 function parseItemColumns(line) {
   // Item numbers may carry a letter code, e.g. "DM14"
   const ITEM = String.raw`([A-Z]{0,4}-?\d+)[.)]*`;
-  const UNIT = String.raw`([A-Za-z][A-Za-z.'’]*)`;
-  // A quantity starts with a digit (a lone "," left by OCR is not one)
-  const QTY = String.raw`(\d[\d,]*(?:\.\d+)?)`;
+  // "Ampule/Vial" too
+  const UNIT = String.raw`([A-Za-z][A-Za-z.'’]*(?:\/[A-Za-z]+)?)`;
+  // A quantity is a whole number starting with a digit: a lone "," left by OCR is not one, nor an amount with
+  // centavos ("3 293,100.00 Oxaliplatin ..." is a price, the quantity is further on)
+  const QTY = String.raw`(\d[\d,]*)(?![.\d])`;
   const PRICE = String.raw`([\d,]+\.\d{2})`;
   // Item | Quantity | Unit | Description | Unit Price | Total
   const priced = new RegExp(`^${ITEM}\\s+${QTY}\\s+${UNIT}\\s+(.+?)\\s+${PRICE}\\s+${PRICE}$`).exec(line);
@@ -209,12 +221,12 @@ function parseItemColumns(line) {
   // row's number, the last one the quantity (not a pack size such as "x 100")
   const unitFirst = new RegExp(`^(\\d{1,3})[.)]*\\s+${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
   if (unitFirst) return { item_no: unitFirst[1], unit: unitFirst[2], description: unitFirst[3], quantity: num(unitFirst[4]) };
-  // Unit | Description | Quantity: such a row once its Item No. is set aside ("Boxes Losartan 50mg/tab (60’s) 105")
-  const unitDesc = new RegExp(`^${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
-  if (unitDesc) return { unit: unitDesc[1], description: unitDesc[2], quantity: num(unitDesc[3]) };
   // Unit | Quantity | Description ("Tablet 2,500 Cetirizine 10mg/tablet", once its Item No. is set aside)
   const unitQty = new RegExp(`^${KNOWN_UNIT}\\s+${QTY}\\s+(.*[A-Za-z].*)$`, 'i').exec(line);
   if (unitQty) return { unit: unitQty[1], quantity: num(unitQty[2]), description: unitQty[3] };
+  // Unit | Description | Quantity: such a row once its Item No. is set aside ("Boxes Losartan 50mg/tab (60’s) 105")
+  const unitDesc = new RegExp(`^${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
+  if (unitDesc) return { unit: unitDesc[1], description: unitDesc[2], quantity: num(unitDesc[3]) };
   const descPriced = new RegExp(`^${ITEM}\\s+(.+?)\\s+${QTY}\\s+${KNOWN_UNIT}\\s+${PRICE}\\s+${PRICE}$`, 'i').exec(line);
   if (descPriced) return { item_no: descPriced[1], description: descPriced[2], quantity: num(descPriced[3]), unit: descPriced[4], unit_price: num(descPriced[5]), total: num(descPriced[6]) };
   const noItem = new RegExp(`^${QTY}\\s+${KNOWN_UNIT}\\s+(.+)$`, 'i').exec(line);
