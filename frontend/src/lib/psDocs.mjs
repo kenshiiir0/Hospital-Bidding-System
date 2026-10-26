@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-13: rows numbered in order: the first number is the Item No., never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-13';
+// rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-14';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -57,7 +57,7 @@ const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
 const adds = (quantity, unitPrice, total) => quantity > 0 && Math.abs(quantity * unitPrice - total) <= total * 0.01;
 
 // Units a quantity is counted in, for the layouts with no fixed column order
-const KNOWN_UNIT_RE = String.raw`(?:pre-?\s?filled\s+)?(?:tab|tablet|cap|capsule|bottle|btl|botl|bot|vial|vl|amp|ampule|ampoule|box|bx|pc|piece|pack|sachet|tube|inhaler|nebule|syringe|bag|kit|set|unit|each|ea)(?:e?s)?\.?(?:\s?\/\s?(?:vial|amp|bottle|bot)s?)?`;
+const KNOWN_UNIT_RE = String.raw`(?:pre-?\s?filled\s+)?(?:pfs|tab|tablet|cap|capsule|bottle|btl|botl|bot|vial|vl|amp|ampule|ampoule|box|bx|pc|piece|pack|sachet|tube|inhaler|nebule|syringe|bag|kit|set|unit|each|ea)(?:e?s)?\.?(?:\s?\/\s?(?:vial|amp|bottle|bot)s?)?`;
 
 // A line that starts a new table row: a number, then a word or another number ("26 bottle ...", "DM14 Amikacin
 // ...", "5,000 tablet", "10 30,000 Tablet"); not a row's continuation such as "10mg Tablet 100's 250" or a lone
@@ -101,15 +101,20 @@ const leadingNumber = (line) => {
 // How far up and down to look for the rows numbered just before and after
 const NUMBERING_REACH = 3;
 
-/** The Item No. of lines[n]: its first number when a line nearby starts with the number before or after it
- * (rows numbered in order: "59 vials ..." / "60 vials Cefoxitin ..." / "61 ..."), else null */
+/** The Item No. of lines[n]: its first number when it is one of three rows numbered in order nearby (k-1, k,
+ * k+1, or the two before or after it: "58 vials ..." / "59 vials ..." / "60 vials Cefoxitin ..."), else null.
+ * One neighbour isn't enough: a quantity-first list ("10 btl ...", "11 box ...") can have two in a row. */
 function itemNumberOf(lines, n) {
   const k = leadingNumber(lines[n]);
   if (k == null) return null;
+  const above = new Set();
+  const below = new Set();
   for (let d = 1; d <= NUMBERING_REACH; d++) {
-    if (leadingNumber(lines[n - d]) === k - 1 || leadingNumber(lines[n + d]) === k + 1) return k;
+    above.add(leadingNumber(lines[n - d]));
+    below.add(leadingNumber(lines[n + d]));
   }
-  return null;
+  const run = (above.has(k - 1) && below.has(k + 1)) || (above.has(k - 1) && above.has(k - 2)) || (below.has(k + 1) && below.has(k + 2));
+  return run ? k : null;
 }
 
 /** The columns of the table row starting on lines[n], also when the row is broken over lines (the text layer or
@@ -121,16 +126,21 @@ function itemNumberOf(lines, n) {
 // "As written"
 export function parseItemRow(rawLines, n) {
   const lines = rawLines.map(withoutRules);
+  const parsed = readRow(lines, n);
+  if (parsed.unit_price != null) return parsed;
+  const itemNo = itemNumberOf(lines, n);
+  // The row read with its Item No. as the quantity: read again without that number; no quantity if none is left
+  if (itemNo == null || parsed.quantity !== itemNo) return itemNo == null || parsed.item_no != null ? parsed : { ...parsed, item_no: String(itemNo) };
+  const read = (text) => ({ ...parseItemLine(text.replace(LEADING_NUMBER, '')), item_no: String(itemNo), written: text });
+  const alone = read(lines[n]);
+  const row = rowText(lines, n);
+  const whole = row === lines[n] ? alone : read(row);
+  return whole.quantity != null ? whole : alone;
+}
+
+function readRow(lines, n) {
   const own = { ...parseItemLine(lines[n]), written: lines[n] };
   if (own.unit_price != null) return own;
-  const itemNo = itemNumberOf(lines, n);
-  if (itemNo != null) {
-    const read = (text) => ({ ...parseItemLine(text.replace(LEADING_NUMBER, '')), item_no: String(itemNo), written: text });
-    const alone = read(lines[n]);
-    const row = rowText(lines, n);
-    const whole = row === lines[n] ? alone : read(row);
-    return whole.quantity != null ? whole : alone;
-  }
   // "<row no.> <unit> <description> <qty>": its own reading takes the row number as the quantity
   if (!ROW_NO_UNIT.test(lines[n]) && (own.quantity != null || ENDS_IN_NUMBER.test(lines[n]))) return own;
   const row = rowText(lines, n);
@@ -148,7 +158,7 @@ export function parseItemLine(fullLine) {
   // gives the total, the one nearest the price when several do, e.g. "500 TABLET Amlodipine 5 mg Tablet 2
   // 1,000.00", or "55100000 vial Vancomycin ..., 1gram 3000 450.00 1,350,000.00" (55100000 is a stock number)
   const tail = /^(.*\S)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2})$/.exec(line);
-  if (!tail) return parsed;
+  if (!tail) return priceBeforeQuantity(line, parsed);
   const [, rest, priceText, totalText] = tail;
   const unitPrice = num(priceText);
   const total = num(totalText);
@@ -161,6 +171,20 @@ export function parseItemLine(fullLine) {
   }
   const base = parseItemColumns(rest);
   return { ...base, description: base.description || rest, quantity: adds(base.quantity, unitPrice, total) ? base.quantity : quantity, unit_price: unitPrice, total };
+}
+
+// "... <unit price> <quantity> <unit> <total>", e.g. "1 092600000 Lapatinib 250mg tablet, bottle of 30's 12,375.00 90
+// Bottle 1,113,750.00": the quantity is the whole number that times a price on the line gives the total
+function priceBeforeQuantity(line, parsed) {
+  const end = /^(.*\S)\s+(\d[\d,]*\.\d{2})$/.exec(line);
+  if (!end) return parsed;
+  const total = num(end[2]);
+  const prices = (end[1].match(/\d[\d,]*\.\d{2}/g) || []).map(num);
+  for (const unitPrice of prices) {
+    const m = [...end[1].matchAll(/(?<![\d.,])(\d[\d,]*)(?![\d.,])(?:\s+([A-Za-z][A-Za-z/]*))?/g)].findLast((x) => adds(num(x[1]), unitPrice, total));
+    if (m) return { ...parsed, quantity: num(m[1]), unit: m[2] || parsed.unit, unit_price: unitPrice, total };
+  }
+  return parsed;
 }
 
 function parseItemColumns(line) {
@@ -177,7 +201,7 @@ function parseItemColumns(line) {
   const qtyFirst = new RegExp(`^${ITEM}\\s+${QTY}\\s+${UNIT}\\s+(.+)$`).exec(line);
   if (qtyFirst) return { item_no: qtyFirst[1], quantity: num(qtyFirst[2]), unit: qtyFirst[3], description: qtyFirst[4] };
   // Item | Description | Quantity | Unit, e.g. "9 MIDAZOLAM 5MG/ML AMPULE 10’S 40 BX"
-  const qtyLast = new RegExp(`^${ITEM}\\s+(.+?)\\s+(\\d[\\d,]*)\\s+(?!(?:mg|ml|mcg|g|kg|l|iu|units?|%)\\.?$)([A-Za-z]{1,12}\\.?)$`, 'i').exec(line);
+  const qtyLast = new RegExp(`^${ITEM}\\s+(.+?)\\s+(\\d[\\d,]*)\\s+(?!(?:mg|ml|mcg|g|gm|kg|l|iu|units?|%)\\.?$)([A-Za-z]{1,12}\\.?)$`, 'i').exec(line);
   if (qtyLast) return { item_no: qtyLast[1], description: qtyLast[2], quantity: num(qtyLast[3]), unit: qtyLast[4] };
   // The remaining layouts have no fixed column order, so their unit must be a known one
   const KNOWN_UNIT = `(${KNOWN_UNIT_RE})`;
@@ -188,6 +212,9 @@ function parseItemColumns(line) {
   // Unit | Description | Quantity: such a row once its Item No. is set aside ("Boxes Losartan 50mg/tab (60’s) 105")
   const unitDesc = new RegExp(`^${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
   if (unitDesc) return { unit: unitDesc[1], description: unitDesc[2], quantity: num(unitDesc[3]) };
+  // Unit | Quantity | Description ("Tablet 2,500 Cetirizine 10mg/tablet", once its Item No. is set aside)
+  const unitQty = new RegExp(`^${KNOWN_UNIT}\\s+${QTY}\\s+(.*[A-Za-z].*)$`, 'i').exec(line);
+  if (unitQty) return { unit: unitQty[1], quantity: num(unitQty[2]), description: unitQty[3] };
   const descPriced = new RegExp(`^${ITEM}\\s+(.+?)\\s+${QTY}\\s+${KNOWN_UNIT}\\s+${PRICE}\\s+${PRICE}$`, 'i').exec(line);
   if (descPriced) return { item_no: descPriced[1], description: descPriced[2], quantity: num(descPriced[3]), unit: descPriced[4], unit_price: num(descPriced[5]), total: num(descPriced[6]) };
   const noItem = new RegExp(`^${QTY}\\s+${KNOWN_UNIT}\\s+(.+)$`, 'i').exec(line);

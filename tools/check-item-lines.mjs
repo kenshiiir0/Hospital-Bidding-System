@@ -52,8 +52,8 @@ for (const [n, want] of ROWS) expect(parseItemRow(PAGE, n), want, PAGE[n]);
 
 // The next row's number on a line of its own is not this row's quantity (PS 111622)
 expect(parseItemRow(['25 box Cetirizine', "10mg Tablet 100's 250", '26'], 0), { item_no: '25', quantity: 250 }, 'row number on its own line');
-// 88 is the Item No. (89 follows), so the row shows no quantity rather than 88 (user, 2026-10-26)
-expect(parseItemRow(['88 box | Loratadine 10mg/tab x 100', '89'], 0), { item_no: '88', quantity: undefined }, 'next row number after a pack size');
+// 88 is the Item No. (87 before, 89 after), so the row shows no quantity rather than 88 (user, 2026-10-26)
+expect(parseItemRow(['87 box Levocetirizine 5mg/tab x 100 20', '88 box | Loratadine 10mg/tab x 100', '89'], 1), { item_no: '88', quantity: undefined }, 'next row number after a pack size');
 // A priced row keeps its own reading, whatever follows it
 expect(parseItemRow(['3 450 vials Carboplatin 450mg/45mL 1,828.40 822,780.00', 'Total 822,780.00'], 0), { quantity: 450 }, 'priced row');
 // A row with its quantity on its own line doesn't take the next rows' (PhilGEPS 13296768, a list without row numbers)
@@ -69,10 +69,10 @@ const SCAN = ["14 boxes Cetirizine 10mg Tablet 100's 10", "© 1s boxes Cefuroxim
 expect(parseItemRow(SCAN, 0), { item_no: '14', quantity: 10 }, 'smudged next row');
 expect(parseItemRow(['97 prefilled syringe Enoxaparin 100mg/ml ,0.4ml 50', '98 prefilled syringe Enoxaparin 100mg/mL 0.6m 60'], 0), { quantity: 50, unit: 'prefilled syringe' }, 'two-word unit');
 expect(parseItemRow(['| 75 | vials | Propofol 10mg/ml,20ml | 420 |'], 0), { item_no: '75', quantity: 420, unit: 'vials' }, 'table rules');
-expect(parseItemRow(['59 vials Cefuroxime 750mg powder for Inj. 500 |', '| 60 | vials] Cefoxitin 1g powder forv In], I.'], 1), { item_no: '60', quantity: undefined }, 'no quantity on the row');
+expect(parseItemRow(['58 vials Ceftriaxone 1g powder for Inj. 2000', '59 vials Cefuroxime 750mg powder for Inj. 500 |', '| 60 | vials] Cefoxitin 1g powder forv In], I.'], 2), { item_no: '60', quantity: undefined }, 'no quantity on the row');
 // The form under the table is not part of the last row
-const LAST = ['59 vials Cefuroxime 750mg powder for Inj. 500', '60 vials Cefoxitin 1g powder for Inj.', 'Purpose: Purchase of Drugs and Medicine of Binan City Hospital', 'Requested By: Approved by:'];
-const lastRow = parseItemRow(LAST, 1);
+const LAST = ['58 vials Ceftriaxone 1g powder for Inj. 2000', '59 vials Cefuroxime 750mg powder for Inj. 500', '60 vials Cefoxitin 1g powder for Inj.', 'Purpose: Purchase of Drugs and Medicine of Binan City Hospital', 'Requested By: Approved by:'];
+const lastRow = parseItemRow(LAST, 2);
 expect(lastRow, { item_no: '60', quantity: undefined }, 'last row');
 assert.ok(!/Purpose/.test(lastRow.description || ''), `last row: the form's "Purpose" is in its description: ${lastRow.description}`);
 // Rows numbered in order: the first number is the Item No., never the quantity (PhilGEPS 13291631, Cajidiocan:
@@ -83,7 +83,23 @@ const NUMBERED = ['ITEM NO. UNIT ITEM DESCRIPTION QUANTITY', '1 Boxes Metformin 
 expect(parseItemRow(['4 vials Ceftriaxone 1g powder', '5 vials Cefoxitin 1g powder', '6 vials Cefuroxime 750mg powder'], 1), { item_no: '5', quantity: undefined }, 'numbered row without quantity');
 // A lone row on its own (no numbering around it) keeps "<qty> <unit> <description>"
 expect(parseItemRow(['500 tablets Amlodipine 5mg'], 0), { quantity: 500 }, 'quantity first, no numbering');
+// A quantity-first list with repeated or close quantities is not numbering (PhilGEPS 13302304, 13288387)
+const QTY_LIST = ['500 tab Cetirizine 10 mg (as dihydrochloride)', '1 bot Cetirizine 2.5mg/ml (as dihydrochloride) drops in 10ml', '1 bot Cetirizine 10mg/ml (as dihydrochloride) drops in 10ml', '1 bot Cetirizine 1mg/ml solution in 30ml'];
+expect(parseItemRow(QTY_LIST, 2), { quantity: 1, unit: 'bot' }, 'repeated quantities');
+const QTY_LIST2 = ['25 box Cetirizen Dihydrochloride 10mg tablet 100s/box', '10 btl Cetirizen Dihydrochloride 10mg/ml drops, 10ml', '11 box Loratadine 10mg tablet, 100s/box', '25 box Mefanamic Acid 500mg'];
+expect(parseItemRow(QTY_LIST2, 1), { quantity: 10, unit: 'btl' }, 'two close quantities');
+// Numbered rows read normally keep their quantity (PS 106895, PS 107827, PhilGEPS 13277448, 13290623)
+const PS106895 = ['36 Erythropoietin Alfa 2,000IU/0.5ml PFS 500 pfs', '37 Erythropoietin Alfa 4,000IU/0.4ml PFS CPR & COD 1000 pfs', '38 Esomeprazole 40mg tablet 300 tablet'];
+expect(parseItemRow(PS106895, 1), { item_no: '37', quantity: 1000, unit: 'pfs' }, 'numbered row, quantity and unit at the end');
+const PG13277448 = ['21. 500 Ampule/Vial ENALAPRILAT 1.25 mg/mL', '22. 1,200 PFS ENOXAPARIN 100 mg/mL, 0.4 mL pre-filled syringe (as sodium salt)', '23. 300 Ampule/Vial EPINEPHRINE 1 mg/mL'];
+expect(parseItemRow(PG13277448, 1), { item_no: '22', quantity: 1200 }, 'Item | Quantity | Unit | Description');
+const PG13290623 = ['30 200 Vial Cefotaxime, 1 gm', '31 500 Vial Cefoxitin, 1 gm', '32 300 Vial Ceftazidime, 1 gm'];
+expect(parseItemRow(PG13290623, 1), { item_no: '31', quantity: 500, unit: 'Vial' }, 'strength unit "gm" is not the unit');
+// Unit before the quantity (PhilGEPS 13262985) and a price before the quantity (PhilGEPS 13271780)
+const PG13262985 = ['50 Tablet 1,000 Celecoxib 200mg', '51 Tablet 2,500 Cetirizine 10mg/tablet', '52 Tablet 500 Cinnarizine 25mg'];
+expect(parseItemRow(PG13262985, 1), { item_no: '51', quantity: 2500, unit: 'Tablet' }, 'Item | Unit | Quantity | Description');
+expect(parseItemRow(["1 092600000 Lapatinib 250mg tablet, bottle of 30’s 12,375.00 90 Bottle 1,113,750.00"], 0), { quantity: 90, unit_price: 12375, total: 1113750 }, 'price before quantity');
 // A quantity without its unit at the end of the line stays this row's
 expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "200MCG/1MG/ML NEBULE 30'S 40 BOX"], 0), { quantity: undefined }, 'bare quantity');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 20} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 27} rows).`);
