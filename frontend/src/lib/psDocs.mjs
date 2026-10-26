@@ -17,8 +17,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-16';
+// rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-17';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -194,9 +194,11 @@ function priceBeforeQuantity(line, parsed) {
   if (!end) return parsed;
   const total = num(end[2]);
   const prices = (end[1].match(/\d[\d,]*\.\d{2}/g) || []).map(num);
+  // A whole number, also with a dot between thousands (OCR's "7.826" for 7,826: "7.826 1050.00 ~ 8,217,300.00")
+  const whole = (s) => Number(s.replace(/[.,]/g, ''));
   for (const unitPrice of prices) {
-    const m = [...end[1].matchAll(/(?<![\d.,])(\d[\d,]*)(?![\d.,])(?:\s+([A-Za-z][A-Za-z/]*))?/g)].findLast((x) => adds(num(x[1]), unitPrice, total));
-    if (m) return { ...parsed, quantity: num(m[1]), unit: m[2] || parsed.unit, unit_price: unitPrice, total };
+    const m = [...end[1].matchAll(/(?<![\d.,])(\d{1,3}(?:[.,]\d{3})+|\d+)(?![\d.,])(?:\s+([A-Za-z][A-Za-z/]*))?/g)].findLast((x) => adds(whole(x[1]), unitPrice, total));
+    if (m) return { ...parsed, quantity: whole(m[1]), unit: m[2] || parsed.unit, unit_price: unitPrice, total };
   }
   return parsed;
 }
@@ -319,6 +321,23 @@ async function fileText(name, bytes) {
 }
 
 const letterCount = (text) => (text || '').replace(/\s/g, '').length;
+
+// A page's Quantity column read on its own is used only when it agrees with the rows' own quantities at least as
+// often as it disagrees (rows read with a quantity and an Item No. in the column); else it belongs to another
+// table or column (PhilGEPS 13295969: 11,028 against the row's own 7,826 × 1,050.00 = 8,217,300.00)
+function columnAgrees(lines, column) {
+  let agree = 0;
+  let disagree = 0;
+  lines.forEach((line, n) => {
+    if (!line) return;
+    const row = parseItemRow(lines, n);
+    const value = row.item_no != null && row.quantity != null ? column.get(Number(row.item_no)) : undefined;
+    if (value == null) return;
+    if (value === row.quantity) agree++;
+    else disagree++;
+  });
+  return agree >= disagree;
+}
 
 // A page's text without the Quantity column line lib/ocr.mjs adds ("@@quantity-column 31 1 220 20 ..."), and
 // that column as Item No. -> quantity (null when the page has none)
@@ -446,8 +465,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }) });
     const marked = pages.map(quantityColumnOf);
     texts.push(marked.map((m) => m.text).join('\n'));
-    marked.forEach(({ text: page, quantities }, i) => {
+    marked.forEach(({ text: page, quantities: column }, i) => {
       const lines = page.split('\n').map(clean);
+      const quantities = column && columnAgrees(lines, column) ? column : null;
       lines.forEach((line, n) => {
         // Our molecule on this line in one of our dosages (the dosage may be on the next two lines)
         const products = matchProducts.line(line, lines.slice(n + 1, n + 3).join('\n'));
@@ -461,7 +481,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
         const row = parseItemRow(lines, n);
         // The page's Quantity column read on its own (lib/ocr.mjs quantityColumn) gives the row's quantity by its
         // Item No., also when the column is shifted against the rows
-        const fromColumn = row.item_no != null ? quantities?.get(Number(row.item_no)) : undefined;
+        // A row whose own numbers add up (quantity × unit price = total) keeps its own quantity
+        const checked = row.unit_price != null && adds(row.quantity, row.unit_price, row.total);
+        const fromColumn = row.item_no != null && !checked ? quantities?.get(Number(row.item_no)) : undefined;
         if (fromColumn != null) {
           // The unit from the row itself ("60 vials Cefoxitin ..."), when its own reading had none
           const unit = row.unit || new RegExp(`^\\d{1,4}[.)]*\\s+(${KNOWN_UNIT_RE})\\s`, 'i').exec(row.written || line)?.[1];

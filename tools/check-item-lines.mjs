@@ -126,5 +126,7 @@ const PG13262985b = ['50 Celecoxib 200mg/cap 500 15', '51 Cetirizine 10mg/tablet
 expect(parseItemRow(PG13262985b, 1), { item_no: '51', quantity: 2500 }, 'quantity before the cost');
 // A quantity without its unit at the end of the line stays this row's
 expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "200MCG/1MG/ML NEBULE 30'S 40 BOX"], 0), { quantity: undefined }, 'bare quantity');
+// OCR's dot between thousands, checked by price x quantity = total (PhilGEPS 13295969: 7,826 x 1,050.00)
+expect(parseItemRow(["12 \\ bx Cetirizine Hydrochloride 10mg tab.100's . 7.826 1050.00 ~ 8,217,300.00"], 0), { quantity: 7826, unit_price: 1050, total: 8217300 }, 'dot between thousands');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 37} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 38} rows).`);
