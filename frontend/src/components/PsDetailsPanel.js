@@ -55,9 +55,9 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={agency || title}>
-      <button className="absolute inset-0 bg-black/20" aria-label="Close" tabIndex={-1} onClick={onClose} />
+      <button className="anim-backdrop absolute inset-0 bg-black/20" aria-label="Close" tabIndex={-1} onClick={onClose} />
       <div
-        className={`relative m-0 flex h-dvh w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} flex-col overflow-hidden bg-white shadow-2xl sm:m-3 sm:h-[calc(100dvh-1.5rem)] sm:rounded-2xl sm:border sm:border-[#E2E8F0]`}
+        className={`anim-drawer-right relative m-0 flex h-dvh w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} flex-col overflow-hidden bg-white shadow-2xl sm:m-3 sm:h-[calc(100dvh-1.5rem)] sm:rounded-2xl sm:border sm:border-[#E2E8F0]`}
       >
         {/* Header: "Notice #109036", the title, link and close */}
         <header className="flex items-start gap-3 border-b border-[#EEF1F5] px-5 py-4">

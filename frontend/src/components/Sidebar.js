@@ -202,8 +202,8 @@ export default function Sidebar({ user }) {
       {/* Phone menu */}
       {menuOpen && (
         <div className="md:hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Menu">
-          <button className="absolute inset-0 bg-black/30" aria-label="Close menu" tabIndex={-1} onClick={() => setMenuOpen(false)} />
-          <div className="relative h-dvh w-72 max-w-[85vw] overflow-y-auto border-r border-[#E2E8F0] bg-white shadow-2xl">
+          <button className="anim-backdrop absolute inset-0 bg-black/30" aria-label="Close menu" tabIndex={-1} onClick={() => setMenuOpen(false)} />
+          <div className="anim-drawer-left relative h-dvh w-72 max-w-[85vw] overflow-y-auto border-r border-[#E2E8F0] bg-white shadow-2xl">
             <button
               type="button"
               onClick={() => setMenuOpen(false)}

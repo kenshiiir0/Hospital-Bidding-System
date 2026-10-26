@@ -169,7 +169,7 @@ export function CustomSelect({ label, value, onChange, options, defaultValue = '
       {open && (
         <div
           className={`absolute left-0 z-50 min-w-[180px] max-w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[#E2E8F0] bg-white p-1.5 shadow-xl shadow-black/5 ${
-            up ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+            up ? 'anim-pop-up bottom-full mb-1.5' : 'anim-pop top-full mt-1.5'
           }`}
         >
           {searchable && (
@@ -398,7 +398,7 @@ export function DatePicker({ label, value, onChange, min, max, rangeStart, range
           tabIndex={-1}
           style={{ left: place.left, width: CALENDAR_WIDTH }}
           className={`absolute z-50 max-w-[calc(100vw-1.5rem)] rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl shadow-black/5 focus:outline-none ${
-            place.up ? 'bottom-full mb-2' : 'top-full mt-2'
+            place.up ? 'anim-pop-up bottom-full mb-2' : 'anim-pop top-full mt-2'
           }`}
         >
           {/* Month and year; the name opens the month / year chooser */}
@@ -749,7 +749,7 @@ function PopoverCard({ place, label, width, children }) {
       aria-label={label}
       style={{ width }}
       className={`absolute z-50 max-w-[calc(100vw-1.5rem)] rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl shadow-black/5 ${
-        place.up ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+        place.up ? 'anim-pop-up bottom-full mb-1.5' : 'anim-pop top-full mt-1.5'
       } ${place.alignRight ? 'right-0' : 'left-0'}`}
     >
       {children}

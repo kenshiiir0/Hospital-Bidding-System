@@ -36,3 +36,27 @@ input::-ms-clear {
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop, .modal-card { animation: none; }
 }
+
+/* Opening animations (shared): the View details drawer slides in from the right, the phone menu from the
+   left, their backdrops fade in; dropdowns, calendars and the date-range picker fade in while growing
+   slightly from the side they open on. Short, and still for anyone who prefers less motion. */
+@keyframes slide-in-right {
+  from { opacity: 0.4; transform: translateX(32px); }
+}
+@keyframes slide-in-left {
+  from { opacity: 0.4; transform: translateX(-32px); }
+}
+@keyframes pop-down {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+}
+@keyframes pop-up {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+}
+.anim-backdrop { animation: modal-fade 180ms ease-out; }
+.anim-drawer-right { animation: slide-in-right 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.anim-drawer-left { animation: slide-in-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.anim-pop { animation: pop-down 150ms ease-out; transform-origin: top; }
+.anim-pop-up { animation: pop-up 150ms ease-out; transform-origin: bottom; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-backdrop, .anim-drawer-right, .anim-drawer-left, .anim-pop, .anim-pop-up { animation: none; }
+}
