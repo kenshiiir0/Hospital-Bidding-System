@@ -37,7 +37,7 @@ export default function ScreenedPage() {
       { label: 'Source', tabs: true, options: Object.values(SOURCES), column: 'Source' },
       { label: 'Our product', valuesOf: (row) => row.item.tender?.products || [] },
       { label: 'Type', column: 'Type' },
-      { label: 'Hospital', column: 'Hospital' },
+      { label: 'Procuring Agency', column: 'Procuring Agency' },
       { label: 'Added by', column: 'Added by' },
     ],
     dates: [
@@ -119,7 +119,7 @@ export default function ScreenedPage() {
     { label: 'Reference', title: true, width: '8rem', nowrap: true, render: (r) => <span className="font-mono text-xs">{r.ref}</span> },
     { label: 'Type', width: '6rem', render: (r) => <TypeBadge type={r.tender?.type ? { code: r.tender.type, title: r.tender.type } : null} /> },
     {
-      label: 'Hospital',
+      label: 'Procuring Agency',
       wide: true,
       render: (r) => (
         <>
@@ -184,7 +184,7 @@ export default function ScreenedPage() {
         {error && <Notice tone="error">{error}</Notice>}
         {message.text && <Notice tone={message.tone}>{message.text}</Notice>}
 
-        <SearchPill value={search} onChange={setSearch} placeholder="Search reference no., title, hospital or molecule..." label="Search screened tenders" />
+        <SearchPill value={search} onChange={setSearch} placeholder="Search reference no., title, agency name or molecule..." label="Search screened tenders" />
         {filters.bar}
 
         <div ref={listTop} className="scroll-mt-20 space-y-4">
@@ -241,7 +241,7 @@ export default function ScreenedPage() {
   );
 }
 
-const LIST_HEADERS = ['Source', 'Type', 'Hospital', 'Added by', 'Publish Date', 'Closing Date', 'Added at', 'Screened Date'];
+const LIST_HEADERS = ['Source', 'Type', 'Procuring Agency', 'Added by', 'Publish Date', 'Closing Date', 'Added at', 'Screened Date'];
 
 // Rows (already newest day first) split into days: [{ day: '2026-10-24', items }]
 function groupByDay(rows) {

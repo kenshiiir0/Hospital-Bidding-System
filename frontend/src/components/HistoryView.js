@@ -396,7 +396,7 @@ export default function HistoryView({ site = 'philgeps' }) {
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
-                placeholder="Search by reference no., tender title, hospital name or molecule..."
+                placeholder="Search by reference no., tender title, agency name or molecule..."
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -443,7 +443,7 @@ export default function HistoryView({ site = 'philgeps' }) {
                     columns={[
                       { label: 'Reference No.', title: true, nowrap: true, render: (t) => <span className="font-mono text-xs">{t.ref_no}</span> },
                       { label: 'First Screened', render: (t) => <span className="text-xs text-black/62">{formatInstant(t.created_at) || '—'}</span> },
-                      { label: 'Hospital / Procuring Entity', wide: true, render: (t) => t.procuring_entity || t.title },
+                      { label: 'Procuring Agency', wide: true, render: (t) => t.procuring_entity || t.title },
                       {
                         label: 'Result',
                         wide: true,

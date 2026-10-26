@@ -376,7 +376,7 @@ export default function Home() {
         (payload) => {
           // Ignore tenders that don't mention our products
           if (!(payload.new.matched_molecules || []).length) return;
-          console.log('New hospital tender added:', payload.new);
+          console.log('New tender added:', payload.new);
           // Skip rows already loaded (e.g. by fetchBids after a manual scrape)
           setBids((prevBids) =>
             prevBids.some((bid) => bid.id === payload.new.id)
@@ -443,7 +443,7 @@ export default function Home() {
     for (const name of bid.matched_molecules || []) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
   }
 
-  // Search the reference number, tender title, procuring entity (hospital) and matched products,
+  // Search the reference number, tender title, procuring entity (agency) and matched products,
   // keep the published and closing date ranges and the chosen product, then the chosen sort
   const query = search.toLowerCase();
   const matchesSearchAndDates = (bid) => {

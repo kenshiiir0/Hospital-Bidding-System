@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Hospital Opportunity System",
-  description: "PhilGEPS Drugs and Medicines tenders for hospital bidding",
+  title: "Government Bidding System",
+  description: "PhilGEPS and PS-PhilGEPS tenders for government bidding",
 };
 
 export default function RootLayout({ children }) {

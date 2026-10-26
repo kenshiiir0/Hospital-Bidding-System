@@ -38,7 +38,8 @@ export function readAwardPage(html) {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The deployed dashboard's Award Notices page (asks to sign in first when needed)
-const DASHBOARD = 'https://hospital-bidding-automation.vercel.app';
+// The deployed dashboard (DASHBOARD_URL when the address changes, e.g. after renaming the Vercel project)
+const DASHBOARD = process.env.DASHBOARD_URL || 'https://hospital-bidding-automation.vercel.app';
 const dashboardUrl = () => {
   const host = process.env.DASHBOARD_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`) || DASHBOARD;
   return `${host.replace(/\/$/, '')}/ps-philgeps/awards`;
@@ -62,17 +63,17 @@ export function composeEmail({ award, lineItem, details, route }) {
   ].filter(([, v]) => v);
   const awardLink = `${HOST}/BidAwards/viewAwardNotice/${award}`;
   const dash = dashboardUrl();
-  const next = `Please sign in to the Hospital Bidding System and accept or refuse it (Award Notices → Accept / Refuse): ${dash}`;
-  const text = [greeting, '', intro, '', ...rows.map(([k, v]) => `${k}: ${v}`), '', next, `Award notice on PS-PhilGEPS: ${awardLink}`, '', 'Hospital Bidding System (automatic message)']
+  const next = `Please sign in to the Government Bidding System and accept or refuse it (Award Notices → Accept / Refuse): ${dash}`;
+  const text = [greeting, '', intro, '', ...rows.map(([k, v]) => `${k}: ${v}`), '', next, `Award notice on PS-PhilGEPS: ${awardLink}`, '', 'Government Bidding System (automatic message)']
     .join('\n')
     .replace(/\n{3,}/g, '\n\n');
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">
 <p>${esc(greeting)}</p><p>${esc(intro)}</p>
 <table style="border-collapse:collapse;margin:8px 0">${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#555">${esc(k)}</td><td style="padding:4px 0;font-weight:600">${esc(v)}</td></tr>`).join('')}</table>
-<p>Please sign in to the Hospital Bidding System and accept or refuse it (Award Notices → Accept / Refuse).</p>
-<table role="presentation" cellspacing="0" cellpadding="0" style="margin:16px 0"><tr><td style="border-radius:8px;background:#1EA0DA"><a href="${esc(dash)}" style="display:inline-block;padding:12px 24px;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px">Log in to Hospital Bidding System</a></td></tr></table>
+<p>Please sign in to the Government Bidding System and accept or refuse it (Award Notices → Accept / Refuse).</p>
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin:16px 0"><tr><td style="border-radius:8px;background:#1EA0DA"><a href="${esc(dash)}" style="display:inline-block;padding:12px 24px;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px">Log in to Government Bidding System</a></td></tr></table>
 <p style="font-size:13px"><a href="${esc(awardLink)}" style="color:#12769F">Open the award notice on PS-PhilGEPS</a></p>
-<p style="color:#888;font-size:12px">Hospital Bidding System (automatic message)</p></div>`;
+<p style="color:#888;font-size:12px">Government Bidding System (automatic message)</p></div>`;
   return { subject: `Award notice waiting for our answer: ${hospital} · ${lineItem} (No. ${award})`, text, html };
 }
 
@@ -84,7 +85,7 @@ async function send({ to, cc, subject, text, html }) {
     ? nodemailer.createTransport({ host: process.env.SMTP_HOST, port, secure: port === 465, auth })
     : nodemailer.createTransport({ service: 'gmail', auth });
   const who = (people) => people.map((p) => `"${p.name}" <${p.email}>`).join(', ');
-  const from = process.env.MAIL_FROM || `"Hospital Bidding System" <${process.env.SMTP_USER}>`;
+  const from = process.env.MAIL_FROM || `"Government Bidding System" <${process.env.SMTP_USER}>`;
   await transport.sendMail({ from, to: who(to), cc: cc.length ? who(cc) : undefined, subject, text, html });
 }
 

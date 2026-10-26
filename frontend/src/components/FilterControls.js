@@ -577,7 +577,7 @@ export function DateRangePill({ label, from, to, onFrom, onTo, className = '' })
 }
 
 /** Full-width search pill with a magnifier and a ✕ to clear. */
-export function SearchPill({ value, onChange, placeholder = 'Search reference no., title, hospital name or molecule...', label = 'Search', className = '' }) {
+export function SearchPill({ value, onChange, placeholder = 'Search reference no., title, agency name or molecule...', label = 'Search', className = '' }) {
   return (
     <div
       className={`flex min-w-[14rem] flex-1 items-center gap-2 rounded-xl border border-[#CBD5E1] bg-white px-4 py-2 transition hover:border-[#1EA0DA] focus-within:border-[#1EA0DA] focus-within:ring-2 focus-within:ring-[#1EA0DA]/20 ${className}`}
