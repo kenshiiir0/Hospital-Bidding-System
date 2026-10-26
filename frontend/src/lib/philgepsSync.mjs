@@ -49,8 +49,8 @@ const RECHECK_MS = 24 * 60 * 60 * 1000;
 // tender that doesn't name our products there gets its documents ordered and read too
 const DESCRIPTION_ITEMS_MIN = 1500;
 // Version of the document reading stored per tender (documents_read_key); a change reads them again
-// read-18: psDocs.mjs rules-20. read-17: psDocs.mjs rules-19. read-16: psDocs.mjs rules-18. read-15: psDocs.mjs rules-17. read-14: psDocs.mjs rules-16. read-13: psDocs.mjs rules-15. read-12: psDocs.mjs rules-14. read-11: psDocs.mjs rules-13. read-10: psDocs.mjs rules-12. read-9: psDocs.mjs rules-11. read-8: psDocs.mjs rules-10. read-7: row numbers no longer read as quantities (psDocs.mjs rules-9). read-6: misspelled names (lib/products.mjs)
-const READ_RULES = 'read-18';
+// read-19: psDocs.mjs rules-21. read-18: psDocs.mjs rules-20. read-17: psDocs.mjs rules-19. read-16: psDocs.mjs rules-18. read-15: psDocs.mjs rules-17. read-14: psDocs.mjs rules-16. read-13: psDocs.mjs rules-15. read-12: psDocs.mjs rules-14. read-11: psDocs.mjs rules-13. read-10: psDocs.mjs rules-12. read-9: psDocs.mjs rules-11. read-8: psDocs.mjs rules-10. read-7: row numbers no longer read as quantities (psDocs.mjs rules-9). read-6: misspelled names (lib/products.mjs)
+const READ_RULES = 'read-19';
 // Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;

@@ -143,7 +143,9 @@ export function strengthsOf(text) {
   const concentrations = [];
   for (const m of s.matchAll(AMOUNT)) {
     const a = norm(m[1], m[2]);
-    if (a) amounts.push(a);
+    // "250 mg/mL": 250 mg in each mL (also a concentration, below); not a volume to multiply by
+    const perUnit = new RegExp(`^\\s*\\/\\s*${UNITS}(?![a-z])`, 'i').test(s.slice(m.index + m[0].length));
+    if (a) amounts.push(perUnit ? { ...a, perUnit: true } : a);
   }
   for (const m of s.matchAll(PER_VOLUME)) {
     const a = norm(m[1], m[2]);
@@ -156,7 +158,7 @@ export function strengthsOf(text) {
     if (a && v && v.unit === 'ml' && a.unit !== 'ml') concentrations.push({ value: a.value / v.value, unit: `${a.unit}/ml` });
   }
   // A concentration and a volume elsewhere on the line: their product is the amount ("6mg/ml ... 50 ml")
-  const volumes = amounts.filter((a) => a.unit === 'ml');
+  const volumes = amounts.filter((a) => a.unit === 'ml' && !a.perUnit);
   for (const c of concentrations) for (const v of volumes) amounts.push({ value: c.value * v.value, unit: c.unit.split('/')[0], derived: true });
   const gauges = [...s.matchAll(GAUGE)].map((m) => Number(m[1] || m[2] || m[3]));
   return { amounts, concentrations, gauges };
@@ -201,7 +203,9 @@ export function buildMatcher(products) {
   for (const p of products) {
     const name = matchName(p.generic_name);
     if (!name) continue;
-    if (!byName.has(name)) byName.set(name, { name, dosages: [], nameOnly: false });
+    if (!byName.has(name)) byName.set(name, { name, dosages: [], nameOnly: false, generics: [] });
+    // The full generic names ("Bupivacaine Hydrochloride in dextrose"): a "+ Dextrose" in a tender is then part of it
+    byName.get(name).generics.push(String(p.generic_name || '').toLowerCase());
     const dosage = dosageOf(p);
     if (dosage) byName.get(name).dosages.push(dosage);
     else byName.get(name).nameOnly = true;
@@ -259,11 +263,39 @@ export function buildMatcher(products) {
     return last.found;
   };
 
+  // The part of a tender text that is about this product: from its name on, up to the next ingredient ("Vit E:
+  // 4mg, Folic Acid: 65mcg, Niacin: 5mg" -> "Folic Acid: 65mcg"; "Ferrous sulfate 300mg + Folic Acid 400mcg"
+  // -> "Folic Acid 400mcg"), so another ingredient's dosage never counts (user, 2026-10-26: only the exact
+  // dosage we offer). A misspelled name (no exact place) keeps the whole text.
+  const ownPart = (entry, text) => {
+    let at = -1;
+    for (const parts of entry.alternatives) {
+      const m = parts[0].exec(text);
+      if (m && (at < 0 || m.index < at)) at = m.index;
+    }
+    if (at < 0) return text;
+    const rest = text.slice(at);
+    // Ends at another ingredient ("+ Folic Acid", ", Niacin: ...") or at the next numbered row (not a strength on the
+    // next line: "3 Paclitaxel" / "300 mg/50 ml vial"). Not at a route or form label (", Inj: 10mg/ml"), nor at a
+    // "+ partner" that is part of our product's own name ("Bupivacaine + Dextrose" for "Bupivacaine ... in dextrose")
+    const nextRow = String.raw`\n(?=\s*\d+[.)]?\s+(?!(?:mcg|µg|ug|mg|grams?|gm|g|iu|units?|u|mcl|µl|ml|cc|l|%)\b)[A-Za-z])`;
+    // Any case ("Inj:", "ORAL:"): each letter as [xX]
+    const anyCase = (word) => [...word].map((c) => `[${c}${c.toUpperCase()}]`).join('');
+    const label = `(?:${['injection', 'inj', 'oral', 'iv', 'im', 'sc', 'route', 'form', 'dosage', 'tablet', 'tab', 'capsule', 'cap', 'syrup', 'solution', 'suspension', 'for'].map(anyCase).join('|')})\\b`;
+    const ingredient = String.raw`[,;]\s*(?!${label})[A-Z][A-Za-z .]{1,30}:`;
+    const boundary = new RegExp(entry.name.includes('+') ? `${ingredient}|${nextRow}` : String.raw`\s\+\s*([A-Za-z]+)|${ingredient}|${nextRow}`, 'g');
+    const after = rest.slice(entry.name.length);
+    for (const m of after.matchAll(boundary)) {
+      if (m[1] && entry.generics.some((g) => g.includes(m[1].toLowerCase()))) continue;
+      return rest.slice(0, entry.name.length + m.index);
+    }
+    return rest;
+  };
   const line = (text, next = '') => {
     if (!text) return [];
     const window = `${text}\n${next}`;
     return names(text)
-      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, window)))
+      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window))))
       .map((p) => p.name);
   };
   const details = (text) => {

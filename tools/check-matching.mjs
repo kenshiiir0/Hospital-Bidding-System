@@ -29,6 +29,10 @@ const products = [
   P('Epoetin Alfa', '4000 IU/0.4 ml'),
   P('Sugammadex', '100 mg/ml (200 mg/2 ml)'),
   P('Intravenous Infusion Set', '-', '-'),
+  P('Amikacin', '250 mg/ml (500 mg/2 ml)'),
+  P('Folic acid (Vitamin B9)', '5 mg'),
+  P('Cetirizine', '10 mg'),
+  P('Propofol', '10 mg/ml (200 mg/20 ml)'),
 ];
 const match = buildMatcher(products);
 
@@ -60,8 +64,20 @@ const MUST_MATCH = [
   ['Paclitaxol 300 mg/50 ml vial', 'Paclitaxel'],
   ['Amlodipine5mg tablet', 'Amlodipine'],
   ['Amlo dipine 10 mg tablet', 'Amlodipine'],
+  // Exactly our dosage (user, 2026-10-26)
+  ['7. Amikacin 250mg/ml, 2ml 1,500', 'Amikacin'],
+  ['Amikacin 500 mg/2 mL vial', 'Amikacin'],
+  ['Folic Acid 5 mg tablet', 'Folic Acid'],
+  ['Cetirizine 10 mg tablet', 'Cetirizine'],
+  // A route label is not another ingredient; "+ Dextrose" is part of our Bupivacaine in dextrose
+  ['6 Propofol, Inj: 10mg/ml, 20ml 120 amps 390.00 46,800.00', 'Propofol'],
+  ['22 Cefazolin, Inj: 1g 400 vials 45.00 18,000.00', 'Cefazolin'],
+  ['31 Bupivacaine + Dextrose 0.5% + 8%, 4 mL Solution for Injection Amp', 'Bupivacaine'],
 ];
 const MUST_NOT_MATCH = [
+  // Only the exact dosage we offer (user, 2026-10-26): another ingredient's dosage on the line doesn't count
+  ['E: 4mg, Folic Acid: 65mcg, Niacin: 5mg', "Niacin's 5 mg is not Folic Acid's"],
+  ['Ferrous sulfate 5 mg + Folic Acid 400 mcg tablet', "the iron's 5 mg is not Folic Acid's"],
   ['Amlodipine 2.5 mg tablet', 'a strength we do not sell'],
   ['Paclitaxel 6 mg/ml? no: Paclitaxel 3 mg/ml', 'another concentration'],
   ['Heparin 1,000 IU/mL 10 mL', 'another concentration (only 5000 IU/ml in this test list)'],
