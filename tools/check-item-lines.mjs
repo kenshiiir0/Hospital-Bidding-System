@@ -168,4 +168,12 @@ expect(parseItemRow(WRONG_HEADER, 2), { quantity: 1500, unit_price: 65, total: u
 // "QTY UNIT ESTIMATED BUDGET": the amount is the total (PhilGEPS 13300226)
 expect(parseItemRow(['Item Number Description QTY UNIT ESTIMATED BUDGET', '18 Cetirizine 10mg tablet 3000 pcs 2,100.00'], 1), { item_no: '18', quantity: 3000, unit: 'pcs', total: 2100 }, 'header: Description | Qty | Unit | Estimated Budget');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 55} rows).`);
+// Several rows on one line under a header: the first row's quantity (PhilGEPS 13296768)
+const PG13296768 = ['Item Description Qty Unit Price', 'Cetirizine 10 mg 500 Tablets', 'Cinnarizine 25 mg 3000 Tablets', 'Epinephrine 1mg/ml, 1ml 100 Ampules'];
+expect(parseItemRow(PG13296768, 1), { quantity: 500 }, 'header: rows under it not joined into one');
+// The row's Item No. and Unit on the line above (PhilGEPS 13303642: 180 @ 99.78, not 1)
+expect(parseItemRow(['Item No. Unit Description Quantity Unit Cost', '1 Ampule', 'or Vial Rocuronium Br 10Mg/Ml-5Ml Iv 180 99.78'], 2), { item_no: '1', quantity: 180, unit_price: 99.78 }, 'Item No. and Unit on the line above');
+// "<qty> <unit>" above, under a header with the Quantity after the Description: the row before's (PhilGEPS 13283536)
+expect(parseItemRow(['Item Description Quantity Unit', '7 Cefuroxime 500 mg tablet x 100', '144 bottles', '8 Cetirizine 10 mg tablet x'], 3), { quantity: undefined }, 'quantity above under a Description-first header');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 58} rows).`);

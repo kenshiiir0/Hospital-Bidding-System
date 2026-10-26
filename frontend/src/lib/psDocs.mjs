@@ -17,8 +17,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-19';
+// rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-20';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -232,6 +232,9 @@ function byHeader(lines, n) {
     }
     out.description = tokens.join(' ');
     if (out.quantity == null || !/[A-Za-z]/.test(out.description)) return null;
+    // Several rows on one line ("Cetirizine 10 mg 500 Tablets Cinnarizine 25 mg 3000 Tablets Epinephrine ... 100
+    // Ampules"): a quantity and unit inside the description with more words after them; the row rules read it
+    if (new RegExp(`(?<![\\d.,])\\d[\\d,]*\\s+${KNOWN_UNIT_RE}\\s+[A-Za-z]{4,}`, 'i').test(out.description)) return null;
     // One amount in a column it can't be (the nearest header belongs to another table): a "total" under ₱0.10 a
     // unit is the unit price ("Amikacin ... 1,500 65.00"), a large "unit price" on a sizeable quantity the total
     if (out.total != null && out.unit_price == null && out.total / out.quantity < MIN_UNIT_PRICE) [out.unit_price, out.total] = [out.total, undefined];
@@ -258,6 +261,14 @@ function quantityAbove(lines, n, parsed) {
   if (parsed.quantity != null) return parsed;
   const above = QTY_UNIT_LINE.exec(lines[n - 1] || '');
   if (!above) return parsed;
+  // "<Item No.> <Unit>" above a row ending in "<qty> <unit price>": the row's start broken onto the line above
+  // ("1 Ampule" / "or Vial Rocuronium Br 10Mg/Ml-5Ml Iv 180 99.78", PhilGEPS 13303642)
+  const ends = /(?<![\d.,])(\d[\d,]*)\s+(\d[\d,]*\.\d{2})$/.exec(lines[n]);
+  if (ends) return { ...parsed, item_no: above[1], unit: above[2], quantity: num(ends[1]), unit_price: num(ends[2]) };
+  // Only under a header that puts the Quantity before the Description: elsewhere "<qty> <unit>" above is the end
+  // of the row before (PhilGEPS 13283536)
+  const columns = headerFor(lines, n);
+  if (!columns || columns.indexOf('quantity') > columns.indexOf('description')) return parsed;
   let unitPrice;
   for (const line of lines.slice(n, n + 3)) {
     if (line !== lines[n] && QTY_UNIT_LINE.test(line)) break;
@@ -578,6 +589,23 @@ export const documentsKey = (notice, listKey = '') => `${RULES_VERSION}|${listKe
 
 function readTender(supabase, matchProducts, notice, options) {
   return readDocuments(supabase, BUCKET, notice.documents, matchProducts, options);
+}
+
+/** For checking the readings (tools, never the Syncs): a file's pages as readDocuments reads them (text layer,
+ * scanned pages from the OCR cache only — nothing new is read or saved), each page's lines, and per line the two
+ * readings before the Quantity column: { pages: [{ lines, quantities }] } */
+export async function documentPages(supabase, bucket, doc) {
+  const { data: blob, error } = await supabase.storage.from(bucket).download(doc.path);
+  if (error) throw new Error(`${doc.name}: ${error.message}`);
+  let { pages, pdf } = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer()));
+  if (pdf) ({ pages } = await withOcr({ storage: { from: (b) => ({ download: (p) => supabase.storage.from(b).download(p), upload: async () => ({}) }) } }, bucket, doc, pdf, pages, 0));
+  return { pages: pages.map(quantityColumnOf).map(({ text, quantities }) => ({ lines: text.split('\n').map(clean), quantities })) };
+}
+
+/** The two readings of a row, for checking: by its table's header (null without one) and by the row rules */
+export function rowReadings(rawLines, n) {
+  const lines = rawLines.map(withoutRules);
+  return { byHeader: byHeader(lines, n), byRows: quantityAbove(lines, n, rowColumns(lines, n)) };
 }
 
 // Reads a tender's files ([{ name, path }] in Storage bucket `bucket`; also used by the PhilGEPS Sync,
