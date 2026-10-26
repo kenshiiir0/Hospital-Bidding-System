@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-15';
+// rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-16';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -98,6 +98,8 @@ const leadingNumber = (line) => {
   const m = LEADING_NUMBER.exec(line || '');
   return m ? Number(m[1]) : null;
 };
+// A line that goes on with a strength's unit ("g Vial ...", "IU/Ml Solution ...", "mL Solution for Injection")
+const STRENGTH_UNIT_START = /^\W*(?:mg|mcg|µg|g|gm|grams?|ml|l|iu|units?|%)\b/i;
 // How far up and down to look for the rows numbered just before and after
 const NUMBERING_REACH = 3;
 
@@ -138,7 +140,9 @@ export function parseItemRow(rawLines, n) {
     // Item | Description | Quantity with no unit: the bare number ending the row ("28 Cetirizine 10mg/tablet X 100
     // 340"), not a pack size; of two, the first ("51 Cetirizine 10mg/tablet 2,500 10": Quantity, then Estimated
     // Cost per Item)
-    const bare = columns.quantity == null && /(?<![x×/]\s?)(?<=\s)(\d[\d,]*)(?:\s+\d[\d,]*)?$/i.exec(rest);
+    // Not when the next line starts with a strength's unit: "69 Cefepime hydrochloride 1" / "g Vial ..." is 1 g
+    const strengthGoesOn = text === lines[n] && STRENGTH_UNIT_START.test(lines[n + 1] || '');
+    const bare = columns.quantity == null && !strengthGoesOn && /(?<![x×/]\s?)(?<=\s)(\d[\d,]*)(?:\s+\d[\d,]*)?$/i.exec(rest);
     const found = bare ? { description: rest.slice(0, bare.index).trim(), quantity: num(bare[1]) } : columns;
     return { ...found, item_no: String(itemNo), written: text };
   };

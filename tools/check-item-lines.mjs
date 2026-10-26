@@ -113,10 +113,18 @@ expect(parseItemRow(PG13277448b, 1), { item_no: '3', quantity: 200, unit: 'Ampul
 // Quantity at the end of a numbered row after a pack size (PhilGEPS 13264900)
 const PG13264900 = ['27 Cefuroxime 500mg/tablet X 100 200', '28 Cetirizine 10mg/tablet X 100 340', '29 Ciprofloxacin 500mg/tablet X 100 100'];
 expect(parseItemRow(PG13264900, 1), { item_no: '28', quantity: 340 }, 'quantity after a pack size');
+// A strength split over lines is not a quantity (PS 102904 "1" / "g", PS 105627 "4000" / "IU/Ml", PhilGEPS
+// 13277104 "4" / "mL")
+const PS102904 = ['68 Cefazolin sodium 1 g Vial 100 20,000.00', '69 Cefepime hydrochloride 1', 'g Vial 50 15,000.00', '70 Cefepime hydrochloride 500mg 1,000 500,000.00'];
+expect(parseItemRow(PS102904, 1), { item_no: '69', quantity: undefined }, '"1" / "g": a strength');
+const PG13277104 = ['30 Bupivacaine 0.5%, 10 mL Amp 100', '31 Bupivacaine + Dextrose 0.5% + 8%, 4', 'mL Solution for Injection Amp', '32 Butamirate 50 mg Modified Release'];
+expect(parseItemRow(PG13277104, 1), { item_no: '31', quantity: undefined }, '"4" / "mL": a strength');
+// A bare quantity checked by price x quantity = total stays (PS 99596)
+expect(parseItemRow(['22 4870 bottle 55.36 269,603.20 Cetirizine 2.5mg/ml', '23 96986 tablet 8.00 775,888.00 Cetirizine 10mg tablet', '24 4870 bottle 55.36 269,603.20 Cetirizine drops'], 1), { quantity: 96986 }, 'quantity checked by its total');
 // Item | Description | Quantity | Estimated Cost per Item (PhilGEPS 13262985): the quantity, not the cost
 const PG13262985b = ['50 Celecoxib 200mg/cap 500 15', '51 Cetirizine 10mg/tablet 2,500 10', '52 Cetirizine 1mg/ml 60ml 500 100'];
 expect(parseItemRow(PG13262985b, 1), { item_no: '51', quantity: 2500 }, 'quantity before the cost');
 // A quantity without its unit at the end of the line stays this row's
 expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "200MCG/1MG/ML NEBULE 30'S 40 BOX"], 0), { quantity: undefined }, 'bare quantity');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 34} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 37} rows).`);
