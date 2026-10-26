@@ -63,7 +63,13 @@ expect(parseItemRow(['12 cetirizine tablet 10mg (as', 'dihydrochloride) 40 box',
 expect(parseItemRow(['42 Cefoxitin 1 g Powder for Injection', 'Vial 100 vials', '43 Ceftaxidime (Ceftazidime) 1 g'], 0), { quantity: 100 }, 'unit and quantity on the next line');
 // The next row's quantity line is not taken ("5,000 tablet" / "10 30,000 Tablet" start rows)
 expect(parseItemRow(['Filgrastim 300 mcg/0.5 mL solution for injection', 'in pre-filled syringe (IV, SC) 1,500.00', '5,000 tablet'], 0), { quantity: undefined }, 'next row quantity');
+// OCR'd scans (PS 111619, Biñan City Hospital): a smudged next row, a two-word unit, table rules left in, a lone ","
+const SCAN = ["14 boxes Cetirizine 10mg Tablet 100's 10", "© 1s boxes Cefuroxime 500mg 10's 3570", "16 box Cinnarizine 25mg Tablet 100's 10"];
+expect(parseItemRow(SCAN, 0), { item_no: '14', quantity: 10 }, 'smudged next row');
+expect(parseItemRow(['97 prefilled syringe Enoxaparin 100mg/ml ,0.4ml 50', '98 prefilled syringe Enoxaparin 100mg/mL 0.6m 60'], 0), { quantity: 50, unit: 'prefilled syringe' }, 'two-word unit');
+expect(parseItemRow(['| 75 | vials | Propofol 10mg/ml,20ml | 420 |'], 0), { item_no: '75', quantity: 420, unit: 'vials' }, 'table rules');
+expect(parseItemRow(['59 vials Cefuroxime 750mg powder for Inj. 500 |', '| 60 | vials] Cefoxitin 1g powder forv In], I.'], 1), { item_no: '60', quantity: undefined }, 'no quantity on the row');
 // A quantity without its unit at the end of the line stays this row's
 expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "200MCG/1MG/ML NEBULE 30'S 40 BOX"], 0), { quantity: undefined }, 'bare quantity');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 10} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 14} rows).`);

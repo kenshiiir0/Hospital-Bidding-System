@@ -15,7 +15,11 @@ export function admin() {
 
 // Scanned documents of a reading: tried = the current OCR (tesseract) already ran and found no readable text.
 // One an older OCR found nothing in counts as waiting: the current one reads more (OCR_VERSION in ocr.mjs).
-const scannedIn = (read) => (read || []).filter((d) => d.kind === 'scanned').map((d) => ({ name: d.name, tried: d.ocr === OCR_VERSION }));
+// So does one an older OCR read (ocr_pages, kind 'text'): the current one reads it better.
+const scannedIn = (read) =>
+  (read || [])
+    .filter((d) => d.kind === 'scanned' || (d.ocr_pages && d.ocr !== OCR_VERSION))
+    .map((d) => ({ name: d.name, tried: d.kind === 'scanned' && d.ocr === OCR_VERSION }));
 
 // [{ side: 'ps' | 'philgeps', ref, bucket, doc: { name, path, size }, since, tried }] oldest first.
 // Without includeTried only the documents OCR hasn't run on yet (what the dashboard counts as waiting).
@@ -40,7 +44,7 @@ export async function scannedWaiting(supabase, { includeTried = false } = {}) {
   const { data: rows } = await supabase
     .from('philgeps_opportunities')
     .select('ref_no, details->documents, details->documents_read, details->documents_checked_at')
-    .contains('details', { documents_read: [{ kind: 'scanned' }] });
+    .not('details->documents_read', 'is', null);
   for (const o of rows || []) {
     for (const { name, tried } of scannedIn(o.documents_read)) {
       if (tried && !includeTried) continue;

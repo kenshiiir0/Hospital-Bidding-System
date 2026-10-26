@@ -116,12 +116,30 @@ function collapseRepeats(text) {
   return s;
 }
 
+// A line as the document gives it, without the table rules a scan's OCR left in ("| 60 | vials | Cefoxitin ... |")
+export const asWritten = (text) => String(text || '').replace(/\s*[|[\]]+\s*/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Unit words a table puts in front of the product ("vials", "boxes", "prefilled syringe")
+const UNIT_WORDS = /\b(?:pre-?\s?filled|syringes?|bottles?|btls?|boxes|box|bxs?|vials?|tabs?|tablets?|caps?|capsules?|amps?|ampules?|ampoules?|pcs|pieces|sachets?|tubes?|packs?|units?|each)\b/gi;
+
 // The Molecule cell keeps the product as the team writes it (molecule, strength, form: "Cefazolin 1g vial"):
 // item codes, pack sizes, quantities, prices and requirements written after the product are dropped,
 // e.g. "DM290. Cefazolin Sodium Salt 1g Vial with up to date local assay among..." -> "Cefazolin Sodium Salt 1g Vial"
-export function moleculeText(text) {
-  const original = String(text || '').replace(/\s+/g, ' ').trim();
+// names: our products the line names (item.our_products / item.products): the Molecule cell starts at the first
+// one, so what a scan's table put before it goes ("60 | vas] Cefoxitin 1g ...", "SET a Loratadine 10mg ...") —
+// unless that is part of the product ("Ferrous sulfate + Folic Acid", "Sodium Bicarbonate ...").
+export function moleculeText(text, names = []) {
+  // Table rules a scan's OCR left in ("|", "[", "]") are never part of the product
+  const original = String(text || '').replace(/\s*[|[\]]+\s*/g, ' ').replace(/\s+/g, ' ').trim();
   let s = original;
+  const starts = names
+    .map((name) => new RegExp(`\\b${name.slice(0, 5).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').exec(s)?.index ?? -1)
+    .filter((i) => i > 0);
+  if (starts.length) {
+    const before = s.slice(0, Math.min(...starts));
+    const words = before.replace(UNIT_WORDS, ' ').match(/[A-Za-z]{4,}/g) || [];
+    if (!/\+/.test(before) && !words.length) s = s.slice(Math.min(...starts));
+  }
   // Table debris from documents: a leading "|", quote marks, ", -" before a strength ("VANCOMYCIN , -1g")
   s = s.replace(/^[|"'“”‘’\s]+|["'“”‘’\s]+$/g, '').replace(/\s*,\s*-\s*(?=\d)/g, ' ');
   // A line read twice from a table ("Cetirizine 10mg tab / Cetirizine 10mg tab / 103 Box"): keep the first part
@@ -166,7 +184,7 @@ export function moleculeText(text) {
 // One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total], as the team writes them in the original
 // sheet: "AMIKACIN 500MG/2ML" | "20 amp" | 88.78 | 5000 (no item numbers; prices as numbers)
 function itemRow(item) {
-  const text = moleculeText(item.description || item.line);
+  const text = moleculeText(item.description || item.line, item.our_products || item.products);
   if (item.quantity == null && item.unit_price == null) return [text, '', null, null];
   const qty = item.quantity != null ? `${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
   const total = item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null);

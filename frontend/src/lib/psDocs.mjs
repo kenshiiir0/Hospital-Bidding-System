@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-9';
+// rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-10';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -28,12 +28,12 @@ const OCR_MAX_MS = 90 * 1000; // OCR time per readDocuments call when the caller
 // by OCR retried every 5 minutes) it runs only with the setting OCR_ON_SERVER=on; on a team computer always.
 // Pages OCR'd before stay in use from the cache.
 export const OCR_ENABLED = !process.env.VERCEL || process.env.OCR_ON_SERVER === 'on';
-const OCR_MAX_PAGES = 40; // pages per document; a longer scan is read up to here
+// Pages per document; a longer scan is read up to here (40 cut the item lists of 90- to 180-page bidding
+// documents, whose schedule of requirements is near the end)
+const OCR_MAX_PAGES = 250;
 // OCR text is kept in the same bucket under _ocr/<document path>.json (per page), so a re-read (e.g. after a
 // product list change) or a reading cut short by time doesn't OCR the same pages again
 const ocrCachePath = (doc) => `_ocr/${doc.path}.json`;
-// Pages an older OCR read with at least this many letters are kept when the OCR version changes
-const OCR_KEEP_LETTERS = 40;
 
 function admin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -57,15 +57,15 @@ const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
 const adds = (quantity, unitPrice, total) => quantity > 0 && Math.abs(quantity * unitPrice - total) <= total * 0.01;
 
 // Units a quantity is counted in, for the layouts with no fixed column order
-const KNOWN_UNIT_RE = String.raw`(?:tab|tablet|cap|capsule|bottle|btl|botl|bot|vial|vl|amp|ampule|ampoule|box|bx|pc|piece|pack|sachet|tube|inhaler|nebule|syringe|bag|kit|set|unit|each|ea)(?:e?s)?\.?(?:\s?\/\s?(?:vial|amp|bottle|bot)s?)?`;
+const KNOWN_UNIT_RE = String.raw`(?:pre-?\s?filled\s+)?(?:tab|tablet|cap|capsule|bottle|btl|botl|bot|vial|vl|amp|ampule|ampoule|box|bx|pc|piece|pack|sachet|tube|inhaler|nebule|syringe|bag|kit|set|unit|each|ea)(?:e?s)?\.?(?:\s?\/\s?(?:vial|amp|bottle|bot)s?)?`;
 
 // A line that starts a new table row: a number, then a word or another number ("26 bottle ...", "DM14 Amikacin
 // ...", "5,000 tablet", "10 30,000 Tablet"); not a row's continuation such as "10mg Tablet 100's 250" or a lone
-// quantity
-const ROW_START = /^[A-Z]{0,4}-?\d[\d,]*[.)]*\s+[\dA-Za-z]/;
-const LONE_NUMBER = /^[\d,]+$/;
+// quantity. Also a row whose number OCR smudged ("© 1s boxes Cefuroxime ..."): a short word, then a unit.
+const ROW_START = new RegExp(String.raw`^(?:[A-Z]{0,4}-?\d[\d,]*[.)]*\s+[\dA-Za-z]|\W*\S{1,3}\s+${KNOWN_UNIT_RE}\s)`, 'i');
+const LONE_NUMBER = /^\d[\d,]*$/;
 // Ends in a bare number (a quantity column without its unit), not a pack size such as "x 100" or "/100"
-const ENDS_IN_NUMBER = /(?<![x×/]\s?)(?<=\s)[\d,]+$/i;
+const ENDS_IN_NUMBER = /(?<![x×/]\s?)(?<=\s)\d[\d,]*$/i;
 // "<row no.> <unit> ...": the row number is followed by the unit, so the quantity is the row's last number
 const ROW_NO_UNIT = new RegExp(`^\\d{1,3}[.)]*\\s+${KNOWN_UNIT_RE}\\s`, 'i');
 
@@ -87,18 +87,30 @@ export function rowText(lines, n) {
   return row;
 }
 
+// A table's rules OCR left in a line ("| 60 | vials] Cefoxitin ... |", "4m| 800") are not text
+const withoutRules = (line) => (line || '').replace(/\s*[|[\]]+\s*/g, ' ').trim();
+
 /** The columns of the table row starting on lines[n], also when the row is broken over lines (the text layer or
  * OCR puts the description's end and the quantity on the next lines). A line's own reading stays when it is
  * priced (quantity × unit price gives its total) or already has its quantity (the next lines are another row). */
-export function parseItemRow(lines, n) {
+export function parseItemRow(rawLines, n) {
+  const lines = rawLines.map(withoutRules);
   const own = parseItemLine(lines[n]);
   if (own.unit_price != null) return own;
   // "<row no.> <unit> <description> <qty>": its own reading takes the row number as the quantity
   if (!ROW_NO_UNIT.test(lines[n]) && (own.quantity != null || ENDS_IN_NUMBER.test(lines[n]))) return own;
   const row = rowText(lines, n);
-  if (row === lines[n]) return own;
-  const whole = parseItemLine(row);
-  return whole.quantity != null ? whole : own;
+  const whole = row === lines[n] ? {} : parseItemLine(row);
+  const parsed = whole.quantity != null ? whole : own;
+  // Still read as "<qty> <unit> <description>" while the rows around start with the numbers before and after
+  // its first one ("59 vials ..." / "60 vials Cefoxitin 1g powder for Inj." / "61 ..."): that is the row's
+  // number, and the row shows no quantity
+  const first = Number(/^(\d{1,3})\s/.exec(lines[n])?.[1]);
+  const startsWith = (line, k) => Number(/^(\d{1,3})[.)]*\s/.exec(line || '')?.[1]) === k;
+  if (parsed.item_no == null && parsed.quantity === first && (startsWith(lines[n - 1], first - 1) || startsWith(lines[n + 1], first + 1))) {
+    return { ...parsed, item_no: String(first), quantity: undefined };
+  }
+  return parsed;
 }
 
 export function parseItemLine(fullLine) {
@@ -130,7 +142,8 @@ function parseItemColumns(line) {
   // Item numbers may carry a letter code, e.g. "DM14"
   const ITEM = String.raw`([A-Z]{0,4}-?\d+)[.)]*`;
   const UNIT = String.raw`([A-Za-z][A-Za-z.'’]*)`;
-  const QTY = String.raw`([\d,]+(?:\.\d+)?)`;
+  // A quantity starts with a digit (a lone "," left by OCR is not one)
+  const QTY = String.raw`(\d[\d,]*(?:\.\d+)?)`;
   const PRICE = String.raw`([\d,]+\.\d{2})`;
   // Item | Quantity | Unit | Description | Unit Price | Total
   const priced = new RegExp(`^${ITEM}\\s+${QTY}\\s+${UNIT}\\s+(.+?)\\s+${PRICE}\\s+${PRICE}$`).exec(line);
@@ -139,19 +152,19 @@ function parseItemColumns(line) {
   const qtyFirst = new RegExp(`^${ITEM}\\s+${QTY}\\s+${UNIT}\\s+(.+)$`).exec(line);
   if (qtyFirst) return { item_no: qtyFirst[1], quantity: num(qtyFirst[2]), unit: qtyFirst[3], description: qtyFirst[4] };
   // Item | Description | Quantity | Unit, e.g. "9 MIDAZOLAM 5MG/ML AMPULE 10’S 40 BX"
-  const qtyLast = new RegExp(`^${ITEM}\\s+(.+?)\\s+([\\d,]+)\\s+(?!(?:mg|ml|mcg|g|kg|l|iu|units?|%)\\.?$)([A-Za-z]{1,12}\\.?)$`, 'i').exec(line);
+  const qtyLast = new RegExp(`^${ITEM}\\s+(.+?)\\s+(\\d[\\d,]*)\\s+(?!(?:mg|ml|mcg|g|kg|l|iu|units?|%)\\.?$)([A-Za-z]{1,12}\\.?)$`, 'i').exec(line);
   if (qtyLast) return { item_no: qtyLast[1], description: qtyLast[2], quantity: num(qtyLast[3]), unit: qtyLast[4] };
   // The remaining layouts have no fixed column order, so their unit must be a known one
   const KNOWN_UNIT = `(${KNOWN_UNIT_RE})`;
   // Item | Unit | Description | Quantity, e.g. "40 box Loratidine 10 mg Tablet 100's 150": the first number is the
   // row's number, the last one the quantity (not a pack size such as "x 100")
-  const unitFirst = new RegExp(`^(\\d{1,3})[.)]*\\s+${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+([\\d,]+)$`, 'i').exec(line);
+  const unitFirst = new RegExp(`^(\\d{1,3})[.)]*\\s+${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
   if (unitFirst) return { item_no: unitFirst[1], unit: unitFirst[2], description: unitFirst[3], quantity: num(unitFirst[4]) };
   const descPriced = new RegExp(`^${ITEM}\\s+(.+?)\\s+${QTY}\\s+${KNOWN_UNIT}\\s+${PRICE}\\s+${PRICE}$`, 'i').exec(line);
   if (descPriced) return { item_no: descPriced[1], description: descPriced[2], quantity: num(descPriced[3]), unit: descPriced[4], unit_price: num(descPriced[5]), total: num(descPriced[6]) };
   const noItem = new RegExp(`^${QTY}\\s+${KNOWN_UNIT}\\s+(.+)$`, 'i').exec(line);
   if (noItem) return { quantity: num(noItem[1]), unit: noItem[2], description: noItem[3] };
-  const descNoItem = new RegExp(`^(.*[A-Za-z].*?)\\s+([\\d,]+)\\s+${KNOWN_UNIT}$`, 'i').exec(line);
+  const descNoItem = new RegExp(`^(.*[A-Za-z].*?)\\s+(\\d[\\d,]*)\\s+${KNOWN_UNIT}$`, 'i').exec(line);
   if (descNoItem) return { description: descNoItem[1], quantity: num(descNoItem[2]), unit: descNoItem[3] };
   return {};
 }
@@ -237,20 +250,26 @@ async function fileText(name, bytes) {
 const letterCount = (text) => (text || '').replace(/\s/g, '').length;
 
 // Replaces the PDF's pages that have too little text with their OCR text (cached in Storage). Returns
-// { pages, ocrPages: how many pages came from OCR, complete: false when time ran out first, error: OCR failed }
+// { pages, ocrPages: how many pages came from OCR, version: the OCR version that read them, complete: false when
+// time ran out first, error: OCR failed }
 async function withOcr(supabase, bucket, doc, pdf, pages, until) {
   const scanned = pages.map((p, i) => (letterCount(p) < TEXT_PAGE_MIN_CHARS ? i + 1 : null)).filter(Boolean).slice(0, OCR_MAX_PAGES);
   if (!scanned.length) return { pages, ocrPages: 0, complete: true };
   let cached = {};
+  // The OCR version of the cached pages in use
+  let version = OCR_VERSION;
   const { data: blob } = await supabase.storage.from(bucket).download(ocrCachePath(doc));
   if (blob) {
     try {
       const saved = JSON.parse(await blob.text());
       if (saved.size === doc.size) {
         cached = saved.pages || {};
-        // An older OCR's pages that gave text stay; its empty ones are read again with the current OCR
-        if (saved.version !== OCR_VERSION) {
-          cached = Object.fromEntries(Object.entries(cached).filter(([, text]) => letterCount(text) >= OCR_KEEP_LETTERS));
+        version = saved.version;
+        // An older OCR's pages are read again with the current one where OCR runs; elsewhere (the deployed
+        // server) they stay in use until then
+        if (saved.version !== OCR_VERSION && OCR_ENABLED) {
+          cached = {};
+          version = OCR_VERSION;
         }
       }
     } catch {
@@ -261,7 +280,7 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
   if (todo.length && !OCR_ENABLED) {
     // No new OCR here: what the cache has, and the document counts as read (no retry every few minutes)
     const merged = pages.map((p, i) => (cached[i + 1] != null && letterCount(cached[i + 1]) > letterCount(p) ? cached[i + 1] : p));
-    return { pages: merged, ocrPages: scanned.filter((n) => letterCount(cached[n]) > letterCount(pages[n - 1])).length, complete: true, error: 'OCR is off on the server' };
+    return { pages: merged, ocrPages: scanned.filter((n) => letterCount(cached[n]) > letterCount(pages[n - 1])).length, version, complete: true, error: 'OCR is off on the server' };
   }
   if (todo.length) {
     let texts;
@@ -281,12 +300,12 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
   }
   const complete = scanned.every((n) => cached[n] != null);
   const merged = pages.map((p, i) => (cached[i + 1] != null && letterCount(cached[i + 1]) > letterCount(p) ? cached[i + 1] : p));
-  return { pages: merged, ocrPages: scanned.filter((n) => letterCount(cached[n]) > letterCount(pages[n - 1])).length, complete };
+  return { pages: merged, ocrPages: scanned.filter((n) => letterCount(cached[n]) > letterCount(pages[n - 1])).length, version, complete };
 }
 
 // Documents read before OCR, or by an older OCR, that were scanned: read them again
 // (never while OCR is off here: they would be queued again every few minutes)
-export const ocrPending = (read) => OCR_ENABLED && (read || []).some((d) => d.kind === 'scanned' && d.ocr !== OCR_VERSION);
+export const ocrPending = (read) => OCR_ENABLED && (read || []).some((d) => (d.kind === 'scanned' || d.ocr_pages) && d.ocr !== OCR_VERSION);
 
 // ---------- one tender ----------
 
@@ -325,10 +344,11 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     const isPdf = /\.pdf$/i.test(doc.name);
     let ocrPages = 0;
     let ocrError;
+    let ocrVersion;
     if (pdf) {
       const ocr = await withOcr(supabase, bucket, doc, pdf, pages, ocrUntil);
       if (!ocr.complete) throw new Error(`${doc.name}: scanned pages are still being read (OCR); the next run continues.`);
-      ({ pages, ocrPages, error: ocrError } = ocr);
+      ({ pages, ocrPages, error: ocrError, version: ocrVersion } = ocr);
     }
     const letters = pages.join('').replace(/\s/g, '').length;
     // Not readable: almost no text in the whole file, or mostly empty pages that OCR couldn't run on (yet).
@@ -339,7 +359,8 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       read.push({ name: doc.name, kind: 'scanned', pages: pages.length, ...(pdf && (ocrError ? { ocr_error: ocrError.slice(0, 200) } : { ocr: OCR_VERSION })) });
       continue;
     }
-    read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages }) });
+    // ocr: which OCR read its scanned pages (an older one's are read again where OCR runs, ocrPending)
+    read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }) });
     texts.push(pages.join('\n'));
     pages.forEach((page, i) => {
       const lines = page.split('\n').map(clean);

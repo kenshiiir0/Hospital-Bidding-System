@@ -7,7 +7,7 @@ import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
 import ScreenButton from '@/components/ScreenButton';
-import { moleculeText, philgepsTender } from '@/lib/opportunityWorkbook';
+import { asWritten, moleculeText, philgepsTender } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { ChecklistList, KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -214,12 +214,12 @@ export default function TenderDetails({ bid, onClose }) {
             rows={items}
             columns={[
               // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
-              { label: 'Molecule', title: true, render: (item) => <span className="font-medium text-[#3F6F2C]">{moleculeText(item.description || item.line)}</span> },
+              { label: 'Molecule', title: true, render: (item) => <span className="font-medium text-[#3F6F2C]">{moleculeText(item.description || item.line, item.our_products || item.products)}</span> },
               { label: 'Qty', nowrap: true, render: (item) => (item.quantity != null ? `${item.quantity.toLocaleString('en-PH')} ${item.unit || ''}`.trim() : '—') },
               { label: 'ABC/Unit', nowrap: true, render: (item) => formatPeso(item.unit_price) || '—' },
               { label: 'ABC Total', nowrap: true, render: (item) => formatPeso(item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null)) || '—' },
               // The line exactly as the document or description gives it, to check against
-              { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{item.where === 'Description' ? item.description || item.line : item.line}</span> },
+              { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{asWritten(item.where === 'Description' ? item.description || item.line : item.line)}</span> },
             ]}
           />
         )}

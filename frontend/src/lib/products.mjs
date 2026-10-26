@@ -26,6 +26,7 @@ const NAME_FIXES = { cisatractcurium: 'Cisatracurium' };
 // Other ways tenders write a product on the list (abbreviations, spellings, shorter names), by matched name.
 // Only helpers for products on the list: a product not on the list is never matched.
 export const OTHER_NAMES = {
+  amikacin: ['amikacide'],
   anastrozole: ['anastrazole'],
   cisatracurium: ['cisatractcurium'],
   'ferrous sulfate': ['ferrous sulphate'],
@@ -136,7 +137,8 @@ const same = (a, b) => Math.abs(a - b) <= Math.max(a, b) * 0.01;
 
 // Every amount (mg, IU, %, ml), concentration (per ml) and gauge in a text
 export function strengthsOf(text) {
-  const s = String(text || '');
+  // "125mmg/ml" (a slip in a hospital's list) is 125 mg/ml
+  const s = String(text || '').replace(/(\d)\s*mmg(?![a-z])/gi, '$1mg');
   const amounts = [];
   const concentrations = [];
   for (const m of s.matchAll(AMOUNT)) {
