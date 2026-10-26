@@ -115,7 +115,8 @@ export default function BidMatchPage() {
     setPage(next);
     listTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-
+  // Bid documents the Sync downloaded into the system for a tender (as on PhilGEPS)
+  const filesOf = (row) => (noticeOf(row)?.documents || []).filter((doc) => doc.path).length;
 
   return (
     <section ref={listTop} className="scroll-mt-6 space-y-4">
@@ -124,6 +125,7 @@ export default function BidMatchPage() {
           { label: 'Total opportunities', value: rows.length, note: list ? `of ${list.rows.length} in Bid Match · ${ours.length} ask for our products` : 'Waiting for the first Sync' },
           { label: 'Product matches', value: new Set(rows.flatMap(productsOf)).size, tone: 'green', note: 'of our products requested' },
           { label: 'Total ABC value', value: pesoTotal(rows.reduce((sum, row) => sum + pesoValue(cell(row, 'Approve Budget Contract')), 0)), tone: 'blue', note: 'approved budgets of the listed tenders' },
+          { label: 'Documents fetched', value: rows.reduce((sum, row) => sum + filesOf(row), 0), tone: 'docs', note: `files of ${rows.filter((row) => filesOf(row) > 0).length} of the ${rows.length} listed tenders` },
         ]}
       />
       {filters.bar}

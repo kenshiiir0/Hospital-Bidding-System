@@ -55,11 +55,12 @@ export const plainAction =
 
 /**
  * Summary cards under the header: an icon in a soft circle, a quiet label, the number, one short note.
- * @param {Array<{ label: string, value: React.ReactNode, note?: React.ReactNode, tone?: 'black' | 'green' | 'blue' }>} props.items
+ * Three cards in a row; four: two by two on tablets, one row on wide screens.
+ * @param {Array<{ label: string, value: React.ReactNode, note?: React.ReactNode, tone?: 'black' | 'green' | 'blue' | 'docs' }>} props.items
  */
 export function KpiRow({ items }) {
-  const tile = { black: 'bg-[#1EA0DA]/8 text-[#12769F]', green: 'bg-[#61A644]/12 text-[#3F6F2C]', blue: 'bg-[#1EA0DA]/8 text-[#12769F]' };
-  const value = { black: 'text-black', green: 'text-[#3F6F2C]', blue: 'text-[#12769F]' };
+  const tile = { black: 'bg-[#1EA0DA]/8 text-[#12769F]', green: 'bg-[#61A644]/12 text-[#3F6F2C]', blue: 'bg-[#1EA0DA]/8 text-[#12769F]', docs: 'bg-[#1EA0DA]/8 text-[#12769F]' };
+  const value = { black: 'text-black', green: 'text-[#3F6F2C]', blue: 'text-[#12769F]', docs: 'text-black' };
   const icon = {
     // A list of tenders
     black: <path d="M6 5.5h8M6 10h8M6 14.5h5M3.5 3.5h13v13h-13z" />,
@@ -67,9 +68,12 @@ export function KpiRow({ items }) {
     green: <path d="M7.3 15.7a3.8 3.8 0 0 1-5.4-5.4l5.3-5.3a3.8 3.8 0 0 1 5.4 5.4zM5.2 7.6l5.4 5.4" />,
     // Money (peso)
     blue: <path d="M6 16.5v-13h4.5a3.5 3.5 0 0 1 0 7H6M3.5 6.5h11M3.5 9h11" />,
+    // A document with a folded corner
+    docs: <path d="M5 2.5h6.5L15 6v11.5H5zM11.5 2.5V6H15M7.5 10h5M7.5 13h5" />,
   };
+  const columns = items.length === 4 ? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-3';
   return (
-    <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1" aria-label="Summary">
+    <section className={`grid grid-cols-2 gap-3 ${columns} [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1`} aria-label="Summary">
       {items.map((k) => {
         const tone = k.tone || 'black';
         return (

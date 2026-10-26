@@ -504,6 +504,10 @@ export default function Home() {
   // Header and summary cards: what is listed now (after the tabs, search and filters)
   const listedProducts = new Set(filteredBids.flatMap((bid) => bid.matched_molecules || [])).size;
   const listedAbc = filteredBids.reduce((sum, bid) => sum + (Number(bid.abc_amount) || 0), 0);
+  // Bid documents the Sync downloaded into the system for the listed tenders (as on PS-PhilGEPS)
+  const filesOf = (bid) => (bid.details?.documents || []).filter((doc) => doc.path).length;
+  const fetchedFiles = filteredBids.reduce((sum, bid) => sum + filesOf(bid), 0);
+  const tendersWithFiles = filteredBids.filter((bid) => filesOf(bid) > 0).length;
   const thisYear = today.slice(0, 4);
   const status = scrapeError
     ? { tone: 'error', text: 'Could not load' }
@@ -559,6 +563,7 @@ export default function Home() {
             { label: 'Total opportunities', value: filteredBids.length, note: `of ${visibleBids.length} asking for our products` },
             { label: 'Product matches', value: listedProducts, tone: 'green', note: `of our products requested (${productCount} in all)` },
             { label: 'Total ABC value', value: pesoTotal(listedAbc), tone: 'blue', note: 'approved budgets of the listed tenders' },
+            { label: 'Documents fetched', value: fetchedFiles, tone: 'docs', note: `files of ${tendersWithFiles} of the ${filteredBids.length} listed tenders` },
           ]}
         />
 
