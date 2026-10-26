@@ -148,4 +148,24 @@ expect(parseItemRow(["32 box Cetirizine 10mg, tablet, (100's) 100 336,000.00"], 
 // A strength on the line above is not a quantity
 expect(parseItemRow(['Paracetamol', '500 mg', 'Cetirizine 10mg tablet'], 2), { quantity: undefined }, 'strength on the line above');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 47} rows).`);
+// Read by the table's own header (user, 2026-10-26): each value from its column
+const PR = ['Section: FPP :', 'Item No. Unit Item Description Quantity Unit Cost Total Cost', '1 btl Amoxicillin (as trihydrate) 250mg/5ml Powder for suspension 60ml/Oral 22,752 78.00 1,774,656.00', '2 vial Cefoxitin 1g powder for injection 500 300.00 150,000.00'];
+expect(parseItemRow(PR, 2), { item_no: '1', unit: 'btl', quantity: 22752, unit_price: 78, total: 1774656 }, 'header: Item No. | Unit | Description | Quantity | Unit Cost | Total Cost');
+expect(parseItemRow(PR, 3), { item_no: '2', unit: 'vial', quantity: 500, unit_price: 300, total: 150000 }, 'header: second row');
+// Header broken over two lines, a description ending in a number, an empty Unit Cost cell
+const PR2 = ['Item', 'No. Unit Description Quantity Unit Cost Total Cost', '27 box Cefuroxime 500mg/tablet X 100 200 22,000.00', '28 box Cetirizine 10mg/tablet X 100 340 37,400.00'];
+expect(parseItemRow(PR2, 3), { item_no: '28', unit: 'box', quantity: 340, total: 37400 }, 'header over two lines, empty Unit Cost');
+// Quantity before the description: "Qty | Unit | Description | ABC/unit"
+const RFQ = ['QTY UNIT DESCRIPTION ABC/UNIT TOTAL ABC', '100 vials Propofol 10mg/ml, 20ml 240.00 24,000.00', '50 amp Amiodarone 50mg/ml, 3ml 120.00 6,000.00'];
+expect(parseItemRow(RFQ, 2), { quantity: 50, unit: 'amp', unit_price: 120, total: 6000 }, 'header: Qty | Unit | Description | ABC/unit | Total');
+// A row that doesn't fit its header falls back to the row rules (the Item No. is never the quantity)
+const SHIFT = ['Item No. Unit Description Quantity', '58 vials Ceftriaxone 1g powder for Inj. 2000', '59 vials Cefuroxime 750mg powder for Inj. 11000', '60 vials Cefoxitin 1g powder forv Inj.', 'Purpose: Purchase of Drugs'];
+expect(parseItemRow(SHIFT, 3), { item_no: '60', quantity: undefined }, 'header: row with an empty Quantity cell');
+
+// An amount in a column it can't be (PhilGEPS 13300924: a header from another table names "Total")
+const WRONG_HEADER = ['Item No. Description Quantity Total Delivery Schedule', '6. Aminophylline 25mg/ml 500 30.00', '7. Amikacin 250mg/ml, 2ml 1,500 65.00'];
+expect(parseItemRow(WRONG_HEADER, 2), { quantity: 1500, unit_price: 65, total: undefined }, 'header: a "total" under ₱0.10 a unit is the unit price');
+// "QTY UNIT ESTIMATED BUDGET": the amount is the total (PhilGEPS 13300226)
+expect(parseItemRow(['Item Number Description QTY UNIT ESTIMATED BUDGET', '18 Cetirizine 10mg tablet 3000 pcs 2,100.00'], 1), { item_no: '18', quantity: 3000, unit: 'pcs', total: 2100 }, 'header: Description | Qty | Unit | Estimated Budget');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 55} rows).`);

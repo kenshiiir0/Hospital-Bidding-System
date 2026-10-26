@@ -17,8 +17,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-18';
+// rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-19';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -56,6 +56,8 @@ const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
 // An amount after a row's quantity above this, with at least this quantity, is the ABC total, not the unit price
 const LARGE_AMOUNT = 50000;
 const SIZEABLE_QUANTITY = 20;
+// A unit price below this (₱ per unit) is not one: the amount is something else
+const MIN_UNIT_PRICE = 0.1;
 
 // quantity × unit price gives the total (1% for rounded prices)
 const adds = (quantity, unitPrice, total) => quantity > 0 && Math.abs(quantity * unitPrice - total) <= total * 0.01;
@@ -132,7 +134,116 @@ function itemNumberOf(lines, n) {
 // "As written"
 export function parseItemRow(rawLines, n) {
   const lines = rawLines.map(withoutRules);
+  // The table's own header first (user, 2026-10-26: "the documents usually have this on top so you will know
+  // where is the name, quantity, and other needed info"); the row rules below when there is none or the row
+  // doesn't fit it
+  const fromHeader = byHeader(lines, n);
+  if (fromHeader) return fromHeader;
   return quantityAbove(lines, n, rowColumns(lines, n));
+}
+
+// ---------- reading a row by its table's header ----------
+
+// Header words, in the order they are tried at each place in the header line ("Item Description" is the
+// description, not the Item No.; "Unit Cost" is a price, not the Unit)
+const HEADER_WORDS = [
+  ['description', /^(?:item\s+description|description(?:\s+of\s+(?:items?|goods))?|particulars|articles?|item\s+name|generic\s+name)\b/i],
+  ['price', /^(?:unit\s+(?:cost|price|value)|abc\s*(?:\/|per)\s*unit|price\s+per\s+unit|estimated\s+unit\s+cost|cost\s+per\s+(?:unit|item)|unit\s+abc)\b/i],
+  ['total', /^(?:total\s+(?:cost|price|amount|abc|value)|total|amount|abc|estimated\s+(?:cost|budget)|approved\s+budget)\b/i],
+  ['quantity', /^(?:quantity|qty)\b\.?/i],
+  ['unit', /^(?:unit\s+of\s+(?:issue|measure(?:ment)?)|uom|u\/m|unit)\b/i],
+  ['item', /^(?:item\s*(?:no\.?|#|number)|stock\s*(?:\/\s*property\s*)?(?:no\.?|number)|property\s*no\.?|no\.|item|lot\s*no\.?)/i],
+  ['text', /^(?:brand(?:\s+name)?|remarks?|delivery(?:\s+(?:period|schedule))?|manufacturer|country\s+of\s+origin)\b/i],
+];
+
+/** The columns a header line names, in order, e.g. ['item', 'unit', 'description', 'quantity', 'price', 'total'];
+ * null unless it names a description and a quantity */
+function headerColumns(line) {
+  const columns = [];
+  const text = line.replace(/\s+/g, ' ').trim();
+  for (let at = 0; at < text.length; ) {
+    const rest = text.slice(at);
+    const hit = HEADER_WORDS.find(([, re]) => re.test(rest));
+    if (hit) {
+      if (columns.at(-1) !== hit[0]) columns.push(hit[0]);
+      at += hit[1].exec(rest)[0].length;
+    } else {
+      const space = rest.indexOf(' ');
+      at += space < 0 ? rest.length : space + 1;
+    }
+  }
+  return columns.includes('description') && columns.includes('quantity') ? columns : null;
+}
+
+// How far above a row its header may be, in lines (a table running down the page)
+const HEADER_REACH = 120;
+const headerCache = new WeakMap();
+
+/** The header of the table lines[n] is in: the nearest line above naming the columns (also a header broken over
+ * two lines: "Item" / "No. Unit Description Quantity ..."), or null */
+function headerFor(lines, n) {
+  let found = headerCache.get(lines);
+  if (!found) {
+    found = [];
+    lines.forEach((line, i) => {
+      const columns = headerColumns(line) || (i + 1 < lines.length && headerColumns(`${line} ${lines[i + 1]}`));
+      if (columns) found.push({ at: i, columns });
+    });
+    headerCache.set(lines, found);
+  }
+  return found.findLast((h) => h.at < n && n - h.at <= HEADER_REACH)?.columns || null;
+}
+
+const MONEY_TOKEN = /^\d[\d,]*\.\d{2}$/;
+const COUNT_TOKEN = /^(?:\d{1,3}(?:[.,]\d{3})+|\d+)$/;
+const ITEM_TOKEN = /^[A-Z]{0,4}-?\d+[.)]*$/;
+const WORD_TOKEN = /^[A-Za-z][A-Za-z/.'’-]*$/;
+const STRENGTH_TOKEN = /^(?:mg|mcg|µg|g|gm|grams?|ml|l|iu|units?|meq|mmol|%)\.?$/i;
+
+/** A row read by its table's header: the columns before the description from the left, those after it from the
+ * right (an empty cell is skipped: an amount can only fill a price or total, a whole number the quantity), e.g.
+ * "1 btl Amoxicillin ... 60ml/Oral 22,752 78.00 1,774,656.00" under "Item No. | Unit | Item Description |
+ * Quantity | Unit Cost | Total Cost". null when the page has no header or the row has no quantity this way. */
+function byHeader(lines, n) {
+  const columns = headerFor(lines, n);
+  if (!columns) return null;
+  const read = (text) => {
+    const tokens = text.split(/\s+/).filter(Boolean);
+    const out = { written: text };
+    const middle = columns.indexOf('description');
+    // From the left: Item No., Unit, Quantity written before the description
+    for (const key of columns.slice(0, middle)) {
+      const token = tokens[0];
+      if (token == null) return null;
+      if (key === 'item' && ITEM_TOKEN.test(token)) out.item_no = tokens.shift().replace(/[.)]+$/, '');
+      else if (key === 'quantity' && COUNT_TOKEN.test(token)) out.quantity = num(tokens.shift().replace(/\./g, ''));
+      else if (key === 'unit' && WORD_TOKEN.test(token) && !STRENGTH_TOKEN.test(token)) {
+        out.unit = tokens.shift();
+        if (/^pre-?filled$/i.test(out.unit) && /^syringes?$/i.test(tokens[0] || '')) out.unit += ` ${tokens.shift()}`;
+      } else if (key !== 'text') return null;
+    }
+    // From the right: Quantity, Unit, Unit Cost, Total after the description; an empty cell is skipped
+    for (const key of columns.slice(middle + 1).reverse()) {
+      const token = tokens.at(-1);
+      if (token == null) break;
+      if ((key === 'total' || key === 'price') && MONEY_TOKEN.test(token)) out[key === 'total' ? 'total' : 'unit_price'] = num(tokens.pop());
+      else if (key === 'quantity' && COUNT_TOKEN.test(token) && !STRENGTH_TOKEN.test(tokens.at(-2) || '')) out.quantity = num(tokens.pop().replace(/\./g, ''));
+      else if (key === 'unit' && WORD_TOKEN.test(token) && !STRENGTH_TOKEN.test(token) && out.quantity == null) out.unit = tokens.pop();
+    }
+    out.description = tokens.join(' ');
+    if (out.quantity == null || !/[A-Za-z]/.test(out.description)) return null;
+    // One amount in a column it can't be (the nearest header belongs to another table): a "total" under ₱0.10 a
+    // unit is the unit price ("Amikacin ... 1,500 65.00"), a large "unit price" on a sizeable quantity the total
+    if (out.total != null && out.unit_price == null && out.total / out.quantity < MIN_UNIT_PRICE) [out.unit_price, out.total] = [out.total, undefined];
+    else if (out.unit_price != null && out.total == null && out.unit_price > LARGE_AMOUNT && out.quantity >= SIZEABLE_QUANTITY) [out.total, out.unit_price] = [out.unit_price, undefined];
+    return out;
+  };
+  // The row on its own line, else with the lines it continues on
+  const alone = read(lines[n]);
+  // Not when the line's last number is a strength going on below ("... 1" / "g Vial ...")
+  if (alone && !(STRENGTH_UNIT_START.test(lines[n + 1] || '') && /\s\d[\d,]*$/.test(lines[n]))) return alone;
+  const row = rowText(lines, n);
+  return row === lines[n] ? null : read(row);
 }
 
 // "<qty> <unit>" alone on a line: the Quantity and Unit columns of the row below it (not a strength: "500 mg")
