@@ -136,8 +136,9 @@ function readTable(root) {
   if (!table) return { headers: [], rows: [] };
   const headRow = table.querySelector('thead tr') || table.querySelector('tr');
   const headers = headRow.querySelectorAll('th, td').map((c) => clean(c.text));
-  const rows = table
-    .querySelectorAll('tbody tr')
+  // Rows in a tbody, or straight in the table (Open Opportunities has no tbody)
+  const bodyRows = table.querySelectorAll('tbody tr');
+  const rows = (bodyRows.length ? bodyRows : table.querySelectorAll('tr'))
     .filter((tr) => tr !== headRow)
     .map((tr) => ({
       cells: tr.querySelectorAll('td').map((td) => clean(td.text)),
@@ -176,6 +177,65 @@ export async function readList(session, list, onPage = () => {}) {
     url = nextPageUrl(root, url);
   }
   return result;
+}
+
+// ---------- Open Opportunities (every open notice, not only our Bid Match) ----------
+
+// Bid Match lists only the notices PhilGEPS pairs with our account's criteria: on 2026-10-26 it had 62 of the
+// 134 open medicine notices (Cagayan Valley Medical Center's lots, DOH Region X, ... were missing). The Bulletin
+// Board's Open Opportunities lists every open notice: searched by title words here (read-only searches), the
+// medicine notices not in Bid Match are added to it, so they are read and matched like the others.
+const OPEN_OPPORTUNITIES_URL = `${HOST}/Indexes/index`;
+const MEDICINE_TITLE_WORDS = ['medicine', 'drug', 'pharma', 'oncology', 'cancer', 'antibiotic', 'injectable', 'vaccine', 'insulin'];
+// Not medicines although the title has one of the words ("Drug Testing Supplies", "Anti-Drug Abuse Office" meals,
+// "College of Medicine Building", "HPV DNA Kit"...)
+const NOT_MEDICINE = /\b(?:testing|test kits?|kits?|ict|equipment|machines?|subscription|vehicle|building|construction|completion|repair|renovation|furniture|meals|catering|training|seminar|janitorial|security services|command center|reporting system|advocates|abuse office)\b/i;
+
+export async function searchOpenOpportunities(session, word) {
+  const page = parse(await getPage(session, OPEN_OPPORTUNITIES_URL));
+  const form = page.querySelectorAll('form').find((f) => f.querySelector('[name=searchNoticeTitle]'));
+  if (!form) throw new PsSyncError('LAYOUT', 'PS-PhilGEPS Open Opportunities has no search form (layout changed).');
+  const body = new URLSearchParams();
+  for (const field of form.querySelectorAll('input, select')) if (field.getAttribute('name')) body.set(field.getAttribute('name'), field.getAttribute('value') || '');
+  body.set('searchNoticeTitle', word);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(OPEN_OPPORTUNITIES_URL, {
+        method: 'POST',
+        body,
+        redirect: 'manual',
+        headers: { cookie: session.header(), 'user-agent': USER_AGENT, 'content-type': 'application/x-www-form-urlencoded', referer: OPEN_OPPORTUNITIES_URL, origin: HOST },
+        signal: AbortSignal.timeout(30000),
+      });
+      session.update(res);
+      const html = res.status >= 300 && res.status < 400 ? await getPage(session, absolute(res.headers.get('location'))) : await res.text();
+      return readTable(parse(html));
+    } catch (e) {
+      if (e.code === 'NOT_CONNECTED' || attempt >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+}
+
+/** Open medicine notices from Open Opportunities, as rows in Bid Match's columns (headers), for refs not in it */
+export async function openMedicineNotices(session, headers, known) {
+  const byRef = new Map();
+  for (const word of MEDICINE_TITLE_WORDS) {
+    const { headers: found, rows } = await searchOpenOpportunities(session, word);
+    const at = (name) => found.findIndex((h) => h.toLowerCase().startsWith(name));
+    for (const row of rows) {
+      const ref = row.cells[at('bid notice reference')] || row.cells[0];
+      const title = row.cells[at('notice title')] || '';
+      if (!/^\d+$/.test(ref) || known.has(ref) || byRef.has(ref) || NOT_MEDICINE.test(title)) continue;
+      const value = { 'notice reference number': ref, 'notice title': title, 'mode of procurement': row.cells[at('mode of procurement')], classification: row.cells[at('classification')], 'publish date': row.cells[at('publish date')], 'closing date': row.cells[at('closing date')], 'agency name': row.cells[at('agency name')], status: 'Active' };
+      byRef.set(ref, {
+        cells: headers.map((h) => value[h.toLowerCase()] ?? ''),
+        links: [{ text: ref, href: `${HOST}/tenders/viewBidNotice/${ref}` }],
+        from: 'open-opportunities',
+      });
+    }
+  }
+  return [...byRef.values()];
 }
 
 // Notice reference number of a list row: its link to the notice page, else a numeric first cell
@@ -376,11 +436,27 @@ export async function runSync() {
     }
     await saveCookies();
 
-    const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))];
-    const notices = {};
+    // Open medicine notices Bid Match doesn't list (openMedicineNotices), added to it. A failed search never stops
+    // the Sync: Bid Match is read as before.
+    try {
+      await progress(27, 'Searching Open Opportunities for medicine notices');
+      const known = new Set(lists.bidMatch.rows.map(refOf).filter(Boolean));
+      const extra = await withSession(() => openMedicineNotices(session, lists.bidMatch.headers, known));
+      lists.bidMatch.rows.push(...extra);
+      lists.bidMatch.fromOpenOpportunities = extra.length;
+    } catch (e) {
+      if (e.code === 'NOT_CONNECTED') throw e;
+      lists.bidMatch.openOpportunitiesError = e.message;
+    }
+    await saveCookies();
+
     // A notice that can't be read this time (incomplete page, error, out of time) keeps what the last Sync read,
     // marked, instead of being emptied
     const { data: previous } = await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle();
+    // Notices never read (or last read with an error) first, so new ones are read even when time runs out
+    const readBefore = (ref) => previous?.notices?.[ref] && !previous.notices[ref].error;
+    const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))].sort((a, b) => Number(readBefore(a)) - Number(readBefore(b)));
+    const notices = {};
     const keepPrevious = (ref, why) => {
       const last = previous?.notices?.[ref];
       notices[ref] = last && !last.error ? { ...last, errors: [...(last.errors || []).filter((e) => !/^Not read this time/.test(e)), `Not read this time (${why}); showing the last Sync.`] } : { error: why };
@@ -415,7 +491,7 @@ export async function runSync() {
       const notRead = Object.values(notices).filter((n) => (n.errors || []).some((e) => /^Not read this time/.test(e))).length;
       const leftToRead = reading === undefined ? ' (reading the documents)' : reading?.left ? ` (${reading.left} tenders' documents still being read)` : '';
       const stage =
-        `Done: ${lists.bidMatch.rows.length} bid matches (${ours.length} with our products, ${onlyInDocuments} found only in the documents), ` +
+        `Done: ${lists.bidMatch.rows.length} bid matches (${lists.bidMatch.fromOpenOpportunities ? `${lists.bidMatch.fromOpenOpportunities} added from Open Opportunities, ` : ''}${ours.length} with our products, ${onlyInDocuments} found only in the documents), ` +
         `${files} documents${leftToRead}, ${lists.opportunities.rows.length} opportunities, ${lists.awards.rows.length} award notices` +
         (notRead ? ` · ${notRead} notices kept from the last Sync (PhilGEPS answered incompletely)` : '');
       return { stage, details: { bid_matches: lists.bidMatch.rows.length, matching: ours.length, only_in_documents: onlyInDocuments, files, not_read: notRead, opportunities: lists.opportunities.rows.length, awards: lists.awards.rows.length } };
