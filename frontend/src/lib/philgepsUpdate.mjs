@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { Session, getPage, postBack, postbackLinks } from './philgepsSync.mjs';
-import { loadMatcher, parseItemRow } from './psDocs.mjs';
+import { expandVariants, isVariantParent, loadMatcher, parseItemRow } from './psDocs.mjs';
 import { extractSchedule } from './schedule.mjs';
 import { logActivity } from './activityLog.mjs';
 
@@ -270,16 +270,19 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
     for (const t of tenders) {
       const s = stored.get(t.ref_no);
       if (t.items_text == null && s) Object.assign(t, { items_text: s.items_text, abc_amount: s.abc_amount, details: s.details });
-      const found = matchProducts.details(`${t.title}\n${t.items_text || ''}`);
+      // Sub-rows of a molecule read as rows of their own (psDocs.mjs expandVariants)
+      const raw = (t.items_text || '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const lines = expandVariants(raw);
+      const found = matchProducts.details(`${t.title}\n${lines.join('\n')}`);
       t.matched_molecules = [...new Set([...found.matched, ...onList(t.details?.documents_products)])];
       if (t.details) {
-        const lines = (t.items_text || '')
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean);
         t.details = {
           ...t.details,
           matched_items: lines.flatMap((line, i) => {
+            if (isVariantParent(raw, i)) return [];
             const products = matchProducts.line(line, lines.slice(i + 1, i + 3).join('\n'));
             return products.length ? [{ line, products, ...parseItemRow(lines, i) }] : [];
           }),

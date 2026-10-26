@@ -17,8 +17,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-21';
+// rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-22';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -64,6 +64,26 @@ const adds = (quantity, unitPrice, total) => quantity > 0 && Math.abs(quantity *
 
 // Units a quantity is counted in, for the layouts with no fixed column order
 const KNOWN_UNIT_RE = String.raw`(?:pre-?\s?filled\s+)?(?:pfs|tab|tablet|cap|capsule|bottle|btl|botl|bot|vial|vl|amp|ampule|ampoule|box|bx|pc|piece|pack|sachet|tube|inhaler|nebule|syringe|bag|kit|set|unit|each|ea)(?:e?s)?\.?(?:\s?\/\s?(?:vial|amp|bottle|bot)s?)?`;
+
+const KNOWN_UNIT_WORD = new RegExp(`^${KNOWN_UNIT_RE}$`, 'i');
+
+// Sub-rows of a molecule ("33 Amikacin sulfate" / ".01 250mg/ml, 2ml ampule 2,000 235.00 5,640,000.00" / ".02
+// ...", Philippine Heart Center): each strength is its own row, read as "33.01 Amikacin sulfate 250mg/ml, 2ml
+// ampule 2,000 235.00 5,640,000.00" so its dosage is checked against ours and its numbers read; the molecule's own
+// line (no numbers) is not a row then (isVariantParent)
+const VARIANT = /^\.(\d{1,2})\s+(.*)$/;
+const VARIANT_PARENT = /^(\d{1,4})[.)]?\s+([A-Za-z][^\d]*)$/;
+export function expandVariants(lines) {
+  let parent = null;
+  return lines.map((line) => {
+    const variant = VARIANT.exec(line || '');
+    if (variant && parent) return `${parent.no}.${variant[1]} ${parent.name} ${variant[2]}`;
+    const head = VARIANT_PARENT.exec(line || '');
+    if (head) parent = { no: head[1], name: head[2].trim() };
+    return line;
+  });
+}
+export const isVariantParent = (lines, n) => VARIANT_PARENT.test(lines[n] || '') && VARIANT.test(lines[n + 1] || '');
 
 // A line that starts a new table row: a number, then a word or another number ("26 bottle ...", "DM14 Amikacin
 // ...", "5,000 tablet", "10 30,000 Tablet"); not a row's continuation such as "10mg Tablet 100's 250" or a lone
@@ -331,7 +351,17 @@ export function parseItemLine(fullLine) {
   const unitPrice = num(priceText);
   const total = num(totalText);
   const quantity = (rest.match(/\d[\d,]*/g) || []).map(num).findLast((q) => adds(q, unitPrice, total));
-  if (quantity == null) return parsed;
+  if (quantity == null) {
+    // "<description> <quantity> <unit price> <total>" whose numbers don't multiply out (a total over 12 months:
+    // "33.01 Amikacin sulfate 250mg/ml, 2ml ampule 2,000 235.00 5,640,000.00", Philippine Heart Center): the
+    // whole number right before the unit price is the quantity
+    const before = parsed.quantity == null && /^(.*[A-Za-z].*?)\s+(\d[\d,]*)$/.exec(rest);
+    if (!before || STRENGTH_UNIT_START.test(priceText)) return parsed;
+    const item = /^(\d{1,4}(?:\.\d{1,2})?)[.)]?\s+/.exec(before[1]);
+    const description = item ? before[1].slice(item[0].length) : before[1];
+    const unit = /([A-Za-z]+)$/.exec(description)?.[1];
+    return { ...parsed, ...(item && { item_no: item[1] }), description, quantity: num(before[2]), ...(unit && KNOWN_UNIT_WORD.test(unit) && { unit }), unit_price: unitPrice, total };
+  }
   // "<stock no.> <unit> <description> <quantity>" (PhilGEPS RFQ tables: Stock/Property No. | Unit | Description | Qty)
   const stock = /^(\S*\d\S*)\s+([A-Za-z][A-Za-z.'’]*)\s+(.+?)\s+([\d,]+)$/.exec(rest);
   if (stock && num(stock[4]) === quantity) {
@@ -656,9 +686,12 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     const marked = pages.map(quantityColumnOf);
     texts.push(marked.map((m) => m.text).join('\n'));
     marked.forEach(({ text: page, quantities: column }, i) => {
-      const lines = page.split('\n').map(clean);
+      const raw = page.split('\n').map(clean);
+      const lines = expandVariants(raw);
       const quantities = column && columnAgrees(lines, column) ? column : null;
       lines.forEach((line, n) => {
+        // A molecule whose strengths follow as sub-rows: the sub-rows are the rows
+        if (isVariantParent(raw, n)) return;
         // Our molecule on this line in one of our dosages (the dosage may be on the next two lines)
         const products = matchProducts.line(line, lines.slice(n + 1, n + 3).join('\n'));
         if (!products.length || line.length > 400) return;

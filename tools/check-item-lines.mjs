@@ -4,7 +4,7 @@
 // row number the molecule tracker must show. The row number must never be read as the quantity (user,
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
-import { parseItemLine, parseItemRow } from '../frontend/src/lib/psDocs.mjs';
+import { expandVariants, isVariantParent, parseItemLine, parseItemRow } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total }) => ({ item_no, quantity, unit, unit_price, total });
 const expect = (got, want, label) => {
@@ -176,4 +176,14 @@ expect(parseItemRow(['Item No. Unit Description Quantity Unit Cost', '1 Ampule',
 // "<qty> <unit>" above, under a header with the Quantity after the Description: the row before's (PhilGEPS 13283536)
 expect(parseItemRow(['Item Description Quantity Unit', '7 Cefuroxime 500 mg tablet x 100', '144 bottles', '8 Cetirizine 10 mg tablet x'], 3), { quantity: undefined }, 'quantity above under a Description-first header');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 58} rows).`);
+// A molecule with its strengths as sub-rows (Philippine Heart Center 13265275/13265216, as the team screened them:
+// Amikacin 2,000 ampule, Propofol 2,000 and 200; totals over 12 months, so quantity x price != total)
+const PHC = ['AMINOGLYCOSIDE', '33 Amikacin sulfate', '.01 250mg/ml, 2ml ampule 2,000 235.00 5,640,000.00', '34 Gentamicin sulfate', '.01 40mg/ml, 2ml ampule 30 29.00 10,440.00', '12 Propofol', '.01 10mg/ml, 20ml ampule or vial 2,000 445.00 10,680,000.00', '.02 10mg/ml, 50ml vial 200 1,150.00 2,760,000.00'];
+const PHC_ROWS = expandVariants(PHC);
+assert.equal(PHC_ROWS[2], '33.01 Amikacin sulfate 250mg/ml, 2ml ampule 2,000 235.00 5,640,000.00', 'sub-row: molecule name added');
+assert.ok(isVariantParent(PHC, 1) && !isVariantParent(PHC, 2), 'sub-rows: the molecule line is not a row');
+expect(parseItemRow(PHC_ROWS, 2), { item_no: '33.01', quantity: 2000, unit: 'ampule', unit_price: 235, total: 5640000 }, 'sub-row: Amikacin 2,000');
+expect(parseItemRow(PHC_ROWS, 6), { item_no: '12.01', quantity: 2000, unit_price: 445 }, 'sub-row: Propofol 20ml 2,000');
+expect(parseItemRow(PHC_ROWS, 7), { item_no: '12.02', quantity: 200, unit: 'vial', unit_price: 1150 }, 'sub-row: Propofol 50ml 200');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 63} rows).`);
