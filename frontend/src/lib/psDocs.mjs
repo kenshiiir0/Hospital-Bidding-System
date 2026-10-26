@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { loadMatcher } from './products.mjs';
 import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
-import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
+import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from './ocr.mjs';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -320,6 +320,17 @@ async function fileText(name, bytes) {
 
 const letterCount = (text) => (text || '').replace(/\s/g, '').length;
 
+// A page's text without the Quantity column line lib/ocr.mjs adds ("@@quantity-column 31 1 220 20 ..."), and
+// that column as Item No. -> quantity (null when the page has none)
+function quantityColumnOf(page) {
+  const lines = String(page || '').split('\n');
+  const at = lines.findIndex((l) => l.startsWith(QUANTITY_COLUMN_MARK));
+  if (at < 0) return { text: page, quantities: null };
+  const [start, ...values] = lines[at].slice(QUANTITY_COLUMN_MARK.length).trim().split(/\s+/).map(Number);
+  lines.splice(at, 1);
+  return { text: lines.join('\n'), quantities: new Map(values.map((v, i) => [start + i, v])) };
+}
+
 // Replaces the PDF's pages that have too little text with their OCR text (cached in Storage). Returns
 // { pages, ocrPages: how many pages came from OCR, version: the OCR version that read them, complete: false when
 // time ran out first, error: OCR failed }
@@ -336,10 +347,11 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
       if (saved.size === doc.size) {
         cached = saved.pages || {};
         version = saved.version;
-        // An older OCR's pages are read again with the current one where OCR runs; elsewhere (the deployed
-        // server) they stay in use until then
+        // An older OCR's pages are read again with the current one where OCR runs (except those it would read
+        // the same, OCR_STILL_GOOD); elsewhere (the deployed server) they stay in use until then
         if (saved.version !== OCR_VERSION && OCR_ENABLED) {
-          cached = {};
+          const stillGood = OCR_STILL_GOOD[saved.version];
+          cached = stillGood ? Object.fromEntries(Object.entries(cached).filter(([, text]) => stillGood(text || ''))) : {};
           version = OCR_VERSION;
         }
       }
@@ -432,8 +444,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     }
     // ocr: which OCR read its scanned pages (an older one's are read again where OCR runs, ocrPending)
     read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }) });
-    texts.push(pages.join('\n'));
-    pages.forEach((page, i) => {
+    const marked = pages.map(quantityColumnOf);
+    texts.push(marked.map((m) => m.text).join('\n'));
+    marked.forEach(({ text: page, quantities }, i) => {
       const lines = page.split('\n').map(clean);
       lines.forEach((line, n) => {
         // Our molecule on this line in one of our dosages (the dosage may be on the next two lines)
@@ -445,7 +458,16 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
         // Table rows often break over several lines ("65 Aztreonam 1 g Powder for" / "injection 50 vials ..."),
         // so keep the next two lines to show with it when the line alone has no quantity
         const context = lines.slice(n, n + 3).filter(Boolean).join(' / ');
-        items.push({ our_products: products, ...parseItemRow(lines, n), line, context, source: `${doc.name}, ${isPdf ? `page ${i + 1}` : 'Word/Excel file'}` });
+        const row = parseItemRow(lines, n);
+        // The page's Quantity column read on its own (lib/ocr.mjs quantityColumn) gives the row's quantity by its
+        // Item No., also when the column is shifted against the rows
+        const fromColumn = row.item_no != null ? quantities?.get(Number(row.item_no)) : undefined;
+        if (fromColumn != null) {
+          // The unit from the row itself ("60 vials Cefoxitin ..."), when its own reading had none
+          const unit = row.unit || new RegExp(`^\\d{1,4}[.)]*\\s+(${KNOWN_UNIT_RE})\\s`, 'i').exec(row.written || line)?.[1];
+          Object.assign(row, { quantity: fromColumn, quantity_from: 'column', ...(unit && { unit }) });
+        }
+        items.push({ our_products: products, ...row, line, context, source: `${doc.name}, ${isPdf ? `page ${i + 1}` : 'Word/Excel file'}` });
       });
     });
   }

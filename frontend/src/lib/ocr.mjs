@@ -10,9 +10,12 @@ import path from 'node:path';
 // ships with the app (@tesseract.js-data/eng); it is only downloaded when that copy can't be found.
 // psDocs.mjs readDocuments calls ocrPdfPages for the pages that have too little text.
 
+// ocr-4: an item table's Quantity column read on its own and paired with the rows (quantityColumn).
 // ocr-3: pages straightened and table rules taken out before reading (rows of an item table came out mixed).
 // ocr-2: pages without one big scanned picture (vector-outline text, small scans) are drawn and read
-export const OCR_VERSION = 'ocr-3';
+export const OCR_VERSION = 'ocr-4';
+// An older version's page still as good as this one's: ocr-3 read the same, apart from the Quantity column
+export const OCR_STILL_GOOD = { 'ocr-3': (text) => !/quantity/i.test(text) };
 const LANG_DIR = '4.0.0_best_int';
 const MIN_IMAGE_SIDE = 1000; // smaller pictures are logos or stamps, not a scanned page
 const INK_THRESHOLD = 150; // lighter grey is paper, or text showing through from the back of the sheet
@@ -252,6 +255,71 @@ const FEW_LETTERS = 40; // a page read from its picture with fewer letters than 
 
 // Reads the given pages (1-based) of a PDF (a pdf.js document) until `until` (a time in ms).
 // Returns { texts: { [page]: text }, done: pages finished }. A page with nothing readable gives ''.
+// An item table's Quantity column read on its own, paired with the rows in order. Some forms print the column
+// shifted half a row or more against the rows (PS 111619 Biñan City Hospital: a tall "Quantity" header pushes
+// every value down; row 60 Cefoxitin's 500 sits beside "Purpose", under the table), so a value can't be given
+// to the row it sits beside. Read alone, the column gives one value per row, top to bottom, and the Item No.
+// column gives the rows. Only when the values are exactly one per row (most Item Nos. read, the last one
+// fixing the range) is the page marked, as a last line "@@quantity-column <first row> <value> <value> ...",
+// which psDocs.mjs readDocuments uses for the rows' quantities. Else null (the rows keep their own reading).
+export const QUANTITY_COLUMN_MARK = '@@quantity-column';
+const COLUMN_PAD = 80; // px beside a column's header word that still belong to the column
+const ITEM_ROWS_READ = 0.7; // share of the rows whose Item No. must be read for the range to be trusted
+async function quantityColumn(worker, pgm, blocks) {
+  const words = blocks.flatMap((b) => (b.paragraphs || []).flatMap((p) => (p.lines || []).flatMap((l) => l.words || [])));
+  const head = words.find((w) => /^quantity$/i.test(w.text));
+  if (!head) return null;
+  // The Item No. column: under "Item", or else everything left of "Unit" (OCR may miss the "Item No." words)
+  const itemHead = words.find((w) => /^item$/i.test(w.text) && w.bbox.x1 < head.bbox.x0);
+  const unitHead = words.find((w) => /^unit$/i.test(w.text) && w.bbox.x1 < head.bbox.x0 && Math.abs(w.bbox.y0 - head.bbox.y0) < 150);
+  const itemSpan = itemHead ? [itemHead.bbox.x0 - COLUMN_PAD, itemHead.bbox.x1 + COLUMN_PAD] : unitHead ? [0, unitHead.bbox.x0 - 10] : null;
+  if (!itemSpan) return null;
+  const end = words.find((w) => /^(purpose|total|requested|prepared)/i.test(w.text) && w.bbox.y0 > head.bbox.y1);
+  const header = /^P5\n(\d+) (\d+)\n255\n/.exec(pgm.subarray(0, 40).toString('latin1'));
+  const W = Number(header[1]);
+  const H = Number(header[2]);
+  const pixels = pgm.subarray(header[0].length);
+  const top = head.bbox.y1 + 5;
+  const bottom = Math.min(H, (end ? end.bbox.y1 : H) + 40);
+  // The numbers of one column, top to bottom (only digits and commas are read)
+  const column = async (x0, x1) => {
+    const left = Math.max(0, Math.round(x0));
+    const width = Math.min(W, Math.round(x1)) - left;
+    const height = bottom - top;
+    if (width < 10 || height < 10) return [];
+    const crop = Buffer.alloc(width * height);
+    for (let y = 0; y < height; y++) pixels.copy(crop, y * width, (top + y) * W + left, (top + y) * W + left + width);
+    const { data } = await worker.recognize(Buffer.concat([Buffer.from(`P5\n${width} ${height}\n255\n`), crop]), {}, { blocks: true });
+    return (data.blocks || [])
+      .flatMap((b) => (b.paragraphs || []).flatMap((p) => p.lines || []))
+      .map((l) => l.text.trim())
+      .filter((t) => /^\d[\d,]*$/.test(t))
+      .map((t) => Number(t.replace(/,/g, '')));
+  };
+  await worker.setParameters({ tessedit_pageseg_mode: '6', tessedit_char_whitelist: '0123456789,' });
+  let values;
+  let items;
+  try {
+    values = await column(head.bbox.x0 - COLUMN_PAD, head.bbox.x1 + COLUMN_PAD);
+    items = await column(...itemSpan);
+  } finally {
+    await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_COLUMN, tessedit_char_whitelist: '' });
+  }
+  if (values.length < 3) return null;
+  // The rows: the last Item No. whose range (as many rows as values, ending there) holds the most Item Nos. read
+  const found = new Set(items);
+  let best = null;
+  for (const last of found) {
+    const start = last - values.length + 1;
+    if (start < 1) continue;
+    let read = 0;
+    for (let k = start; k <= last; k++) if (found.has(k)) read++;
+    if (!best || read > best.read) best = { start, read };
+  }
+  if (!best || best.read < values.length * ITEM_ROWS_READ) return null;
+  return { start: best.start, values };
+}
+
 // Each page: its biggest scanned picture first; when there is none (or it gives almost no text), the whole
 // page drawn as a picture.
 export async function ocrPdfPages(pdf, pageNumbers, { until = Infinity, onPage } = {}) {
@@ -265,7 +333,13 @@ export async function ocrPdfPages(pdf, pageNumbers, { until = Infinity, onPage }
       let text = '';
       if (image) {
         worker ||= await startWorker();
-        text = (await worker.recognize(toPgm(image))).data.text || '';
+        const pgm = toPgm(image);
+        const { data } = await worker.recognize(pgm, {}, { blocks: true });
+        text = data.text || '';
+        if (/quantity/i.test(text)) {
+          const column = await quantityColumn(worker, pgm, data.blocks || []).catch(() => null);
+          if (column) text += `\n${QUANTITY_COLUMN_MARK} ${column.start} ${column.values.join(' ')}`;
+        }
       }
       if (letterCount(text) < FEW_LETTERS) {
         const drawn = await renderedPage(pdf, n).catch(() => null);
