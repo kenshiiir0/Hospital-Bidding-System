@@ -52,7 +52,8 @@ for (const [n, want] of ROWS) expect(parseItemRow(PAGE, n), want, PAGE[n]);
 
 // The next row's number on a line of its own is not this row's quantity (PS 111622)
 expect(parseItemRow(['25 box Cetirizine', "10mg Tablet 100's 250", '26'], 0), { item_no: '25', quantity: 250 }, 'row number on its own line');
-expect(parseItemRow(['88 box | Loratadine 10mg/tab x 100', '89'], 0), { quantity: 88 }, 'next row number after a pack size');
+// 88 is the Item No. (89 follows), so the row shows no quantity rather than 88 (user, 2026-10-26)
+expect(parseItemRow(['88 box | Loratadine 10mg/tab x 100', '89'], 0), { item_no: '88', quantity: undefined }, 'next row number after a pack size');
 // A priced row keeps its own reading, whatever follows it
 expect(parseItemRow(['3 450 vials Carboplatin 450mg/45mL 1,828.40 822,780.00', 'Total 822,780.00'], 0), { quantity: 450 }, 'priced row');
 // A row with its quantity on its own line doesn't take the next rows' (PhilGEPS 13296768, a list without row numbers)
@@ -74,7 +75,15 @@ const LAST = ['59 vials Cefuroxime 750mg powder for Inj. 500', '60 vials Cefoxit
 const lastRow = parseItemRow(LAST, 1);
 expect(lastRow, { item_no: '60', quantity: undefined }, 'last row');
 assert.ok(!/Purpose/.test(lastRow.description || ''), `last row: the form's "Purpose" is in its description: ${lastRow.description}`);
+// Rows numbered in order: the first number is the Item No., never the quantity (PhilGEPS 13291631, Cajidiocan:
+// "ITEM NO. | UNIT | ITEM DESCRIPTION | QUANTITY"; was read as 2 and 3)
+const NUMBERED = ['ITEM NO. UNIT ITEM DESCRIPTION QUANTITY', '1 Boxes Metformin 500mg/tab 100’s, Retimed 100', '2 Boxes Losartan 50mg/tab (60’s), Retimed 105', '3 Boxes Amlodipine 5mg/tab (100’s), Retimed 131', 'SIGNED'];
+[[1, '1', 100], [2, '2', 105], [3, '3', 131]].forEach(([n, item_no, quantity]) => expect(parseItemRow(NUMBERED, n), { item_no, quantity, unit: 'Boxes' }, NUMBERED[n]));
+// A row numbered in order whose quantity cell is empty shows none (not its Item No.)
+expect(parseItemRow(['4 vials Ceftriaxone 1g powder', '5 vials Cefoxitin 1g powder', '6 vials Cefuroxime 750mg powder'], 1), { item_no: '5', quantity: undefined }, 'numbered row without quantity');
+// A lone row on its own (no numbering around it) keeps "<qty> <unit> <description>"
+expect(parseItemRow(['500 tablets Amlodipine 5mg'], 0), { quantity: 500 }, 'quantity first, no numbering');
 // A quantity without its unit at the end of the line stays this row's
 expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "200MCG/1MG/ML NEBULE 30'S 40 BOX"], 0), { quantity: undefined }, 'bare quantity');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 15} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 20} rows).`);

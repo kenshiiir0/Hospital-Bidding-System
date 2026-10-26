@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-12';
+// rules-13: rows numbered in order: the first number is the Item No., never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-13';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -65,7 +65,7 @@ const KNOWN_UNIT_RE = String.raw`(?:pre-?\s?filled\s+)?(?:tab|tablet|cap|capsule
 const ROW_START = new RegExp(String.raw`^(?:[A-Z]{0,4}-?\d[\d,]*[.)]*\s+[\dA-Za-z]|\W*\S{1,3}\s+${KNOWN_UNIT_RE}\s)`, 'i');
 const LONE_NUMBER = /^\d[\d,]*$/;
 // The form around a table, never a row's continuation ("Purpose: Purchase of Drugs ...", "Requested By:")
-const FORM_TEXT = /^\W*(?:purpose|requested|approved|prepared|received|certified|noted|recommend\w*|submitted|signature|name|designation|total|grand total|sub-?total|note|notes|remarks|page \d)\b/i;
+const FORM_TEXT = /^\W*(?:purpose|requested|approved|prepared|received|certified|noted|recommend\w*|submitted|signed|signature|name|designation|total|grand total|sub-?total|note|notes|remarks|page \d)\b/i;
 // Ends in a bare number (a quantity column without its unit), not a pack size such as "x 100" or "/100"
 const ENDS_IN_NUMBER = /(?<![x×/]\s?)(?<=\s)\d[\d,]*$/i;
 // "<row no.> <unit> ...": the row number is followed by the unit, so the quantity is the row's last number
@@ -92,30 +92,50 @@ export function rowText(lines, n) {
 // A table's rules OCR left in a line ("| 60 | vials] Cefoxitin ... |", "4m| 800") are not text
 const withoutRules = (line) => (line || '').replace(/\s*[|[\]]+\s*/g, ' ').trim();
 
+// A line's first number (not a strength such as "10 mg"), or a lone number (a row number on a line of its own)
+const LEADING_NUMBER = /^\W*(\d{1,4})[.)]*(?:\s+(?!(?:mg|mcg|g|gm|ml|l|iu|units?|%)\b)|$)/i;
+const leadingNumber = (line) => {
+  const m = LEADING_NUMBER.exec(line || '');
+  return m ? Number(m[1]) : null;
+};
+// How far up and down to look for the rows numbered just before and after
+const NUMBERING_REACH = 3;
+
+/** The Item No. of lines[n]: its first number when a line nearby starts with the number before or after it
+ * (rows numbered in order: "59 vials ..." / "60 vials Cefoxitin ..." / "61 ..."), else null */
+function itemNumberOf(lines, n) {
+  const k = leadingNumber(lines[n]);
+  if (k == null) return null;
+  for (let d = 1; d <= NUMBERING_REACH; d++) {
+    if (leadingNumber(lines[n - d]) === k - 1 || leadingNumber(lines[n + d]) === k + 1) return k;
+  }
+  return null;
+}
+
 /** The columns of the table row starting on lines[n], also when the row is broken over lines (the text layer or
  * OCR puts the description's end and the quantity on the next lines). A line's own reading stays when it is
- * priced (quantity × unit price gives its total) or already has its quantity (the next lines are another row). */
+ * priced (quantity × unit price gives its total) or already has its quantity (the next lines are another row).
+ * Rows numbered in order: the first number is the Item No. and never the quantity (user, 2026-10-26); the
+ * quantity is read from the rest of the row, and stays empty when the row has none. */
 // written: the row's text as the document gives it (its own line, or with the lines it continues on), shown as
 // "As written"
 export function parseItemRow(rawLines, n) {
   const lines = rawLines.map(withoutRules);
   const own = { ...parseItemLine(lines[n]), written: lines[n] };
   if (own.unit_price != null) return own;
+  const itemNo = itemNumberOf(lines, n);
+  if (itemNo != null) {
+    const read = (text) => ({ ...parseItemLine(text.replace(LEADING_NUMBER, '')), item_no: String(itemNo), written: text });
+    const alone = read(lines[n]);
+    const row = rowText(lines, n);
+    const whole = row === lines[n] ? alone : read(row);
+    return whole.quantity != null ? whole : alone;
+  }
   // "<row no.> <unit> <description> <qty>": its own reading takes the row number as the quantity
   if (!ROW_NO_UNIT.test(lines[n]) && (own.quantity != null || ENDS_IN_NUMBER.test(lines[n]))) return own;
   const row = rowText(lines, n);
   const whole = row === lines[n] ? {} : { ...parseItemLine(row), written: row };
-  const parsed = whole.quantity != null ? whole : own;
-  // Still read as "<qty> <unit> <description>" while the rows around start with the numbers before and after
-  // its first one ("59 vials ..." / "60 vials Cefoxitin 1g powder for Inj." / "61 ..."): that is the row's
-  // number, and the row shows no quantity
-  const first = Number(/^(\d{1,3})\s/.exec(lines[n])?.[1]);
-  const startsWith = (line, k) => Number(/^(\d{1,3})[.)]*\s/.exec(line || '')?.[1]) === k;
-  if (parsed.item_no == null && parsed.quantity === first && (startsWith(lines[n - 1], first - 1) || startsWith(lines[n + 1], first + 1))) {
-    // The row's own line only: the next lines gave no quantity, so they are not this row
-    return { ...own, item_no: String(first), quantity: undefined };
-  }
-  return parsed;
+  return whole.quantity != null ? whole : own;
 }
 
 export function parseItemLine(fullLine) {
@@ -165,6 +185,9 @@ function parseItemColumns(line) {
   // row's number, the last one the quantity (not a pack size such as "x 100")
   const unitFirst = new RegExp(`^(\\d{1,3})[.)]*\\s+${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
   if (unitFirst) return { item_no: unitFirst[1], unit: unitFirst[2], description: unitFirst[3], quantity: num(unitFirst[4]) };
+  // Unit | Description | Quantity: such a row once its Item No. is set aside ("Boxes Losartan 50mg/tab (60’s) 105")
+  const unitDesc = new RegExp(`^${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
+  if (unitDesc) return { unit: unitDesc[1], description: unitDesc[2], quantity: num(unitDesc[3]) };
   const descPriced = new RegExp(`^${ITEM}\\s+(.+?)\\s+${QTY}\\s+${KNOWN_UNIT}\\s+${PRICE}\\s+${PRICE}$`, 'i').exec(line);
   if (descPriced) return { item_no: descPriced[1], description: descPriced[2], quantity: num(descPriced[3]), unit: descPriced[4], unit_price: num(descPriced[5]), total: num(descPriced[6]) };
   const noItem = new RegExp(`^${QTY}\\s+${KNOWN_UNIT}\\s+(.+)$`, 'i').exec(line);
