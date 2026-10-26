@@ -535,9 +535,10 @@ export function needsDocuments(o, now = Date.now()) {
 }
 export { RECHECK_MS };
 
-// Tenders whose documents the Sync orders: those asking for our products, those naming one of our molecules
-// without our dosage in the description (the documents may give the dosage), and those whose description has
-// no item list (our products can only be in the documents)
+// The Sync orders (₱0.00) and reads the documents of every open tender: a description's item list can leave out
+// lines the documents have (user, 2026-10-26: order all). These go first: those asking for our products, those
+// naming one of our molecules without our dosage (the documents may give it), and those whose description has
+// no item list (our products can only be in the documents).
 export function wantsDocuments(o) {
   return (
     (o.matched_molecules || []).length > 0 ||
@@ -657,10 +658,16 @@ export async function runSyncRound() {
         }
       });
     }
-    // The dashboard's default order: newest published first, then highest reference number
+    // Every open tender; the likeliest to be ours first (wantsDocuments), then the dashboard's default order:
+    // newest published first, then highest reference number
     let pending = data
-      .filter((o) => wantsDocuments(o) && needsDocuments(o))
-      .sort((a, b) => (b.publish_date || '').localeCompare(a.publish_date || '') || (b.ref_no || '').localeCompare(a.ref_no || ''));
+      .filter((o) => needsDocuments(o))
+      .sort(
+        (a, b) =>
+          Number(wantsDocuments(b)) - Number(wantsDocuments(a)) ||
+          (b.publish_date || '').localeCompare(a.publish_date || '') ||
+          (b.ref_no || '').localeCompare(a.ref_no || '')
+      );
     // Later rounds: only this Sync's tenders not tried yet (a tender that failed isn't retried in the same Sync)
     if (job.round > 1) pending = pending.filter((o) => job.tenders?.[o.ref_no] === 'waiting');
     if (job.round === 1) {
