@@ -129,4 +129,23 @@ expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "2
 // OCR's dot between thousands, checked by price x quantity = total (PhilGEPS 13295969: 7,826 x 1,050.00)
 expect(parseItemRow(["12 \\ bx Cetirizine Hydrochloride 10mg tab.100's . 7.826 1050.00 ~ 8,217,300.00"], 0), { quantity: 7826, unit_price: 1050, total: 8217300 }, 'dot between thousands');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 38} rows).`);
+// Rows the team screened by hand (PHILGEPS OPPORTUNITY sheet, 2026-10-26) with their quantity and ABC:
+// Item | Description | Unit Price | Quantity | Unit (PhilGEPS 13298321 Bicol Medical Center: 27,100 tab, ABC 385,633)
+expect(parseItemRow(['1 Capecitabine 500mg film coated/tablet (VAT EXEMPT) 14.23 27.100 tab'], 0), { quantity: 27100, unit: 'tab', unit_price: 14.23 }, 'unit price then quantity (dot between thousands)');
+expect(parseItemRow(['2 Cytarabine 100mg/mL solution for injection 1ml 350.00 1000 vial'], 0), { quantity: 1000, unit: 'vial', unit_price: 350 }, 'unit price then quantity');
+// Item | Unit | Description | Quantity | Unit Price (PhilGEPS 13303622 Jose B. Lingad: 3,000 tablets, ABC 57,000)
+expect(parseItemRow(['10 Tablet Capecitabine 500Mg In Blister Or Foil Pack 3,000 19.00'], 0), { quantity: 3000, unit: 'Tablet', unit_price: 19 }, 'quantity then unit price');
+// Item | ABC Total | Description | Quantity | Unit (PhilGEPS 13301894 Bicol Regional: Idarubicin 100 vials, ABC 650,000)
+expect(parseItemRow(['1 650,000.00 Idarubicin (as hydrochloride) powder, 5 mg vial 100 vial'], 0), { quantity: 100, unit: 'vial', total: 650000 }, 'ABC total after the Item No.');
+// QUANTITY | UNIT on the line above, ABC/unit after the description (PhilGEPS 13298769 Far North Luzon)
+const FNL = ['QUANTITY UNIT DESCRIPTION ABC/unit BRAND UNIT PRICE', '200 PFS', 'Filgrastim 300 mcg/0.5 mL solution for injection', 'in pre-filled syringe (IV, SC) 1,500.00', '5,000 tablet', 'Letrozole 2.5mg tablet', '27.55', '400 tablet', 'Capecitabine 500mg tablet', '37.50'];
+expect(parseItemRow(FNL, 2), { quantity: 200, unit: 'PFS', unit_price: 1500 }, 'quantity on the line above');
+expect(parseItemRow(FNL, 5), { quantity: 5000, unit: 'tablet', unit_price: 27.55 }, 'quantity on the line above, price alone below');
+expect(parseItemRow(FNL, 8), { quantity: 400, unit: 'tablet', unit_price: 37.5 }, 'quantity on the line above (last row)');
+
+// A large amount after a sizeable quantity is the ABC total (PhilGEPS 13271506: 100 boxes, ₱336,000.00)
+expect(parseItemRow(["32 box Cetirizine 10mg, tablet, (100's) 100 336,000.00"], 0), { quantity: 100, unit: 'box', total: 336000, unit_price: undefined }, 'ABC total after the quantity');
+// A strength on the line above is not a quantity
+expect(parseItemRow(['Paracetamol', '500 mg', 'Cetirizine 10mg tablet'], 2), { quantity: undefined }, 'strength on the line above');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 47} rows).`);

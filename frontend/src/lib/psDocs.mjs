@@ -17,8 +17,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-17';
+// rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-18';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -52,6 +52,10 @@ const num = (s) => Number(s.replace(/,/g, ''));
 
 // A delivery period after the amounts ("... 78,120.00 15 calendar days") is not part of the item
 const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
+
+// An amount after a row's quantity above this, with at least this quantity, is the ABC total, not the unit price
+const LARGE_AMOUNT = 50000;
+const SIZEABLE_QUANTITY = 20;
 
 // quantity × unit price gives the total (1% for rounded prices)
 const adds = (quantity, unitPrice, total) => quantity > 0 && Math.abs(quantity * unitPrice - total) <= total * 0.01;
@@ -128,6 +132,34 @@ function itemNumberOf(lines, n) {
 // "As written"
 export function parseItemRow(rawLines, n) {
   const lines = rawLines.map(withoutRules);
+  return quantityAbove(lines, n, rowColumns(lines, n));
+}
+
+// "<qty> <unit>" alone on a line: the Quantity and Unit columns of the row below it (not a strength: "500 mg")
+const QTY_UNIT_LINE = /^(\d[\d,]*)\s+(?!(?:mg|mcg|µg|g|gm|grams?|ml|l|iu|units?|meq|mmol|%)\.?$)([A-Za-z][A-Za-z/.'’]*(?:\s+syringes?)?)$/i;
+const MONEY_END = /(?<![\d.,])(\d[\d,]*\.\d{2})$/;
+
+/** A row read without a quantity whose line above is only "<qty> <unit>": QUANTITY | UNIT | DESCRIPTION | ABC/unit
+ * forms whose text layer puts the quantity first, then the description, then the ABC/unit ("200 PFS" /
+ * "Filgrastim 300 mcg/0.5 mL solution for injection" / "in pre-filled syringe (IV, SC) 1,500.00", PhilGEPS
+ * 13298769). The unit price is the amount ending this line or one of the next two, before the next row. */
+function quantityAbove(lines, n, parsed) {
+  if (parsed.quantity != null) return parsed;
+  const above = QTY_UNIT_LINE.exec(lines[n - 1] || '');
+  if (!above) return parsed;
+  let unitPrice;
+  for (const line of lines.slice(n, n + 3)) {
+    if (line !== lines[n] && QTY_UNIT_LINE.test(line)) break;
+    const money = MONEY_END.exec(line);
+    if (money) {
+      unitPrice = num(money[1]);
+      break;
+    }
+  }
+  return { ...parsed, quantity: num(above[1]), unit: above[2], ...(unitPrice != null && { unit_price: unitPrice }) };
+}
+
+function rowColumns(lines, n) {
   const parsed = readRow(lines, n);
   if (parsed.unit_price != null) return parsed;
   const itemNo = itemNumberOf(lines, n);
@@ -215,6 +247,15 @@ function parseItemColumns(line) {
   // Item | Quantity | Unit | Description | Unit Price | Total
   const priced = new RegExp(`^${ITEM}\\s+${QTY}\\s+${UNIT}\\s+(.+?)\\s+${PRICE}\\s+${PRICE}$`).exec(line);
   if (priced) return { item_no: priced[1], quantity: num(priced[2]), unit: priced[3], description: priced[4], unit_price: num(priced[5]), total: num(priced[6]) };
+  // A whole quantity, also with a dot between thousands (OCR's "27.100" for 27,100)
+  const COUNT = String.raw`(\d{1,3}(?:[.,]\d{3})+(?![.,]?\d)|\d+(?![.,]?\d))`;
+  const count = (s) => Number(s.replace(/[.,]/g, ''));
+  // Item | Description | Unit Price | Quantity | Unit: "1 Capecitabine 500mg ... (VAT EXEMPT) 14.23 27.100 tab"
+  const priceQty = new RegExp(`^${ITEM}\\s+(.+?)\\s+${PRICE}\\s+${COUNT}\\s+(?!(?:mg|ml|mcg|g|gm|kg|l|iu|units?|%)\\.?$)([A-Za-z]{1,12}\\.?)$`, 'i').exec(line);
+  if (priceQty) return { item_no: priceQty[1], description: priceQty[2], unit_price: num(priceQty[3]), quantity: count(priceQty[4]), unit: priceQty[5] };
+  // Item | ABC Total | Description | Quantity | Unit: "1 650,000.00 Idarubicin (as hydrochloride) powder, 5 mg vial 100 vial"
+  const totalFirst = new RegExp(`^${ITEM}\\s+${PRICE}\\s+(.*[A-Za-z].*?)\\s+${COUNT}\\s+(?!(?:mg|ml|mcg|g|gm|kg|l|iu|units?|%)\\.?$)([A-Za-z]{1,12}\\.?)$`, 'i').exec(line);
+  if (totalFirst) return { item_no: totalFirst[1], total: num(totalFirst[2]), description: totalFirst[3], quantity: count(totalFirst[4]), unit: totalFirst[5] };
   // Item | Quantity | Unit | Description, e.g. "21. 5000 TAB LOSARTAN 100 MG"
   const qtyFirst = new RegExp(`^${ITEM}\\s+${QTY}\\s+${UNIT}\\s+(.+)$`).exec(line);
   if (qtyFirst) return { item_no: qtyFirst[1], quantity: num(qtyFirst[2]), unit: qtyFirst[3], description: qtyFirst[4] };
@@ -227,6 +268,16 @@ function parseItemColumns(line) {
   // row's number, the last one the quantity (not a pack size such as "x 100")
   const unitFirst = new RegExp(`^(\\d{1,3})[.)]*\\s+${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+(\\d[\\d,]*)$`, 'i').exec(line);
   if (unitFirst) return { item_no: unitFirst[1], unit: unitFirst[2], description: unitFirst[3], quantity: num(unitFirst[4]) };
+  // Item | Unit | Description | Quantity | Unit Price: "10 Tablet Capecitabine 500Mg In Blister Or Foil Pack 3,000 19.00"
+  const unitFirstPriced = new RegExp(`^(\\d{1,3})[.)]*\\s+${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)\\s+${COUNT}\\s+${PRICE}$`, 'i').exec(line);
+  if (unitFirstPriced) {
+    // The amount is the unit price ("3,000 19.00") or the ABC total ("32 box Cetirizine 10mg ... 100 336,000.00": a
+    // box at ₱336,000 is not a price): a large amount on a sizeable quantity is the total
+    const quantity = count(unitFirstPriced[4]);
+    const amount = num(unitFirstPriced[5]);
+    const isTotal = amount > LARGE_AMOUNT && quantity >= SIZEABLE_QUANTITY;
+    return { item_no: unitFirstPriced[1], unit: unitFirstPriced[2], description: unitFirstPriced[3], quantity, ...(isTotal ? { total: amount } : { unit_price: amount }) };
+  }
   // Unit | Quantity | Description ("Tablet 2,500 Cetirizine 10mg/tablet", once its Item No. is set aside)
   const unitQty = new RegExp(`^${KNOWN_UNIT}\\s+${QTY}\\s+(.*[A-Za-z].*)$`, 'i').exec(line);
   if (unitQty) return { unit: unitQty[1], quantity: num(unitQty[2]), description: unitQty[3] };
