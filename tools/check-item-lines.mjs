@@ -1,0 +1,69 @@
+// Item line check, part of the safety gate (tools/safety-gate.sh) and runnable by hand:
+//   node tools/check-item-lines.mjs
+// Real tender rows (PhilGEPS and PS-PhilGEPS documents and notice pages) against the quantity, unit and
+// row number the molecule tracker must show. The row number must never be read as the quantity (user,
+// 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
+import assert from 'node:assert/strict';
+import { parseItemLine, parseItemRow } from '../frontend/src/lib/psDocs.mjs';
+
+const pick = ({ item_no, quantity, unit, unit_price, total }) => ({ item_no, quantity, unit, unit_price, total });
+const expect = (got, want, label) => {
+  const shown = pick(got);
+  for (const [key, value] of Object.entries(want)) assert.equal(shown[key], value, `${label}: ${key} is ${shown[key]}, should be ${value}`);
+};
+
+// One-line rows
+const LINES = [
+  // Item | Unit | Description | Quantity (PS 111622, City of Biñan)
+  ["40 box Loratidine 10 mg Tablet 100's 150", { item_no: '40', unit: 'box', quantity: 150 }],
+  ["25 box Cetirizine 10mg Tablet 100's 250", { item_no: '25', unit: 'box', quantity: 250 }],
+  // Item | Quantity | Unit | Description | Unit Price | Total
+  ['3 450 vials Carboplatin 450mg/45mL 1,828.40 822,780.00', { quantity: 450, unit_price: 1828.4, total: 822780 }],
+  // Item | Quantity | Unit | Description
+  ['21. 5000 TAB LOSARTAN 100 MG', { item_no: '21', quantity: 5000, unit: 'TAB' }],
+  // Item | Description | Quantity | Unit
+  ['9 MIDAZOLAM 5MG/ML AMPULE 10’S 40 BX', { item_no: '9', quantity: 40, unit: 'BX' }],
+  // Quantity | Unit | Description (no row number)
+  ['500 tablets Amlodipine 5mg', { quantity: 500, unit: 'tablets' }],
+  // Layouts ending in "<unit price> <total>"
+  ['500 TABLET Amlodipine 5 mg Tablet 2 1,000.00', { quantity: 500, unit_price: 2, total: 1000 }],
+  ['55100000 vial Vancomycin 500mg, 1gram 3000 450.00 1,350,000.00', { item_no: '55100000', quantity: 3000, unit_price: 450 }],
+];
+for (const [line, want] of LINES) expect(parseItemLine(line), want, line);
+
+// Rows broken over lines (the text layer or OCR puts the quantity column on the next line)
+const PAGE = [
+  "24 box Celecoxib 400mg 100's 100",
+  '25 box Cetirizine',
+  "10mg Tablet 100's 250",
+  '26 bottle Cetirizine 5mg/5ml 60ml Syrup 200',
+  '35 box Folic Acid 5mg tablet 1',
+  "OO's",
+  '100',
+  "36 box Gliclazide 30 mg Modified Release Tablet 100's 100",
+];
+const ROWS = [
+  [1, { item_no: '25', quantity: 250 }],
+  [3, { item_no: '26', quantity: 200 }],
+  [4, { item_no: '35', quantity: 100 }],
+  [7, { item_no: '36', quantity: 100 }],
+];
+for (const [n, want] of ROWS) expect(parseItemRow(PAGE, n), want, PAGE[n]);
+
+// The next row's number on a line of its own is not this row's quantity (PS 111622)
+expect(parseItemRow(['25 box Cetirizine', "10mg Tablet 100's 250", '26'], 0), { item_no: '25', quantity: 250 }, 'row number on its own line');
+expect(parseItemRow(['88 box | Loratadine 10mg/tab x 100', '89'], 0), { quantity: 88 }, 'next row number after a pack size');
+// A priced row keeps its own reading, whatever follows it
+expect(parseItemRow(['3 450 vials Carboplatin 450mg/45mL 1,828.40 822,780.00', 'Total 822,780.00'], 0), { quantity: 450 }, 'priced row');
+// A row with its quantity on its own line doesn't take the next rows' (PhilGEPS 13296768, a list without row numbers)
+const LIST = ['Cetirizine 5mg/5ml, 30ml syrup 100 Bottles', 'Cetirizine 2.5mg/ml, 0 ml Oral Drops 100 Bottles', 'Cetirizine 10 mg 500 Tablets', 'Cinnarizine 25 mg 3000 Tablets'];
+[100, 100, 500].forEach((quantity, n) => expect(parseItemRow(LIST, n), { quantity }, LIST[n]));
+// A row whose quantity is on the next line (PhilGEPS 13301146, 13277104)
+expect(parseItemRow(['12 cetirizine tablet 10mg (as', 'dihydrochloride) 40 box', '13 cetirizine drops 10mg/ml (as'], 0), { quantity: 40, unit: 'box' }, 'quantity on the next line');
+expect(parseItemRow(['42 Cefoxitin 1 g Powder for Injection', 'Vial 100 vials', '43 Ceftaxidime (Ceftazidime) 1 g'], 0), { quantity: 100 }, 'unit and quantity on the next line');
+// The next row's quantity line is not taken ("5,000 tablet" / "10 30,000 Tablet" start rows)
+expect(parseItemRow(['Filgrastim 300 mcg/0.5 mL solution for injection', 'in pre-filled syringe (IV, SC) 1,500.00', '5,000 tablet'], 0), { quantity: undefined }, 'next row quantity');
+// A quantity without its unit at the end of the line stays this row's
+expect(parseItemRow(['CETIRIZINE 10MG TABLET 15', 'SALBUTAMOL + IPRATROPIUM', "200MCG/1MG/ML NEBULE 30'S 40 BOX"], 0), { quantity: undefined }, 'bare quantity');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 10} rows).`);

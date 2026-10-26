@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-8';
+// rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-9';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -55,6 +55,51 @@ const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
 
 // quantity × unit price gives the total (1% for rounded prices)
 const adds = (quantity, unitPrice, total) => quantity > 0 && Math.abs(quantity * unitPrice - total) <= total * 0.01;
+
+// Units a quantity is counted in, for the layouts with no fixed column order
+const KNOWN_UNIT_RE = String.raw`(?:tab|tablet|cap|capsule|bottle|btl|botl|bot|vial|vl|amp|ampule|ampoule|box|bx|pc|piece|pack|sachet|tube|inhaler|nebule|syringe|bag|kit|set|unit|each|ea)(?:e?s)?\.?(?:\s?\/\s?(?:vial|amp|bottle|bot)s?)?`;
+
+// A line that starts a new table row: a number, then a word or another number ("26 bottle ...", "DM14 Amikacin
+// ...", "5,000 tablet", "10 30,000 Tablet"); not a row's continuation such as "10mg Tablet 100's 250" or a lone
+// quantity
+const ROW_START = /^[A-Z]{0,4}-?\d[\d,]*[.)]*\s+[\dA-Za-z]/;
+const LONE_NUMBER = /^[\d,]+$/;
+// Ends in a bare number (a quantity column without its unit), not a pack size such as "x 100" or "/100"
+const ENDS_IN_NUMBER = /(?<![x×/]\s?)(?<=\s)[\d,]+$/i;
+// "<row no.> <unit> ...": the row number is followed by the unit, so the quantity is the row's last number
+const ROW_NO_UNIT = new RegExp(`^\\d{1,3}[.)]*\\s+${KNOWN_UNIT_RE}\\s`, 'i');
+
+/** The row of lines[n] with the lines it continues on (at most two), up to the next row. A lone number is the
+ * quantity cell only while the row has no quantity yet; after one it is the next row's number: "25 box
+ * Cetirizine" / "10mg Tablet 100's 250" / "26" -> "25 box Cetirizine 10mg Tablet 100's 250" */
+export function rowText(lines, n) {
+  let row = lines[n];
+  const rowNo = Number(/^(\d+)[.)]*\s/.exec(row)?.[1]);
+  for (const next of lines.slice(n + 1, n + 3)) {
+    if (!next || ROW_START.test(next)) break;
+    if (LONE_NUMBER.test(next)) {
+      // The next row's number ("88 ..." / "89") is never this row's quantity
+      if (!ENDS_IN_NUMBER.test(row) && Number(next) !== rowNo + 1) row += ` ${next}`;
+      break;
+    }
+    row += ` ${next}`;
+  }
+  return row;
+}
+
+/** The columns of the table row starting on lines[n], also when the row is broken over lines (the text layer or
+ * OCR puts the description's end and the quantity on the next lines). A line's own reading stays when it is
+ * priced (quantity × unit price gives its total) or already has its quantity (the next lines are another row). */
+export function parseItemRow(lines, n) {
+  const own = parseItemLine(lines[n]);
+  if (own.unit_price != null) return own;
+  // "<row no.> <unit> <description> <qty>": its own reading takes the row number as the quantity
+  if (!ROW_NO_UNIT.test(lines[n]) && (own.quantity != null || ENDS_IN_NUMBER.test(lines[n]))) return own;
+  const row = rowText(lines, n);
+  if (row === lines[n]) return own;
+  const whole = parseItemLine(row);
+  return whole.quantity != null ? whole : own;
+}
 
 export function parseItemLine(fullLine) {
   const line = fullLine.replace(DELIVERY_TAIL, '');
@@ -97,7 +142,11 @@ function parseItemColumns(line) {
   const qtyLast = new RegExp(`^${ITEM}\\s+(.+?)\\s+([\\d,]+)\\s+(?!(?:mg|ml|mcg|g|kg|l|iu|units?|%)\\.?$)([A-Za-z]{1,12}\\.?)$`, 'i').exec(line);
   if (qtyLast) return { item_no: qtyLast[1], description: qtyLast[2], quantity: num(qtyLast[3]), unit: qtyLast[4] };
   // The remaining layouts have no fixed column order, so their unit must be a known one
-  const KNOWN_UNIT = String.raw`((?:tab|tablet|cap|capsule|bottle|btl|botl|bot|vial|vl|amp|ampule|ampoule|box|bx|pc|piece|pack|sachet|tube|inhaler|nebule|syringe|bag|kit|set|unit|each|ea)(?:e?s)?\.?(?:\s?\/\s?(?:vial|amp|bottle|bot)s?)?)`;
+  const KNOWN_UNIT = `(${KNOWN_UNIT_RE})`;
+  // Item | Unit | Description | Quantity, e.g. "40 box Loratidine 10 mg Tablet 100's 150": the first number is the
+  // row's number, the last one the quantity (not a pack size such as "x 100")
+  const unitFirst = new RegExp(`^(\\d{1,3})[.)]*\\s+${KNOWN_UNIT}\\s+(.*[A-Za-z].*?)(?<![x×/])\\s+([\\d,]+)$`, 'i').exec(line);
+  if (unitFirst) return { item_no: unitFirst[1], unit: unitFirst[2], description: unitFirst[3], quantity: num(unitFirst[4]) };
   const descPriced = new RegExp(`^${ITEM}\\s+(.+?)\\s+${QTY}\\s+${KNOWN_UNIT}\\s+${PRICE}\\s+${PRICE}$`, 'i').exec(line);
   if (descPriced) return { item_no: descPriced[1], description: descPriced[2], quantity: num(descPriced[3]), unit: descPriced[4], unit_price: num(descPriced[5]), total: num(descPriced[6]) };
   const noItem = new RegExp(`^${QTY}\\s+${KNOWN_UNIT}\\s+(.+)$`, 'i').exec(line);
@@ -304,7 +353,7 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
         // Table rows often break over several lines ("65 Aztreonam 1 g Powder for" / "injection 50 vials ..."),
         // so keep the next two lines to show with it when the line alone has no quantity
         const context = lines.slice(n, n + 3).filter(Boolean).join(' / ');
-        items.push({ our_products: products, ...parseItemLine(line), line, context, source: `${doc.name}, ${isPdf ? `page ${i + 1}` : 'Word/Excel file'}` });
+        items.push({ our_products: products, ...parseItemRow(lines, n), line, context, source: `${doc.name}, ${isPdf ? `page ${i + 1}` : 'Word/Excel file'}` });
       });
     });
   }

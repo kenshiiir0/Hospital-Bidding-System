@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { Session, getPage, postBack, postbackLinks } from './philgepsSync.mjs';
-import { loadMatcher, parseItemLine } from './psDocs.mjs';
+import { loadMatcher, parseItemRow } from './psDocs.mjs';
 import { extractSchedule } from './schedule.mjs';
 import { logActivity } from './activityLog.mjs';
 
@@ -281,7 +281,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
           ...t.details,
           matched_items: lines.flatMap((line, i) => {
             const products = matchProducts.line(line, lines.slice(i + 1, i + 3).join('\n'));
-            return products.length ? [{ line, products, ...parseItemLine(line) }] : [];
+            return products.length ? [{ line, products, ...parseItemRow(lines, i) }] : [];
           }),
           named_without_dosage: found.undosed.filter((name) => !t.matched_molecules.includes(name)),
           ...extractSchedule(t.items_text),
