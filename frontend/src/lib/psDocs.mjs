@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-11';
+// rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-12';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -95,14 +95,16 @@ const withoutRules = (line) => (line || '').replace(/\s*[|[\]]+\s*/g, ' ').trim(
 /** The columns of the table row starting on lines[n], also when the row is broken over lines (the text layer or
  * OCR puts the description's end and the quantity on the next lines). A line's own reading stays when it is
  * priced (quantity × unit price gives its total) or already has its quantity (the next lines are another row). */
+// written: the row's text as the document gives it (its own line, or with the lines it continues on), shown as
+// "As written"
 export function parseItemRow(rawLines, n) {
   const lines = rawLines.map(withoutRules);
-  const own = parseItemLine(lines[n]);
+  const own = { ...parseItemLine(lines[n]), written: lines[n] };
   if (own.unit_price != null) return own;
   // "<row no.> <unit> <description> <qty>": its own reading takes the row number as the quantity
   if (!ROW_NO_UNIT.test(lines[n]) && (own.quantity != null || ENDS_IN_NUMBER.test(lines[n]))) return own;
   const row = rowText(lines, n);
-  const whole = row === lines[n] ? {} : parseItemLine(row);
+  const whole = row === lines[n] ? {} : { ...parseItemLine(row), written: row };
   const parsed = whole.quantity != null ? whole : own;
   // Still read as "<qty> <unit> <description>" while the rows around start with the numbers before and after
   // its first one ("59 vials ..." / "60 vials Cefoxitin 1g powder for Inj." / "61 ..."): that is the row's

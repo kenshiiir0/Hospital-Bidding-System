@@ -144,7 +144,7 @@ function FromDocuments({ reading }) {
               { label: 'ABC/Unit', nowrap: true, render: (it) => peso(it.unit_price) },
               { label: 'ABC Total', nowrap: true, render: (it) => peso(it.total ?? (it.quantity != null && it.unit_price != null ? it.quantity * it.unit_price : null)) },
               // The line exactly as the document gives it, to check against
-              { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{asWritten(it.quantity != null ? it.line : it.context)}</span> },
+              { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{asWritten(it.written || (it.quantity != null ? it.line : it.context))}</span> },
             ]}
           />
         )}

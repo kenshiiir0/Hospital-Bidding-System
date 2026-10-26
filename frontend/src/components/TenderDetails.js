@@ -219,7 +219,7 @@ export default function TenderDetails({ bid, onClose }) {
               { label: 'ABC/Unit', nowrap: true, render: (item) => formatPeso(item.unit_price) || '—' },
               { label: 'ABC Total', nowrap: true, render: (item) => formatPeso(item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null)) || '—' },
               // The line exactly as the document or description gives it, to check against
-              { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{asWritten(item.where === 'Description' ? item.description || item.line : item.line)}</span> },
+              { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{asWritten(item.written || (item.where === 'Description' ? item.description || item.line : item.line))}</span> },
             ]}
           />
         )}

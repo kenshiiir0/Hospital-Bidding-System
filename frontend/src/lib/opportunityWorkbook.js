@@ -160,6 +160,8 @@ export function moleculeText(text, names = []) {
   s = s.replace(/\s*[_….·\-–—]{3,}.*$/, ''); // fill-in lines "______", "………"
   // Requirements and remarks: "with up to date local assay...", "without porcine content", "CPR & COD", "@ 920.00"
   s = s.replace(/\s+(?:with(?!\s*\d)|without|among|which|that|must|should|compliant|comply|registered|certified|CPR\b|COD\b|FDA\b|halal\b|and a\b|@).*$/i, '');
+  // "for Inj." / "for injection" (also a hospital's "forv Inj."): the form says enough ("Cefoxitin 1g powder")
+  s = s.replace(/\s+forv?\s+inj(?:ection)?\b\.?/gi, '');
   // Pack sizes and quantities: "x 100's", "(100's/box)", "100 tablet/box", "4,500 prefilled-syringe", ", 1200 Vial"
   s = s.replace(/\s+(?:x|by)\s*\d[\d,]*\s*(?:['’]?s\b)?.*$/i, '');
   s = s.replace(/[,;]?\s*(?:box\s*)?\(?\b\d+\s*(?:['’]?s|pcs)\b(?:\s*(?:\/|per)\s*box(?:es)?)?\)?/gi, '');
