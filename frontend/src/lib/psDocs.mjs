@@ -17,8 +17,8 @@ import { OCR_VERSION, ocrPdfPages } from './ocr.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-10';
+// rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-11';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -64,6 +64,8 @@ const KNOWN_UNIT_RE = String.raw`(?:pre-?\s?filled\s+)?(?:tab|tablet|cap|capsule
 // quantity. Also a row whose number OCR smudged ("© 1s boxes Cefuroxime ..."): a short word, then a unit.
 const ROW_START = new RegExp(String.raw`^(?:[A-Z]{0,4}-?\d[\d,]*[.)]*\s+[\dA-Za-z]|\W*\S{1,3}\s+${KNOWN_UNIT_RE}\s)`, 'i');
 const LONE_NUMBER = /^\d[\d,]*$/;
+// The form around a table, never a row's continuation ("Purpose: Purchase of Drugs ...", "Requested By:")
+const FORM_TEXT = /^\W*(?:purpose|requested|approved|prepared|received|certified|noted|recommend\w*|submitted|signature|name|designation|total|grand total|sub-?total|note|notes|remarks|page \d)\b/i;
 // Ends in a bare number (a quantity column without its unit), not a pack size such as "x 100" or "/100"
 const ENDS_IN_NUMBER = /(?<![x×/]\s?)(?<=\s)\d[\d,]*$/i;
 // "<row no.> <unit> ...": the row number is followed by the unit, so the quantity is the row's last number
@@ -76,7 +78,7 @@ export function rowText(lines, n) {
   let row = lines[n];
   const rowNo = Number(/^(\d+)[.)]*\s/.exec(row)?.[1]);
   for (const next of lines.slice(n + 1, n + 3)) {
-    if (!next || ROW_START.test(next)) break;
+    if (!next || ROW_START.test(next) || FORM_TEXT.test(next)) break;
     if (LONE_NUMBER.test(next)) {
       // The next row's number ("88 ..." / "89") is never this row's quantity
       if (!ENDS_IN_NUMBER.test(row) && Number(next) !== rowNo + 1) row += ` ${next}`;
@@ -108,7 +110,8 @@ export function parseItemRow(rawLines, n) {
   const first = Number(/^(\d{1,3})\s/.exec(lines[n])?.[1]);
   const startsWith = (line, k) => Number(/^(\d{1,3})[.)]*\s/.exec(line || '')?.[1]) === k;
   if (parsed.item_no == null && parsed.quantity === first && (startsWith(lines[n - 1], first - 1) || startsWith(lines[n + 1], first + 1))) {
-    return { ...parsed, item_no: String(first), quantity: undefined };
+    // The row's own line only: the next lines gave no quantity, so they are not this row
+    return { ...own, item_no: String(first), quantity: undefined };
   }
   return parsed;
 }
