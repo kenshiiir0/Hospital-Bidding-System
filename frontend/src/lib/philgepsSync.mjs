@@ -49,8 +49,8 @@ const RECHECK_MS = 24 * 60 * 60 * 1000;
 // tender that doesn't name our products there gets its documents ordered and read too
 const DESCRIPTION_ITEMS_MIN = 1500;
 // Version of the document reading stored per tender (documents_read_key); a change reads them again
-// read-27: psDocs.mjs rules-29. read-26: psDocs.mjs rules-28. read-25: psDocs.mjs rules-27. read-24: psDocs.mjs rules-26. read-23: psDocs.mjs rules-25. read-22: psDocs.mjs rules-24. read-21: psDocs.mjs rules-23. read-20: psDocs.mjs rules-22. read-19: psDocs.mjs rules-21. read-18: psDocs.mjs rules-20. read-17: psDocs.mjs rules-19. read-16: psDocs.mjs rules-18. read-15: psDocs.mjs rules-17. read-14: psDocs.mjs rules-16. read-13: psDocs.mjs rules-15. read-12: psDocs.mjs rules-14. read-11: psDocs.mjs rules-13. read-10: psDocs.mjs rules-12. read-9: psDocs.mjs rules-11. read-8: psDocs.mjs rules-10. read-7: row numbers no longer read as quantities (psDocs.mjs rules-9). read-6: misspelled names (lib/products.mjs)
-const READ_RULES = 'read-27';
+// read-28: psDocs.mjs rules-30. read-27: psDocs.mjs rules-29. read-26: psDocs.mjs rules-28. read-25: psDocs.mjs rules-27. read-24: psDocs.mjs rules-26. read-23: psDocs.mjs rules-25. read-22: psDocs.mjs rules-24. read-21: psDocs.mjs rules-23. read-20: psDocs.mjs rules-22. read-19: psDocs.mjs rules-21. read-18: psDocs.mjs rules-20. read-17: psDocs.mjs rules-19. read-16: psDocs.mjs rules-18. read-15: psDocs.mjs rules-17. read-14: psDocs.mjs rules-16. read-13: psDocs.mjs rules-15. read-12: psDocs.mjs rules-14. read-11: psDocs.mjs rules-13. read-10: psDocs.mjs rules-12. read-9: psDocs.mjs rules-11. read-8: psDocs.mjs rules-10. read-7: row numbers no longer read as quantities (psDocs.mjs rules-9). read-6: misspelled names (lib/products.mjs)
+const READ_RULES = 'read-28';
 // Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;
@@ -573,6 +573,8 @@ export async function readTenderDocuments(supabase, matchProducts, o, details) {
       ...details,
       documents_products: products,
       documents_items: items.slice(0, 300),
+      // Lines naming our products outside any table: not shown, kept for checking (psDocs.mjs isTableRow)
+      documents_outside_table: outcome.result?.outside_table || [],
       documents_read: outcome.read,
       documents_read_note: outcome.status === 'done' ? null : outcome.error,
       // Pre-bid, bid opening, submission deadline, ... as written in the documents (the notice page has no schedule)

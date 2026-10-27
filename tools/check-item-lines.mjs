@@ -4,7 +4,7 @@
 // row number the molecule tracker must show. The row number must never be read as the quantity (user,
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -267,4 +267,13 @@ const WRAP = ['47 3000 Ampoule Gentamicin (as sulfate) 80 mg/2mL (40 mg/mL) Solu
 expect(parseItemRow(WRAP, 2), { item_no: '48', quantity: 200, unit_price: 316.8 }, 'price on the wrapped line');
 expect(parseItemRow(['ITEM QTY. UNIT DESCRIPTION BRAND (IF', 'APPLICABLE)', 'UNIT PR PRICE', '(PHP)', ...WRAP], 6), { item_no: '48', quantity: 200, unit_price: 316.8 }, 'price on the wrapped line, by header');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2} rows).`);
+// Only a table's rows are fetched (user, 2026-10-27; PS 112460): not terms, specifications or bullet points
+const TERMS = ['Terms and conditions:', '', 'ATRACURIUM BESYLATE 10mg/ml in 2.5ml ampule:onset: at intubating dose of 0.5mg/kg', '', '- Intravenous solution does not leak through the infusion set or stopper'];
+assert.equal(isTableRow(TERMS, 2, parseItemRow(TERMS, 2)), false, 'terms paragraph is not a table row');
+assert.equal(isTableRow(TERMS, 4, parseItemRow(TERMS, 4)), false, 'bullet point is not a table row');
+assert.equal(isTableRow(['7', 'Epoetin alfa 4000iu/0.4ml OR'], 1, {}), true, 'row numbered on the line above');
+// A header starts at its own first line, not the title above it (PS 107166: "BAC No." is not an Item No. column)
+const TITLED = ['BAC No. EPA 2027-002', 'Supply and Delivery of Anesthetic Medications and Agents', 'Quantity Unit ! Item Description Souree Unit Cost Total Cost Bid Docs Price', '(Award by Item) RAF 4. 875.160.54 5,000.00', 'oo BUPIVACAINE 0.5% a . HN', 'as hydrochlordey 4 ml.', '6.000 amp-vial (spinal) with 8% 69.18 413.074.00 |', 'dextrose'];
+expect(parseItemRow(TITLED, 4), { quantity: 6000, unit_price: 69.18 }, 'header below a title');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4} rows).`);
