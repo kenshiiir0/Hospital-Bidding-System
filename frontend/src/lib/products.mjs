@@ -175,10 +175,12 @@ export function strengthsOf(text) {
 // What a product row's dosage requires of a tender line, or null when it has no usable dosage (match by name)
 export function dosageOf(product) {
   const pick = (text) => {
-    const { amounts, concentrations, gauges } = strengthsOf(text);
+    const { amounts, concentrations, gauges, perVolume } = strengthsOf(text);
     // Our amounts as written: "500mg" of "100mg/ml (500mg / 5ml)", not the 100 mg of its concentration
     const doses = amounts.filter((a) => a.unit !== 'ml' && !a.derived && !a.perUnit);
-    if (doses.length || concentrations.length) return { doses, concentrations, gauges: [], volumes: [] };
+    // Our pack volumes: the 5 ml of "1000 IU / ml (25000 IU / 5ml)"
+    const packVolumes = perVolume.map((pv) => pv.volume);
+    if (doses.length || concentrations.length) return { doses, concentrations, gauges: [], volumes: [], packVolumes };
     if (gauges.length) return { doses: [], concentrations: [], gauges, volumes: [] };
     // A supply sold by volume ("450 ML" blood bag)
     const volumes = amounts.filter((a) => a.unit === 'ml');
@@ -255,16 +257,21 @@ function dosageMatches(dosage, text) {
   //   100mg/ml (500mg / 5ml): "that is how we know we are compliant"), never another concentration whose product
   //   happens to equal one of our amounts ("Docetaxel 10mg/mL, 2mL" is not our 20 mg/0.5 ml)
   const volumes = found.amounts.filter((a) => a.unit === 'ml' && !a.perUnit);
-  const givesOurAmount = (f) => {
-    // Only our amounts in the concentration's unit (a Bupivacaine "0.5%" gives no mg amount to check against)
-    const ours = dosage.doses.filter((d) => d.unit === f.unit.split('/')[0]);
-    return dosage.anyVolume || !ours.length || !volumes.length || volumes.some((v) => ours.some((d) => same(f.value * v.value, d.value)));
+  // Our pack volume: the one our dosage names ("1000 IU / ml (25000 IU / 5ml)": 5 ml, its 25000 ignored; user,
+  // 2026-10-27: "When a tender have 1000 IU and 5ML indicated then we are compliant"), else the volume that with the
+  // concentration gives our amount ("100mg/ml" x 5 ml = our 500 mg)
+  const ourVolume = (volume, concentration) => {
+    if (dosage.packVolumes?.length) return dosage.packVolumes.some((v) => same(v, volume));
+    const ours = dosage.doses.filter((d) => d.unit === concentration.unit.split('/')[0]);
+    // (a Bupivacaine "0.5%" gives no mg amount to check against)
+    return !ours.length || ours.some((d) => same(concentration.value * volume, d.value));
   };
-  if (dosage.concentrations.some((c) => found.concentrations.some((f) => f.unit === c.unit && same(f.value, c.value) && givesOurAmount(f)))) return true;
-  // - hospitals' shorthand: our concentration written over our pack volume ("AMIKACIN 250MG/2ML" for 250 mg/ml, 2 ml =
-  //   our 500 mg/2 ml; "Rocuronium 10mg/5ml"; user, 2026-10-27: keep them)
+  const inOurVolume = (f) => dosage.anyVolume || !volumes.length || volumes.some((v) => ourVolume(v.value, f));
+  if (dosage.concentrations.some((c) => found.concentrations.some((f) => f.unit === c.unit && same(f.value, c.value) && inOurVolume(f)))) return true;
+  // - hospitals' shorthand: our concentration written over our pack volume ("AMIKACIN 250MG/2ML" for 250 mg/ml, 2 ml;
+  //   "Rocuronium 10mg/5ml"; user, 2026-10-27: keep them)
   return dosage.concentrations.some((c) =>
-    found.perVolume.some((pv) => `${pv.unit}/ml` === c.unit && same(pv.amount, c.value) && dosage.doses.some((d) => d.unit === pv.unit && same(pv.amount * pv.volume, d.value))),
+    found.perVolume.some((pv) => `${pv.unit}/ml` === c.unit && same(pv.amount, c.value) && ourVolume(pv.volume, { value: pv.amount, unit: c.unit })),
   );
 }
 

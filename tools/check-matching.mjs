@@ -39,6 +39,7 @@ const products = [
   P('Atracurium', '10mg'),
   P('Methotrexate', '100mg/ml (500mg / 5ml)'),
   P('Methotrexate', '10ml'),
+  P('Heparin Sodium', '1000 IU / ml (25000 IU / 5ml)'),
   P('Enoxaparin sodium*', '6000 IU/0.6 mL (60 mg/0.6 ml)'),
 ];
 const match = buildMatcher(products);
@@ -96,6 +97,8 @@ const MUST_MATCH = [
   ['56. Rocuronium 10mg/5ml as bromide vial (IV) 1,000 vial 114.89', 'Rocuronium'],
   ['44 Bupivacaine HCl Heavy, 5 mg/ml. 4 ml. 400 400', 'Bupivacaine'],
   ['Folic acid 5mg tablet or capsule', 'Folic Acid'],
+  // Concentration and our pack volume, the bracket total ignored (user, 2026-10-27: 1000 IU and 5ML)
+  ['HEPARIN 1000IU/ML, 5ML VIAL 643 Vial 338.00', 'Heparin'],
   ['PROPOFOL 10 mg ml. - 3.500 amp vial 2 mt 61.64 333.520.00', 'Propofol'],
 ];
 const MUST_NOT_MATCH = [
@@ -107,6 +110,7 @@ const MUST_NOT_MATCH = [
   // Exact dosage (user, 2026-10-27): a concentration is not an amount, nor concentration x volume
   ['CYTARABINE Inj.: 100mg/mL solution, 1mL (IM', 'Cytarabine'],
   ['Methotrexate 100 mg/mL, 10 mL vial', 'Methotrexate'],
+  ['Heparin 1000 IU/ml, 10 ml vial', 'Heparin'],
   ['50 Enoxaparin 100mg/ml,0.4ml (SC) pre filled syringe', 'Enoxaparin'],
   ['Methotrexate 25 mg/mL, 2 mL (as base) vial', 'Methotrexate'],
   ['DOCETAXEL Inj.: 10mg/mL, solution for infusion (IV), 2mL VAT-exempt', 'Docetaxel'],
