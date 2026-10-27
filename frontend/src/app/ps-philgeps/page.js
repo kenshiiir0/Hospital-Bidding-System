@@ -17,6 +17,7 @@ import { psRefOf } from '@/lib/opportunityWorkbook';
 import TypeBadge from '@/components/TypeBadge';
 import { startedByLabel } from '@/components/FetchedSection';
 import { psType } from '@/lib/tenderType';
+import { useScreened } from '@/lib/screened';
 
 // Bid Match: PhilGEPS's matched opportunities, filtered again by our products (molecules.json, checked
 // against each notice's full page), with the notice's downloaded documents
@@ -40,7 +41,9 @@ export default function BidMatchPage() {
   // Exclude products: shared with the PhilGEPS page (same saved list); a tender asking for one is hidden
   const { products, excluded, update: updateExcluded } = useExcludedProducts();
   const notExcluded = (row) => !productsOf(row).some((name) => excluded.includes(name));
-  const ours = (list?.rows || []).filter((row) => productsOf(row).length);
+  // Screened tenders always stay in the list (findable by search) even without our products now (user, 2026-10-27)
+  const screened = useScreened();
+  const ours = (list?.rows || []).filter((row) => productsOf(row).length || screened.has('ps', refOf(row)));
   const tendersPerProduct = {};
   for (const row of ours) for (const name of productsOf(row)) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
   // Pages of 25 / 50 / 100, as on the PhilGEPS list

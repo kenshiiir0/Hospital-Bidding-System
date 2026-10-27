@@ -15,6 +15,7 @@ import TenderDetails from '@/components/TenderDetails';
 import TypeBadge from '@/components/TypeBadge';
 import { philgepsType } from '@/lib/tenderType';
 import { activeTenders } from '@/lib/activeProducts';
+import { useScreened } from '@/lib/screened';
 import { stillReading } from '@/lib/documentsReading';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatInstant, formatPeso, instantDay } from '@/lib/format';
@@ -204,13 +205,20 @@ export default function Home() {
   // Initial load uses this directly after showing the cached list.
   // Only tenders that ask for our products in our dosages (matched_molecules, lib/products.mjs).
   const loadBids = async () => {
-    const { data, error } = await supabase.from('philgeps_opportunities').select('*').not('matched_molecules', 'eq', '{}').order('id', { ascending: false });
+    // Screened tenders too, whatever their molecules (a package or lot tender keeps none), so they stay findable
+    const [{ data, error }, { data: screenedRows }] = await Promise.all([
+      supabase.from('philgeps_opportunities').select('*').not('matched_molecules', 'eq', '{}').order('id', { ascending: false }),
+      supabase.from('screened_tenders').select('ref').eq('source', 'philgeps'),
+    ]);
+    const listed = new Set((data || []).map((bid) => bid.ref_no));
+    const missing = (screenedRows || []).map((r) => r.ref).filter((ref) => !listed.has(ref));
+    const { data: screenedBids } = missing.length ? await supabase.from('philgeps_opportunities').select('*').in('ref_no', missing) : { data: [] };
 
     if (error) {
       console.error('Error fetching bids:', error.message);
       setScrapeError(`Could not load tenders: ${error.message}`);
     } else {
-      setBids(data || []);
+      setBids([...(data || []), ...(screenedBids || [])].sort((a, b) => b.id - a.id));
       setUpdatedAt(Date.now());
     }
     setLoading(false);
@@ -288,7 +296,8 @@ export default function Home() {
   }, []);
 
   // Sidebar badge: tenders asking for our products (still on the Product List)
-  const ourCount = loading ? null : activeTenders(bids, products.length ? new Set(products) : null).length;
+  const screened = useScreened();
+  const ourCount = loading ? null : activeTenders(bids, products.length ? new Set(products) : null, screened).length;
   useEffect(() => {
     if (ourCount != null) setNavCount('/', ourCount);
   }, [ourCount]);
@@ -413,7 +422,7 @@ export default function Home() {
   // New, unread tenders (lib/newTenders.js)
   const news = useTenderNews();
   // New, unread tenders (lib/newTenders.js): the NEW label, the sidebar's "N new", Mark all as read
-  const unreadBids = loading || !news.ready ? [] : activeTenders(bids, products.length ? new Set(products) : null).filter(news.isNewPhilgeps);
+  const unreadBids = loading || !news.ready ? [] : activeTenders(bids, products.length ? new Set(products) : null, screened).filter(news.isNewPhilgeps);
   const unreadCount = loading || !news.ready ? null : unreadBids.length;
   useEffect(() => {
     if (unreadCount != null) reportUnread('/', unreadCount);
@@ -423,7 +432,8 @@ export default function Home() {
   const isNew = (bid) => news.isNewPhilgeps(bid) || seenNow.has(`philgeps:${bid.id}`);
 
   // Only molecules still on the Product List (an archived one shows nowhere, before the stored matches catch up)
-  const ourBids = activeTenders(bids, products.length ? new Set(products) : null);
+  // Screened tenders always stay (findable by search) even without molecules
+  const ourBids = activeTenders(bids, products.length ? new Set(products) : null, screened);
   // Drop every tender that requests an excluded product
   const visibleBids = ourBids.filter(
     (bid) => !(bid.matched_molecules || []).some((name) => excluded.includes(name))
