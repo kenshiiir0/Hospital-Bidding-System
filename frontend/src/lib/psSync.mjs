@@ -271,7 +271,8 @@ function readSchedule(root) {
   return {
     prebid: field(String.raw`Prebid Conference:\s*Date:\s*(${FIELD_DATE})`) || inText('pre-?bid conference'),
     prebidVenue: field(String.raw`Prebid Conference:\s*Date:\s*${FIELD_DATE}\s*Venue:\s*(.{1,200}?)${NEXT_LABEL}`),
-    bidOpening: inText('(?:bid opening|opening of bids)'),
+    // "Opening of Bid Envelopes – ..." as PhilGEPS's Taguig notices write it (lib/schedule.mjs)
+    bidOpening: inText('(?:bid opening|opening of bids|opening of (?:the )?bid (?:envelopes|proposals))'),
     closing: field(String.raw`Closing Date:\s*(${FIELD_DATE})`),
     lastUpdated: field(String.raw`Date Last updated:\s*(${FIELD_DATE})`),
   };
