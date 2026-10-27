@@ -261,4 +261,10 @@ expect(parseItemRow(EPA, 2), { quantity: 6000, unit_price: 69.18, total: 413074 
 // The quantity written twice on its own line (PS 105627)
 expect(parseItemRow(['41 Cefalexin 500mg. Capsule 10,625 10,62', '5', '42 Cefazolin 1g. Vl. contains 90.0% - 115.0% calculated on the', 'labeled amount of Cefazolin preferrably (101.3%) complies with', 'USP43', '500 500', '43 Cefepime 500mg Powder for Injection Vial 400 400'], 2), { item_no: '42', quantity: 500 }, 'quantity twice');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5} rows).`);
+// A row with its quantity whose description wraps and whose price ends the next line, with and without the header
+// (PhilGEPS 13309780 Heparin, Iohexol)
+const WRAP = ['47 3000 Ampoule Gentamicin (as sulfate) 80 mg/2mL (40 mg/mL) Solution for Injection', '(I.M./I.V.), 2 mL Ampoule 29.00', '48 200 Vial Heparin Sodium 1000 IU/mL (5,000 IU/5 mL) Solution for Injection', '(IV/SC), 5mL Vial 316.80', '49 8025 Vial Hydrocortisone (as sodium succinate) 100 mg Powder for Injection', "(IM/IV), Vial Box of 10's 165.00"];
+expect(parseItemRow(WRAP, 2), { item_no: '48', quantity: 200, unit_price: 316.8 }, 'price on the wrapped line');
+expect(parseItemRow(['ITEM QTY. UNIT DESCRIPTION BRAND (IF', 'APPLICABLE)', 'UNIT PR PRICE', '(PHP)', ...WRAP], 6), { item_no: '48', quantity: 200, unit_price: 316.8 }, 'price on the wrapped line, by header');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2} rows).`);
