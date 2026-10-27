@@ -183,14 +183,14 @@ export function moleculeText(text, names = []) {
   return s || original;
 }
 
-// One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total], as the team writes them in the original
-// sheet: "AMIKACIN 500MG/2ML" | "20 amp" | 88.78 | 5000 (no item numbers; prices as numbers)
+// One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total, quantity], as the team writes them in the
+// original sheet: "AMIKACIN 500MG/2ML" | "20 amp" | 88.78 | 5000 (no item numbers; prices as numbers).
+// quantity: the number in Qty, for the sheet's formulas when ABC/Unit or ABC Total is missing (buildOpportunitySheet)
 function itemRow(item) {
   const text = moleculeText(item.description || item.line, item.our_products || item.products);
-  if (item.quantity == null && item.unit_price == null) return [text, '', null, null];
+  if (item.quantity == null && item.unit_price == null) return [text, '', null, null, null];
   const qty = item.quantity != null ? `${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
-  const total = item.total ?? (item.quantity != null && item.unit_price != null ? item.quantity * item.unit_price : null);
-  return [text, qty, item.unit_price ?? null, total];
+  return [text, qty, item.unit_price ?? null, item.total ?? null, item.quantity ?? null];
 }
 
 // Molecule rows: the documents hold the real data, so a product with lines read in the bid documents (lines
@@ -351,9 +351,13 @@ export function buildOpportunitySheet(workbook, tenders) {
     }
 
     // Molecule rows
-    rows.forEach(([molecule, qty, unitPrice, total], i) => {
+    rows.forEach(([molecule, qty, unitPrice, total, quantity], i) => {
       const row = r + i;
+      // The team's formulas for a missing price: ABC Total = Qty x ABC/Unit, ABC/Unit = ABC Total / Qty
+      // (Qty is text like "3,000 vial", so the number is written into the formula)
       const cells = { F: molecule, G: qty, H: unitPrice, I: total };
+      if (quantity > 0 && total == null && typeof unitPrice === 'number') cells.I = { formula: `${quantity}*H${row}`, result: quantity * unitPrice };
+      else if (quantity > 0 && unitPrice == null && typeof total === 'number') cells.H = { formula: `I${row}/${quantity}`, result: total / quantity };
       for (const [col, value] of Object.entries(cells)) {
         const cell = ws.getCell(`${col}${row}`);
         cell.value = value === '' ? null : value;
@@ -394,9 +398,10 @@ export function buildOpportunitySheet(workbook, tenders) {
     ws.mergeCells(`A${sep}:H${sep}`);
     ws.getCell(`A${sep}`).border = BOX;
     const sum = ws.getCell(`I${sep}`);
-    const totals = rows.map((row) => row[3]).filter((v) => typeof v === 'number');
-    // Left empty when the notice gave no prices, rather than showing a misleading 0.00
-    if (totals.length) sum.value = { formula: `SUM(I${first}:I${last})`, result: totals.reduce((a, b) => a + b, 0) };
+    // The ABC totals of the block, given or worked out above
+    const totals = rows.map(([, , unitPrice, total, quantity]) => total ?? (quantity > 0 && typeof unitPrice === 'number' ? quantity * unitPrice : null)).filter((v) => typeof v === 'number');
+    // The red sum only when there are 2 or more ABC totals to add up (as in the original); empty otherwise
+    if (totals.length >= 2) sum.value = { formula: `SUM(I${first}:I${last})`, result: totals.reduce((a, b) => a + b, 0) };
     sum.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFF0000' } };
     sum.alignment = { horizontal: 'left', vertical: 'middle' };
     sum.numFmt = '#,##0.00';
