@@ -4,7 +4,7 @@
 // row number the molecule tracker must show. The row number must never be read as the quantity (user,
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
-import { expandVariants, isVariantParent, parseItemLine, parseItemRow } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total }) => ({ item_no, quantity, unit, unit_price, total });
 const expect = (got, want, label) => {
@@ -186,4 +186,34 @@ expect(parseItemRow(PHC_ROWS, 2), { item_no: '33.01', quantity: 2000, unit: 'amp
 expect(parseItemRow(PHC_ROWS, 6), { item_no: '12.01', quantity: 2000, unit_price: 445 }, 'sub-row: Propofol 20ml 2,000');
 expect(parseItemRow(PHC_ROWS, 7), { item_no: '12.02', quantity: 200, unit: 'vial', unit_price: 1150 }, 'sub-row: Propofol 50ml 200');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 63} rows).`);
+// A long table over several pages (PhilGEPS 13309076, Adela Serra Ty MMC): header over four lines on page 70, rows
+// of up to nine lines (description, then "<qty> <unit> ₱ <unit cost> ₱ <total>", then the delivery split), and
+// page 71 going on without the header
+const P70 = ['8. PURCHASE ORDER', 'Item', 'No. Description Quantity Unit Unit Cost Total Cost', 'Delivery Schedule', '1st Delivery 2nd Delivery 3rd Delivery', '1 ALPRAZOLAM 250MCG', 'TABLET', '100 Tablet ₱ 4.65 ₱ 465.00', '100 - -', '3 BUPIVACAINE (AS', 'HYDROCHLORIDE) 0.5%,', '5ML ISOBARIC POLYAMP', '1,500 Ampule ₱ 500.00 ₱ 750,000.00', '1,500 - -'];
+let carried = carryHeader(P70, null);
+expect(parseItemRow(P70, 9), { item_no: '3', quantity: 1500, unit: 'Ampule', unit_price: 500, total: 750000 }, 'long table: row over four lines, ₱ signs');
+const P71 = ['Department of Health', 'Effectivity Date July 23, 202571', '4 BUPIVACAINE', 'HYDROCLORIDE 0.5%,', '4ML W/ 8%', '(SENPIVAC)DEXTROSE', 'HEAVY BUPIVACAINE', 'HYDROCLORIDE 0.5%,', '4ML W/ 8% DEXTROSE', 'HEAVY', '700 Ampule ₱ 200.00 ₱ 140,000.00', '700', '- -', '30 PLAIN NSS 1 LITER', '94,920 Bottle ₱ 60.00 ₱ 5,695,200.00 50,000 44,920 50,000', '31 PROPOFOL 10MG/ML,', '20ML AMPULE', '2,100 Ampule ₱ 90.00 ₱ 189,000.00'];
+carried = carryHeader(P71, carried);
+expect(parseItemRow(P71, 2), { item_no: '4', quantity: 700, unit_price: 200, total: 140000 }, 'long table: next page without a header, nine-line row');
+expect(parseItemRow(P71, 13), { item_no: '30', quantity: 94920, unit_price: 60, total: 5695200 }, 'delivery split columns are not the quantity');
+expect(parseItemRow(P71, 15), { item_no: '31', quantity: 2100, unit: 'Ampule', unit_price: 90, total: 189000 }, 'long table: Propofol 2,100 (not its Item No. 31)');
+// A page starting another table (Technical Specifications) doesn't take the header
+const P75 = ['Technical Specifications', 'Item Specification Statement of Compliance', '3 BUPIVACAINE (AS HYDROCHLORIDE)'];
+assert.equal(carryHeader(P75, carried), null, 'a new table stops the carried header');
+// A text column after the numbers (PhilGEPS 13308657, Tarlac Provincial Hospital: "Item Number | Description |
+// Quantity | Total | Delivery Schedule"; the row on page 65, the header on page 64)
+const P64 = ['Item', 'Number Description Quantity Total Delivery', 'Schedule', '1 0.9% Sodium chloride, breakable 1000 ml 100 6,500.00 Fifteen (15)', 'calendar days'];
+const P65 = ['calendar days', '54 Rocuronium bromide 10mg/ml, 5ml vial 200 70,000.00 Fifteen (15)', 'calendar days'];
+carryHeader(P65, carryHeader(P64, null));
+expect(parseItemRow(P65, 1), { item_no: '54', quantity: 200, total: 70000 }, 'Delivery Schedule text after the numbers');
+assert.equal(parseItemRow(P65, 1).description, 'Rocuronium bromide 10mg/ml, 5ml vial', 'the delivery text is not in the name');
+// The same product listed again without a quantity is dropped when its row was read
+const ITEMS = [
+  { our_products: ['Rocuronium'], item_no: '54', quantity: 200, written: '54 Rocuronium bromide 10mg/ml, 5ml vial 200 70,000.00 Fifteen (15)', description: 'Rocuronium bromide 10mg/ml, 5ml vial' },
+  { our_products: ['Rocuronium'], written: 'Rocuronium bromide 10mg/ml, 5ml' },
+  { our_products: ['Bupivacaine'], item_no: '4', written: '4 BUPIVACAINE (AS HYDROCHLORIDE)' },
+];
+dropRepeatedRows(ITEMS);
+assert.equal(ITEMS.length, 2, 'repeated Rocuronium line dropped, Bupivacaine (no row with a quantity) kept');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72} rows).`);

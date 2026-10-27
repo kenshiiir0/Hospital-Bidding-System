@@ -17,8 +17,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-22';
+// rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-23';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -115,8 +115,16 @@ export function rowText(lines, n) {
   return row;
 }
 
-// A table's rules OCR left in a line ("| 60 | vials] Cefoxitin ... |", "4m| 800") are not text
-const withoutRules = (line) => (line || '').replace(/\s*[|[\]]+\s*/g, ' ').trim();
+// A table's rules OCR left in a line ("| 60 | vials] Cefoxitin ... |", "4m| 800") are not text; nor is the peso
+// sign before an amount ("₱ 90.00")
+const withoutRules = (line) => (line || '').replace(/\s*[|[\]]+\s*/g, ' ').replace(/₱\s*/g, '').trim();
+// The same lines cleaned once per page (the header found on a page is kept with them)
+const cleanedCache = new WeakMap();
+const cleanLines = (rawLines) => {
+  let lines = cleanedCache.get(rawLines);
+  if (!lines) cleanedCache.set(rawLines, (lines = rawLines.map(withoutRules)));
+  return lines;
+};
 
 // A line's first number (not a strength such as "10 mg"), or a lone number (a row number on a line of its own)
 const LEADING_NUMBER = /^\W*(\d{1,4})[.)]*(?:\s+(?!(?:mg|mcg|g|gm|ml|l|iu|units?|%)\b)|$)/i;
@@ -153,7 +161,7 @@ function itemNumberOf(lines, n) {
 // written: the row's text as the document gives it (its own line, or with the lines it continues on), shown as
 // "As written"
 export function parseItemRow(rawLines, n) {
-  const lines = rawLines.map(withoutRules);
+  const lines = cleanLines(rawLines);
   // The table's own header first (user, 2026-10-26: "the documents usually have this on top so you will know
   // where is the name, quantity, and other needed info"); the row rules below when there is none or the row
   // doesn't fit it
@@ -173,8 +181,12 @@ const HEADER_WORDS = [
   ['quantity', /^(?:quantity|qty)\b\.?/i],
   ['unit', /^(?:unit\s+of\s+(?:issue|measure(?:ment)?)|uom|u\/m|unit)\b/i],
   ['item', /^(?:item\s*(?:no\.?|#|number)|stock\s*(?:\/\s*property\s*)?(?:no\.?|number)|property\s*no\.?|no\.|item|lot\s*no\.?)/i],
+  // Delivery split columns ("1st Delivery 2nd Delivery 3rd Delivery"): each holds a number or "-", never the quantity
+  ['delivery', /^\d+(?:st|nd|rd|th)\s+delivery\b/i],
   ['text', /^(?:brand(?:\s+name)?|remarks?|delivery(?:\s+(?:period|schedule))?|manufacturer|country\s+of\s+origin)\b/i],
 ];
+// Columns a header can name more than once in a row
+const REPEATING = new Set(['delivery']);
 
 /** The columns a header line names, in order, e.g. ['item', 'unit', 'description', 'quantity', 'price', 'total'];
  * null unless it names a description and a quantity */
@@ -185,7 +197,7 @@ function headerColumns(line) {
     const rest = text.slice(at);
     const hit = HEADER_WORDS.find(([, re]) => re.test(rest));
     if (hit) {
-      if (columns.at(-1) !== hit[0]) columns.push(hit[0]);
+      if (columns.at(-1) !== hit[0] || REPEATING.has(hit[0])) columns.push(hit[0]);
       at += hit[1].exec(rest)[0].length;
     } else {
       const space = rest.indexOf(' ');
@@ -199,19 +211,51 @@ function headerColumns(line) {
 const HEADER_REACH = 120;
 const headerCache = new WeakMap();
 
-/** The header of the table lines[n] is in: the nearest line above naming the columns (also a header broken over
- * two lines: "Item" / "No. Unit Description Quantity ..."), or null */
-function headerFor(lines, n) {
+// A header broken over up to this many lines ("Item" / "No. Description Quantity Unit Unit Cost Total Cost" /
+// "Delivery Schedule" / "1st Delivery 2nd Delivery 3rd Delivery")
+const HEADER_LINES = 4;
+
+// The headers on a page, [{ at: line, columns }] (cached with the page's cleaned lines)
+function headersOf(lines) {
   let found = headerCache.get(lines);
   if (!found) {
     found = [];
     lines.forEach((line, i) => {
-      const columns = headerColumns(line) || (i + 1 < lines.length && headerColumns(`${line} ${lines[i + 1]}`));
-      if (columns) found.push({ at: i, columns });
+      if (found.at(-1)?.at >= i - HEADER_LINES) return;
+      for (let k = 1; k <= HEADER_LINES && i + k <= lines.length; k++) {
+        const columns = headerColumns(lines.slice(i, i + k).join(' '));
+        if (!columns) continue;
+        // The longest reading of a header broken over lines
+        let all = columns;
+        for (let more = k + 1; more <= k + 2 && i + more <= lines.length; more++) all = headerColumns(lines.slice(i, i + more).join(' ')) || all;
+        found.push({ at: i, columns: all });
+        break;
+      }
     });
     headerCache.set(lines, found);
   }
-  return found.findLast((h) => h.at < n && n - h.at <= HEADER_REACH)?.columns || null;
+  return found;
+}
+
+/** The header of the table lines[n] is in: the nearest one above (also a header broken over lines, and the one
+ * carried over from the page before when a long table goes on: carryHeader), or null */
+function headerFor(lines, n) {
+  return headersOf(lines).findLast((h) => h.at < n && n - h.at <= HEADER_REACH)?.columns || null;
+}
+
+// A page starting a table of its own ("Item Specification Statement of Compliance", "Item No. Item Particulars /
+// Description Total Amount"): a line naming two or more column words, the item one among them
+const TABLE_START = /\bitem\b.*\b(?:description|specifications?|particulars|quantity|qty|compliance)\b|\b(?:description|specifications?)\b.*\b(?:quantity|qty|compliance)\b/i;
+
+/** A long table going on onto the next page without its header (13309076: page 70 has it, 71-72 go on): the next
+ * page's rows are read by the page before's header, unless that page starts a table of its own. Returns the header
+ * to carry on to the page after. */
+export function carryHeader(rawLines, columns) {
+  const lines = cleanLines(rawLines);
+  const found = headersOf(lines);
+  const ownTable = found.length || lines.some((l) => TABLE_START.test(l));
+  if (columns && !ownTable) found.unshift({ at: -1, columns });
+  return found.at(-1)?.columns || (ownTable ? null : columns);
 }
 
 const MONEY_TOKEN = /^\d[\d,]*\.\d{2}$/;
@@ -246,7 +290,12 @@ function byHeader(lines, n) {
     for (const key of columns.slice(middle + 1).reverse()) {
       const token = tokens.at(-1);
       if (token == null) break;
-      if ((key === 'total' || key === 'price') && MONEY_TOKEN.test(token)) out[key === 'total' ? 'total' : 'unit_price'] = num(tokens.pop());
+      if (key === 'delivery') {
+        if (COUNT_TOKEN.test(token) || /^[-–—]$/.test(token)) tokens.pop();
+      } else if (key === 'text') {
+        // A text cell after the numbers ("Fifteen (15) calendar days" under Delivery Schedule): its words go
+        while (tokens.length && !MONEY_TOKEN.test(tokens.at(-1)) && !COUNT_TOKEN.test(tokens.at(-1))) tokens.pop();
+      } else if ((key === 'total' || key === 'price') && MONEY_TOKEN.test(token)) out[key === 'total' ? 'total' : 'unit_price'] = num(tokens.pop());
       else if (key === 'quantity' && COUNT_TOKEN.test(token) && !STRENGTH_TOKEN.test(tokens.at(-2) || '')) out.quantity = num(tokens.pop().replace(/\./g, ''));
       else if (key === 'unit' && WORD_TOKEN.test(token) && !STRENGTH_TOKEN.test(token) && out.quantity == null) out.unit = tokens.pop();
     }
@@ -261,12 +310,39 @@ function byHeader(lines, n) {
     else if (out.unit_price != null && out.total == null && out.unit_price > LARGE_AMOUNT && out.quantity >= SIZEABLE_QUANTITY) [out.total, out.unit_price] = [out.unit_price, undefined];
     return out;
   };
+  // A row whose numbers come on a line of their own below it is read whole first ("30 PLAIN NSS 1 LITER" /
+  // "94,920 Bottle 60.00 5,695,200.00": the "1" of 1 liter is not the quantity)
+  const whole = numbersBelow(lines, n);
+  if (whole) {
+    const read2 = read(whole);
+    if (read2) return read2;
+  }
   // The row on its own line, else with the lines it continues on
   const alone = read(lines[n]);
   // Not when the line's last number is a strength going on below ("... 1" / "g Vial ...")
   if (alone && !(STRENGTH_UNIT_START.test(lines[n + 1] || '') && /\s\d[\d,]*$/.test(lines[n]))) return alone;
   const row = rowText(lines, n);
   return row === lines[n] ? null : read(row);
+}
+
+// The numbers of a row on a line of their own: "2,100 Ampule 90.00 189,000.00" (Quantity, Unit, Unit Cost,
+// Total Cost after the description's lines)
+const NUMBERS_LINE = /^\d[\d,]*\s+[A-Za-z][A-Za-z/.'’-]*(?:\s+[A-Za-z][A-Za-z/.'’-]*)?\s+\d[\d,]*\.\d{2}\b/;
+// How many lines a row of a table with a header may take (a long description broken over lines)
+const ROW_LINES = 12;
+
+/** Under a header: the row from lines[n] through its numbers line below ("31 PROPOFOL 10MG/ML," / "20ML AMPULE" /
+ * "2,100 Ampule 90.00 189,000.00"), stopping before the next numbered row; null when no numbers line comes */
+function numbersBelow(lines, n) {
+  if (NUMBERS_LINE.test(lines[n])) return null;
+  const parts = [lines[n]];
+  for (const next of lines.slice(n + 1, n + ROW_LINES)) {
+    if (!next) break;
+    if (NUMBERS_LINE.test(next)) return [...parts, next].join(' ');
+    if (/^\d{1,4}[.)]?\s+[A-Za-z]/.test(next) || FORM_TEXT.test(next)) break;
+    parts.push(next);
+  }
+  return null;
 }
 
 // "<qty> <unit>" alone on a line: the Quantity and Unit columns of the row below it (not a strength: "500 mg")
@@ -525,6 +601,27 @@ async function fileText(name, bytes) {
 
 const letterCount = (text) => (text || '').replace(/\s/g, '').length;
 
+/** The same product listed again without a quantity (the Technical Specifications, a bid form, a line of a row
+ * read with that row): dropped when a row of it with a quantity was read and names the same Item No., or one
+ * holds the other's text ("Rocuronium bromide 10mg/ml, 5ml" in "54 Rocuronium bromide 10mg/ml, 5ml vial 200
+ * 70,000.00"). In place. */
+export function dropRepeatedRows(items) {
+  const flat = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const withQty = items.filter((i) => i.quantity != null);
+  for (let k = items.length - 1; k >= 0; k--) {
+    const item = items[k];
+    if (item.quantity != null) continue;
+    const text = flat(item.written || item.line);
+    const repeated = withQty.some(
+      (q) =>
+        q.our_products.some((p) => item.our_products.includes(p)) &&
+        ((item.item_no != null && String(q.item_no) === String(item.item_no)) || (text.length > 8 && (flat(q.written || q.line).includes(text) || text.includes(flat(q.description))))),
+    );
+    if (repeated) items.splice(k, 1);
+  }
+  return items;
+}
+
 // A page's Quantity column read on its own is used only when it agrees with the rows' own quantities at least as
 // often as it disagrees (rows read with a quantity and an Item No. in the column); else it belongs to another
 // table or column (PhilGEPS 13295969: 11,028 against the row's own 7,826 × 1,050.00 = 8,217,300.00)
@@ -634,7 +731,7 @@ export async function documentPages(supabase, bucket, doc) {
 
 /** The two readings of a row, for checking: by its table's header (null without one) and by the row rules */
 export function rowReadings(rawLines, n) {
-  const lines = rawLines.map(withoutRules);
+  const lines = cleanLines(rawLines);
   return { byHeader: byHeader(lines, n), byRows: quantityAbove(lines, n, rowColumns(lines, n)) };
 }
 
@@ -685,9 +782,12 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }) });
     const marked = pages.map(quantityColumnOf);
     texts.push(marked.map((m) => m.text).join('\n'));
+    // A long table's header carried on to the pages it goes on to (carryHeader)
+    let carried = null;
     marked.forEach(({ text: page, quantities: column }, i) => {
       const raw = page.split('\n').map(clean);
       const lines = expandVariants(raw);
+      carried = carryHeader(lines, carried);
       const quantities = column && columnAgrees(lines, column) ? column : null;
       lines.forEach((line, n) => {
         // A molecule whose strengths follow as sub-rows: the sub-rows are the rows
@@ -716,6 +816,7 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       });
     });
   }
+  dropRepeatedRows(items);
   if (!read.some((d) => d.kind !== 'unsupported')) return { status: 'skipped', read, error: 'No PDF, Word or Excel documents.' };
   if (!texts.length) return { status: 'skipped', read, error: 'No readable text (scanned or damaged documents).' };
   return {
