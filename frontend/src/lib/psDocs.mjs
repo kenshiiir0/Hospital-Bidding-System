@@ -977,11 +977,14 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
   const { data: snap } = await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle();
   const { data: done } = await supabase.from('ps_tender_analysis').select('ref, documents_key, documents_read');
   const known = new Map((done || []).map((r) => [r.ref, r]));
+  // Screened tenders first (user, 2026-10-27): the ones the team bids on
+  const { data: screened } = await supabase.from('screened_tenders').select('ref').eq('source', 'ps');
+  const isScreened = new Set((screened || []).map((s) => String(s.ref)));
   const queue = Object.entries(snap?.notices || {})
     .filter(([ref, n]) => (!only || only.includes(ref)) && n.documents?.some((d) => d.path))
     .filter(([ref, n]) => known.get(ref)?.documents_key !== documentsKey(n, matchProducts.key) || ocrPending(known.get(ref).documents_read))
-    // Tenders that mention our products first
-    .sort(([, a], [, b]) => (b.matched?.length || 0) - (a.matched?.length || 0));
+    // Screened tenders first, then those that mention our products
+    .sort(([refA, a], [refB, b]) => Number(isScreened.has(refB)) - Number(isScreened.has(refA)) || (b.matched?.length || 0) - (a.matched?.length || 0));
 
   let readCount = 0;
   let failed = 0;

@@ -556,6 +556,13 @@ export const needsReading = (o, listKey) =>
 
 // Reads a tender's downloaded documents (PDF, Word, Excel) for our products and returns the details fields
 // to store, plus matched_molecules (description matches with today's list + products found in the documents)
+/** PhilGEPS tenders with the Screened ones first (user, 2026-10-27: the ones the team bids on), else in their order */
+export async function screenedFirst(supabase, tenders) {
+  const { data } = await supabase.from('screened_tenders').select('ref').neq('source', 'ps');
+  const isScreened = new Set((data || []).map((s) => String(s.ref)));
+  return [...tenders].sort((a, b) => Number(isScreened.has(String(b.ref_no))) - Number(isScreened.has(String(a.ref_no))));
+}
+
 export async function readTenderDocuments(supabase, matchProducts, o, details) {
   const outcome = await readDocuments(supabase, BUCKET, details.documents, matchProducts);
   const items = outcome.result?.items || [];
@@ -646,7 +653,7 @@ export async function runSyncRound() {
     // Documents already downloaded but not read for our products yet: read them first (no log-in)
     if (job.round === 1 && matchProducts) {
       await optional(job, 'Reading downloaded documents', async () => {
-        const unread = data.filter((o) => needsReading(o, matchProducts.key));
+        const unread = await screenedFirst(supabase, data.filter((o) => needsReading(o, matchProducts.key)));
         for (const [i, o] of unread.entries()) {
           if (Date.now() - roundStarted > ROUND_MS / 2) break;
           job.stage = `Reading downloaded documents for our products (${i + 1} of ${unread.length})`;
