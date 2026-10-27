@@ -77,10 +77,11 @@ const MUST_MATCH = [
   ['Amikacin 500 mg/2 mL vial', 'Amikacin'],
   ['Folic Acid 5 mg tablet', 'Folic Acid'],
   ['Cetirizine 10 mg tablet', 'Cetirizine'],
-  // A route label is not another ingredient; "+ Dextrose" is part of our Bupivacaine in dextrose
+  // A route label is not another ingredient
   ['6 Propofol, Inj: 10mg/ml, 20ml 120 amps 390.00 46,800.00', 'Propofol'],
   ['22 Cefazolin, Inj: 1g 400 vials 45.00 18,000.00', 'Cefazolin'],
-  ['31 Bupivacaine + Dextrose 0.5% + 8%, 4 mL Solution for Injection Amp', 'Bupivacaine'],
+  // Bupidex is 0.5% as the Product List gives it (user, 2026-10-27: "The 8% is the wrong one")
+  ['3 BUPIVACAINE (AS HYDROCHLORIDE) 0.5%, 5ML ISOBARIC POLYAMP 1,500 Ampule', 'Bupivacaine'],
   // Atracurium's "10mg" is 10 mg per mL (user, 2026-10-27)
   ['26 Atracurium 10mg/mL, 2.5mL. Amp. ampule 150 327.00', 'Atracurium'],
   ['Oxaliplatin 50 mg/25 mL vial', 'Oxaliplatin'],
@@ -104,9 +105,11 @@ const MUST_MATCH = [
 const MUST_NOT_MATCH = [
   // Our form only (user, 2026-10-27): our Folic Acid is a tablet
   ['22 Folic Acid 5 mg Capsule capsule 3,000 2.59 7,770.00', 'Folic Acid'],
-  // A volume-only row is no match for a line with another strength; our Bupivacaine is in dextrose (user, 2026-10-27)
+  // A volume-only row is no match for a line with another strength
   ['60 METHOTREXATE Inj.: 100 mg/mL, 10 mL vial (as base) VAT-exempt', 'Methotrexate'],
-  ['3 BUPIVACAINE (AS HYDROCHLORIDE) 0.5%, 5ML ISOBARIC POLYAMP 1,500 Ampule', 'Bupivacaine'],
+  // A dextrose strength besides our 0.5% is another product (user, 2026-10-27: "The 8% is the wrong one")
+  ['4 BUPIVACAINE HYDROCLORIDE 0.5%, 4ML W/ 8% (SENPIVAC)DEXTROSE HEAVY 700 Ampule', 'Bupivacaine'],
+  ['31 Bupivacaine + Dextrose 0.5% + 8%, 4 mL Solution for Injection Amp', 'Bupivacaine'],
   // Exact dosage (user, 2026-10-27): a concentration is not an amount, nor concentration x volume
   ['CYTARABINE Inj.: 100mg/mL solution, 1mL (IM', 'Cytarabine'],
   ['Methotrexate 100 mg/mL, 10 mL vial', 'Methotrexate'],
