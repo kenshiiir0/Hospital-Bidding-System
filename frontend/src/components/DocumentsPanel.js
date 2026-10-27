@@ -111,12 +111,20 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
   );
 }
 
+// Word and Excel files, which a browser downloads instead of showing: View opens them in /documents/view
+const PREVIEWED = new Set(['docx', 'xlsx']);
+
 // View: a new tab (opened first so the browser doesn't block it as a pop-up). Save: the file is downloaded.
 async function openDocument({ doc, bucket, tenderRef, source, save = false }) {
+  const previewed = !save && PREVIEWED.has(extensionOf(doc.name));
   if (!doc.path) {
     const url = `/api/documents?${source ? `source=${source}&` : ''}ref=${tenderRef}&name=${encodeURIComponent(doc.name)}`;
     if (save) download(url, doc.name);
-    else window.open(url, '_blank', 'noopener');
+    else window.open(previewed ? `/documents/view?src=${encodeURIComponent(url)}&name=${encodeURIComponent(doc.name)}` : url, '_blank', 'noopener');
+    return;
+  }
+  if (previewed) {
+    window.open(`/documents/view?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(doc.path)}&name=${encodeURIComponent(doc.name)}`, '_blank', 'noopener');
     return;
   }
   const tab = save ? null : window.open('', '_blank');

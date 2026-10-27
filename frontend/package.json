@@ -11,6 +11,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "@tesseract.js-data/eng": "^1.0.0",
+    "docx-preview": "0.4.0",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.2",
     "next": "16.4.2",
