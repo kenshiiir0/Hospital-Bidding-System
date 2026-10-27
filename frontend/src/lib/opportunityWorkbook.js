@@ -58,6 +58,8 @@ const solid = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } 
 const HEADER_FILL = solid('FF70AD47'); // Office theme Accent 6
 const HOSPITAL_FILL = solid('FFF4B084'); // Accent 2, lighter 40%
 const MOLECULE_FILL = solid('FFFFFF00');
+// An ABC/Unit or ABC Total worked out by the sheet's formula, not read from the documents (user, 2026-10-27)
+const COMPUTED_FILL = solid('FFC6EFCE');
 const WHITE_FILL = solid('FFFFFFFF'); // tender cells are filled white in the original (hides gridlines)
 const ITEM_FONT = { name: 'Segoe UI', size: 11, color: { argb: 'FF0D0D0D' } };
 const CENTER = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -184,13 +186,16 @@ export function moleculeText(text, names = []) {
 }
 
 /** An item line's ABC/Unit and ABC Total, the missing one worked out as the sheet's formulas do (user,
- * 2026-10-27): ABC/Unit = ABC Total ÷ Qty, ABC Total = Qty × ABC/Unit */
+ * 2026-10-27): ABC/Unit = ABC Total ÷ Qty, ABC Total = Qty × ABC/Unit. computed: 'unit_price' or 'total' when that
+ * one was worked out rather than read (shown green), else null */
 export function abcOf(item) {
-  const { quantity: qty, unit_price: unit, total } = item;
-  return {
-    unitPrice: unit ?? (qty > 0 && total != null ? Math.round((total / qty) * 100) / 100 : null),
-    total: total ?? (qty != null && unit != null ? qty * unit : null),
-  };
+  const { quantity: qty, total } = item;
+  // A reading that stored its worked-out amount (psDocs.mjs withBothAmounts) is shown as read without it
+  const unit = item.computed === 'unit_price' ? null : item.unit_price;
+  const sum = item.computed === 'total' ? null : total;
+  if (unit == null && qty > 0 && sum != null) return { unitPrice: Math.round((sum / qty) * 100) / 100, total: sum, computed: 'unit_price' };
+  if (sum == null && qty > 0 && unit != null) return { unitPrice: unit, total: qty * unit, computed: 'total' };
+  return { unitPrice: unit ?? null, total: sum ?? null, computed: null };
 }
 
 // One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total, quantity], as the team writes them in the
@@ -200,7 +205,10 @@ function itemRow(item) {
   const text = moleculeText(item.description || item.line, item.our_products || item.products);
   if (item.quantity == null && item.unit_price == null) return [text, '', null, null, null];
   const qty = item.quantity != null ? `${item.quantity.toLocaleString('en-US')} ${item.unit || ''}`.trim() : '';
-  return [text, qty, item.unit_price ?? null, item.total ?? null, item.quantity ?? null];
+  // As read: the sheet's formulas work out the missing one (buildOpportunitySheet)
+  const unitPrice = item.computed === 'unit_price' ? null : item.unit_price;
+  const total = item.computed === 'total' ? null : item.total;
+  return [text, qty, unitPrice ?? null, total ?? null, item.quantity ?? null];
 }
 
 // Molecule rows: the documents hold the real data, so a product with lines read in the bid documents (lines
@@ -378,6 +386,7 @@ export function buildOpportunitySheet(workbook, tenders) {
         cell.border = { ...sides, top: i === 0 ? MEDIUM : undefined, bottom: row === last ? MEDIUM : undefined };
       }
       ws.getCell(`F${row}`).fill = MOLECULE_FILL;
+      for (const col of ['H', 'I']) if (cells[col]?.formula) ws.getCell(`${col}${row}`).fill = COMPUTED_FILL;
       ws.getCell(`F${row}`).alignment = { wrapText: true };
       ws.getCell(`G${row}`).alignment = { vertical: 'middle', wrapText: true };
       ws.getCell(`H${row}`).alignment = { vertical: 'middle', wrapText: true };

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
 
-const pick = ({ item_no, quantity, unit, unit_price, total }) => ({ item_no, quantity, unit, unit_price, total });
+const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
   const shown = pick(got);
   for (const [key, value] of Object.entries(want)) assert.equal(shown[key], value, `${label}: ${key} is ${shown[key]}, should be ${value}`);
@@ -250,4 +250,15 @@ expect(parseItemRow(['ANTI-HISTAMINE', '', '16.Cetirizine, 10mg, tablet, 100’s
 expect(parseItemRow(['73 x', "74 Loratadine 10mg/ tab, 100's/ box box 21", '75 y'], 1), { item_no: '74', quantity: 21 }, 'pack unit twice then quantity');
 expect(parseItemRow(['32 a', '33 Cetirizine 10mg/tab,100s 30 boxes 30 boxes Within twenty (20)', '34 b'], 1), { quantity: 30 }, 'delivery "Within twenty (20)"');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7} rows).`);
+expect(withBothAmounts({ quantity: 200, total: 70000 }), { unit_price: 350, computed: 'unit_price' }, 'computed amount is marked');
+// "Unit PR Price" with the bidder's empty "Unit Bid Price | Total Bid Price" and an empty Brand column (PhilGEPS 13309750)
+const BID = ['ITEM QTY. UNIT DESCRIPTION BRAND (IF APPLICABLE) UNIT PR PRICE (PHP) UNIT BID PRICE (PHP) TOTAL BID PRICE (PHP)', '19 10 Box x', "20 2000 Box Cetirizine Dihydrochloride 10 mg Tablet, Box of 100's 1,125.00", '21 5 Box y'];
+expect(parseItemRow(BID, 2), { quantity: 2000, unit_price: 1125, total: undefined, description: "Cetirizine Dihydrochloride 10 mg Tablet, Box of 100's" }, 'unit PR price, empty bid columns');
+expect(parseItemRow(["41 4 Box Etoricoxib 60mg Film-Coated Tablet, Box of 100's 4,500.00"], 0), { quantity: 4, unit_price: 4500 }, 'qty first with an amount at the end');
+// Quantity-first scan with the quantity on the row's second line and dots in amounts (PS 107166)
+const EPA = ['Quantity Unit ! Item Description Souree Unit Cost Total Cost Bid Docs Price', 'x', 'oo BUPIVACAINE 0.5% a . HN', 'as hydrochlordey 4 ml.', '6.000 amp-vial (spinal) with 8% 69.18 413.074.00 |', 'dextrose'];
+expect(parseItemRow(EPA, 2), { quantity: 6000, unit_price: 69.18, total: 413074 }, 'quantity on the second line');
+// The quantity written twice on its own line (PS 105627)
+expect(parseItemRow(['41 Cefalexin 500mg. Capsule 10,625 10,62', '5', '42 Cefazolin 1g. Vl. contains 90.0% - 115.0% calculated on the', 'labeled amount of Cefazolin preferrably (101.3%) complies with', 'USP43', '500 500', '43 Cefepime 500mg Powder for Injection Vial 400 400'], 2), { item_no: '42', quantity: 500 }, 'quantity twice');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5} rows).`);

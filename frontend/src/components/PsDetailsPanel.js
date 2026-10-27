@@ -243,6 +243,29 @@ export function PanelSection({ title, count, tone, plain = false, aside, childre
   );
 }
 
+/** An ABC/Unit or ABC Total in the Molecule tracker; green when it was worked out from the other two (ABC/Unit =
+ * ABC Total ÷ Qty, ABC Total = Qty × ABC/Unit), not read (user, 2026-10-27). Both portals. */
+export function AbcAmount({ text, computed, formula }) {
+  if (!text) return '—';
+  if (!computed) return text;
+  return (
+    <span title={`Computed: ${formula}`} className="rounded bg-[#61A644]/15 px-1.5 py-0.5 font-medium text-[#3F6F2C]">
+      {text}
+    </span>
+  );
+}
+
+/** Under the Molecule tracker when a line has a computed amount */
+export function ComputedNote({ items, abcOf }) {
+  if (!items.some((it) => abcOf(it).computed)) return null;
+  return (
+    <p className="mt-2 text-[11px] text-black/46">
+      <span className="mr-1 rounded bg-[#61A644]/15 px-1.5 py-0.5 font-medium text-[#3F6F2C]">Green</span>
+      computed, not in the document: ABC/Unit = ABC Total ÷ Qty, ABC Total = Qty × ABC/Unit
+    </p>
+  );
+}
+
 /** Muted tag for a value that isn't known ("Not on the notice page"). */
 /** Scanned files still being read automatically with OCR (read: documents_read); nothing once they are read */
 export function ReadingNote({ read }) {

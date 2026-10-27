@@ -1,7 +1,7 @@
 'use client';
 
 import ResponsiveTable from '@/components/ResponsiveTable';
-import PsDetailsPanel, { ChecklistList, KeyValueList, MissingTag, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
+import PsDetailsPanel, { AbcAmount, ChecklistList, ComputedNote, KeyValueList, MissingTag, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 import ScreenButton from '@/components/ScreenButton';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
@@ -142,13 +142,14 @@ function FromDocuments({ reading }) {
               // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
               { label: 'Molecule', title: true, render: (it) => <span className="font-medium text-[#3F6F2C]">{moleculeText(it.description || it.line, it.our_products)}</span> },
               { label: 'Qty', nowrap: true, render: (it) => (it.quantity != null ? `${it.quantity.toLocaleString('en-PH')} ${it.unit || ''}`.trim() : '—') },
-              { label: 'ABC/Unit', nowrap: true, render: (it) => peso(abcOf(it).unitPrice) },
-              { label: 'ABC Total', nowrap: true, render: (it) => peso(abcOf(it).total) },
+              { label: 'ABC/Unit', nowrap: true, render: (it) => <AbcAmount text={abcOf(it).unitPrice == null ? null : peso(abcOf(it).unitPrice)} computed={abcOf(it).computed === 'unit_price'} formula="ABC Total ÷ Qty" /> },
+              { label: 'ABC Total', nowrap: true, render: (it) => <AbcAmount text={abcOf(it).total == null ? null : peso(abcOf(it).total)} computed={abcOf(it).computed === 'total'} formula="Qty × ABC/Unit" /> },
               // The line exactly as the document gives it, to check against
               { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{asWritten(it.written || (it.quantity != null ? it.line : it.context))}</span> },
             ]}
           />
         )}
+        {reading?.status === 'done' && <ComputedNote items={reading.result.items} abcOf={abcOf} />}
       </PanelSection>
     </>
   );
