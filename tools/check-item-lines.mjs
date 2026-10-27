@@ -4,7 +4,7 @@
 // row number the molecule tracker must show. The row number must never be read as the quantity (user,
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total }) => ({ item_no, quantity, unit, unit_price, total });
 const expect = (got, want, label) => {
@@ -238,4 +238,16 @@ expect(parseItemRow(SOR, 3), { item_no: '48', quantity: 8000, unit: 'tablet', un
 expect(parseItemRow(['5 vial Rocuronium 10mg/ml 5ml 10 150,000.00'], 0), { quantity: 10, total: 150000, unit_price: undefined }, 'one amount of 150,000.00 is the total');
 expect(parseItemRow(['Item No. Description Quantity Unit Cost', '7 Propofol 10mg/ml, 20ml 200 189,000.00'], 1), { quantity: 200, total: 189000, unit_price: undefined }, 'header "Unit Cost" of 189,000.00 is the total');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3} rows).`);
+// The missing amount worked out as the sheet does (user, 2026-10-27): ABC/Unit = Total ÷ Qty, Total = Qty × ABC/Unit
+expect(withBothAmounts(parseItemRow(['54 Rocuronium bromide 10mg/ml, 5ml vial 200 70,000.00 Fifteen (15)'], 0)), { quantity: 200, unit_price: 350, total: 70000 }, 'ABC/Unit from the total');
+expect(withBothAmounts({ quantity: 3000, unit_price: 2.59 }), { total: 7770 }, 'total from the ABC/Unit');
+// No header, the description over lines and its numbers some lines below (PS 107172)
+const BELOW = ['6 Dabigatran 150mg capsule 3,000 92.65 277,950.00', '7', 'Epoetin alfa 4000iu/0.4ml OR', '4000iu/1ml,IV,SC (Recombinant Human', 'Erythropoetin), prefilled syringe', 'prefilled', 'syringe/vial 10,000 450.00 4,500,000.00', '8 Epoetin alfa 10,000 iu/ml (Recombinant', 'Human Erythropoetin), prefilled syringe', 'prefilled', 'syringe 3,500 1,388.00 4,858,000.00', '9'];
+expect(parseItemRow(BELOW, 2), { item_no: '7', quantity: 10000, unit_price: 450, total: 4500000 }, 'numbers lines below, number above');
+expect(parseItemRow(BELOW, 7), { item_no: '8', quantity: 3500, unit_price: 1388, total: 4858000 }, 'numbers lines below, number on the row');
+// Item | Description | Unit | Quantity with a pack unit (PS 107903, 112846); "Within twenty (20)" delivery (13270448)
+expect(parseItemRow(['ANTI-HISTAMINE', '', '16.Cetirizine, 10mg, tablet, 100’s box 50', ''], 2), { item_no: '16', quantity: 50, unit: 'box' }, 'pack unit then quantity');
+expect(parseItemRow(['73 x', "74 Loratadine 10mg/ tab, 100's/ box box 21", '75 y'], 1), { item_no: '74', quantity: 21 }, 'pack unit twice then quantity');
+expect(parseItemRow(['32 a', '33 Cetirizine 10mg/tab,100s 30 boxes 30 boxes Within twenty (20)', '34 b'], 1), { quantity: 30 }, 'delivery "Within twenty (20)"');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7} rows).`);

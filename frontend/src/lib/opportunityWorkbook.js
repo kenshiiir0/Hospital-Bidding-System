@@ -183,6 +183,16 @@ export function moleculeText(text, names = []) {
   return s || original;
 }
 
+/** An item line's ABC/Unit and ABC Total, the missing one worked out as the sheet's formulas do (user,
+ * 2026-10-27): ABC/Unit = ABC Total ÷ Qty, ABC Total = Qty × ABC/Unit */
+export function abcOf(item) {
+  const { quantity: qty, unit_price: unit, total } = item;
+  return {
+    unitPrice: unit ?? (qty > 0 && total != null ? Math.round((total / qty) * 100) / 100 : null),
+    total: total ?? (qty != null && unit != null ? qty * unit : null),
+  };
+}
+
 // One item line as a sheet row: [Molecule, Qty, ABC/Unit, ABC Total, quantity], as the team writes them in the
 // original sheet: "AMIKACIN 500MG/2ML" | "20 amp" | 88.78 | 5000 (no item numbers; prices as numbers).
 // quantity: the number in Qty, for the sheet's formulas when ABC/Unit or ABC Total is missing (buildOpportunitySheet)
