@@ -232,7 +232,10 @@ const ONE = [
 for (const [line, want] of ONE) expect(parseItemRow([line], 0), want, line);
 
 // An ABC/unit can't be hundreds of thousands: always the ABC total (user, 2026-10-27), whatever the layout
+// A description going on with a strength ("100 mg tablet") is not the next row (PhilGEPS 13309534 Imatinib row 48)
+const SOR = ['Item', 'No. ITEM DESCRIPTION QTY Unit UNIT COST TOTAL ABC DELIVERY', 'SCHEDULE', '48 IMATINIB (as mesilate) Oral:', '100 mg tablet', 'VAT-exempt', '8,000 tablet 36.00 288,000.00 As stated in the', 'Delivery', 'Schedule', '49 IMATINIB (as mesilate) Oral:', '400 mg tablet'];
+expect(parseItemRow(SOR, 3), { item_no: '48', quantity: 8000, unit: 'tablet', unit_price: 36, total: 288000 }, 'strength on the next line is not a new row');
 expect(parseItemRow(['5 vial Rocuronium 10mg/ml 5ml 10 150,000.00'], 0), { quantity: 10, total: 150000, unit_price: undefined }, 'one amount of 150,000.00 is the total');
 expect(parseItemRow(['Item No. Description Quantity Unit Cost', '7 Propofol 10mg/ml, 20ml 200 189,000.00'], 1), { quantity: 200, total: 189000, unit_price: undefined }, 'header "Unit Cost" of 189,000.00 is the total');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 2} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3} rows).`);
