@@ -15,7 +15,7 @@ import { formatInstant } from '@/lib/format';
 // "Add to Screened" in the footer.
 // data: the PS-PhilGEPS data (lists.bidMatch, notices, analysis, syncedAt); row: a Bid Match row;
 // lastSyncBy: who started the Sync that fetched the list (optional).
-export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose }) {
+export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose, downloadAll }) {
   const list = data.lists.bidMatch;
   const ref = psRefOf(row);
   const notice = data.notices?.[ref];
@@ -60,7 +60,7 @@ export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose }) {
         <ProductPills names={products} />
       </PanelSection>
       <FromDocuments reading={reading} />
-      <PsDocuments ref_={ref} notice={notice} syncedAt={data.syncedAt} />
+      <PsDocuments ref_={ref} notice={notice} syncedAt={data.syncedAt} downloadAll={downloadAll} />
     </PsDetailsPanel>
   );
 }
@@ -156,7 +156,7 @@ function FromDocuments({ reading }) {
 }
 
 // The notice's files (psSync.mjs, Storage bucket ps-documents) in the shared Attached documents section
-function PsDocuments({ ref_, notice, syncedAt }) {
+function PsDocuments({ ref_, notice, syncedAt, downloadAll }) {
   const documents = notice?.documents || [];
   const status = !notice
     ? { label: 'Not read yet', tone: 'blue' }
@@ -174,6 +174,7 @@ function PsDocuments({ ref_, notice, syncedAt }) {
       documents={documents}
       bucket="ps-documents"
       tenderRef={ref_}
+      downloadAll={downloadAll}
       source="ps"
       status={status}
       footer={footer}

@@ -81,7 +81,7 @@ function highlight(text, names) {
 // Side panel for one tender, built on the PS-PhilGEPS panel (PsDetailsPanel) so both look the same: title and
 // agency, "Bidding dates" first, the notice's label/value facts, then Our products, Molecule tracker,
 // Documents, and the sections only PhilGEPS has (full description, supplements, contact person)
-export default function TenderDetails({ bid, onClose }) {
+export default function TenderDetails({ bid, onClose, downloadAll }) {
   const d = bid.details || {};
   // Bid data sheet read from the downloaded documents (philgepsSync.mjs)
   const bds = d.documents_bid_data_sheet || {};
@@ -280,6 +280,7 @@ export default function TenderDetails({ bid, onClose }) {
         documents={documents}
         bucket="philgeps-documents"
         tenderRef={bid.ref_no}
+        downloadAll={downloadAll}
         status={{ label: remark.pill, tone: remark.tone }}
         footer={`${remark.text}${d.documents_checked_at ? ` Last checked ${formatInstant(d.documents_checked_at)}.` : ''}`}
       />

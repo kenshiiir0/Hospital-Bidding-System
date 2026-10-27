@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatInstant } from '@/lib/format';
 import { PanelSection } from '@/components/PsDetailsPanel';
@@ -26,12 +27,14 @@ const sizeText = (bytes) =>
  * @param {object[]} props.documents  [{ name, title?, path?, size?, downloaded_at? }]
  * @param {string} props.bucket       Storage bucket of the files ("philgeps-documents", "ps-documents")
  * @param {string} props.tenderRef    Reference number (for files without a path)
+ * @param {(onProgress) => Promise<number>} [props.downloadAll]  Screened Tenders only: all files in one ZIP
+ *   (lib/screened.js downloadScreenedDocuments); the button shows only when it is given
  * @param {string} [props.source]     "ps" for /api/documents of PS-PhilGEPS files
  * @param {{ label: string, tone: string }} [props.status]  Pill beside the title
  * @param {React.ReactNode} [props.footer]  Muted line under the files (where from, last checked)
  * @param {React.ReactNode} [props.empty]   Shown when there are no files
  */
-export default function DocumentsPanel({ documents = [], bucket, tenderRef, source, status, footer, empty = 'None found', children }) {
+export default function DocumentsPanel({ documents = [], bucket, tenderRef, source, status, footer, empty = 'None found', downloadAll, children }) {
   const canOpen = /^\d+$/.test(tenderRef || '');
   return (
     <PanelSection
@@ -45,6 +48,7 @@ export default function DocumentsPanel({ documents = [], bucket, tenderRef, sour
         )
       }
     >
+      {documents.length > 0 && downloadAll && <DownloadAll count={documents.length} run={downloadAll} />}
       {documents.length > 0 ? (
         <ul className="space-y-2">
           {documents.map((doc) => (
@@ -108,6 +112,38 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
         </div>
       )}
     </li>
+  );
+}
+
+// Download all (Screened Tenders): "<ref>-<hospital>.zip", a folder of the same name inside
+function DownloadAll({ count, run }) {
+  const [progress, setProgress] = useState('');
+  const [error, setError] = useState('');
+  const start = async () => {
+    setError('');
+    setProgress('Starting…');
+    try {
+      await run(setProgress);
+    } catch (e) {
+      setError(`Could not download: ${e.message}`);
+    }
+    setProgress('');
+  };
+  return (
+    <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+      {error && <span className="text-[11px] text-[#B3312C]">{error}</span>}
+      <button
+        type="button"
+        onClick={start}
+        disabled={Boolean(progress)}
+        className="flex items-center justify-center gap-1.5 rounded-lg bg-[#1EA0DA] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#1790C5] disabled:cursor-wait disabled:opacity-70"
+      >
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+          <path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M3.5 16.5h13" />
+        </svg>
+        {progress || `Download all (${count})`}
+      </button>
+    </div>
   );
 }
 
