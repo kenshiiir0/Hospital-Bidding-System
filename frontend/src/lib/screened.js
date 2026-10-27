@@ -98,6 +98,70 @@ export async function loadScreenedDetails(r) {
   return row ? { kind: 'ps', data, row } : { kind: 'saved' };
 }
 
+// Download all (user, 2026-10-27): every attached document of a screened tender in one ZIP named
+// "<ref>-<hospital>.zip" that extracts to a folder of the same name. onProgress(text) while it works.
+// Returns the number of files, 0 when the tender has none.
+export async function downloadScreenedDocuments(r, onProgress = () => {}) {
+  let documents;
+  let bucket;
+  if (r.source === 'philgeps') {
+    const { data, error: err } = await supabase.from('philgeps_opportunities').select('details->documents').eq('ref_no', r.ref).limit(1);
+    if (err) throw new Error(err.message);
+    documents = data?.[0]?.documents || [];
+    bucket = 'philgeps-documents';
+  } else {
+    // The reference in quotes: a bare number would be read as a list position
+    const { data, error: err } = await supabase.from('ps_philgeps_snapshot').select(`documents:notices->"${r.ref}"->documents`).eq('id', 'latest').maybeSingle();
+    if (err) throw new Error(err.message);
+    documents = data?.documents || [];
+    bucket = 'ps-documents';
+  }
+  if (!documents.length) return 0;
+  const { default: JSZip } = await import('jszip');
+  const name = zipName(r.ref, r.tender?.hospital);
+  const zip = new JSZip();
+  const folder = zip.folder(name);
+  const used = new Set();
+  for (const [i, doc] of documents.entries()) {
+    onProgress(`File ${i + 1} of ${documents.length}…`);
+    folder.file(uniqueName(doc.name, used), await documentBlob(doc, bucket, r));
+  }
+  onProgress('Zipping…');
+  const url = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return documents.length;
+}
+
+// Characters Windows doesn't allow in a file or folder name are dropped
+const safeName = (text) => String(text || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
+const zipName = (ref, hospital) => [safeName(ref), safeName(hospital)].filter(Boolean).join('-').slice(0, 150) || 'Documents';
+// Two files with the same name are kept as "name (2).pdf"
+function uniqueName(name, used) {
+  const clean = safeName(name) || 'file';
+  let candidate = clean;
+  for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = clean.replace(/(\.[^.]*)?$/, ` (${n})$1`);
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+// A file in Storage, or an older one kept only on the computer that downloaded it (/api/documents, as View does)
+async function documentBlob(doc, bucket, r) {
+  if (doc.path) {
+    const { data, error: err } = await supabase.storage.from(bucket).download(doc.path);
+    if (err || !data) throw new Error(`${doc.name}: ${err?.message || 'not found'}`);
+    return data;
+  }
+  const res = await fetch(`/api/documents?${r.source === 'ps' ? 'source=ps&' : ''}ref=${r.ref}&name=${encodeURIComponent(doc.name)}`);
+  if (!res.ok) throw new Error(`${doc.name}: ${res.status}`);
+  return res.blob();
+}
+
 // The stored copy's dates come back from JSON as text; the workbook needs Date objects
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T/;
 // Copies saved before 2026-10-25 may start cells with a line number or stock code ("3. ", "55100000. ") and hold

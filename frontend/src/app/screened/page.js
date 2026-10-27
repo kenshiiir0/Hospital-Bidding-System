@@ -11,7 +11,7 @@ import PsBidMatchDetails from '@/components/PsBidMatchDetails';
 import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import ScreenButton from '@/components/ScreenButton';
 import WorkingDots from '@/components/WorkingDots';
-import { exportScreened, loadScreenedDetails, removeScreened, useScreened } from '@/lib/screened';
+import { downloadScreenedDocuments, exportScreened, loadScreenedDetails, removeScreened, useScreened } from '@/lib/screened';
 import { formatDate, formatDateTime, formatInstant, instantDay } from '@/lib/format';
 import { displayName } from '@/lib/username';
 
@@ -95,6 +95,22 @@ export default function ScreenedPage() {
     setExporting(false);
   };
 
+  // Download all: the tender's attached documents in one ZIP "<ref>-<hospital>.zip" (lib/screened.js)
+  // downloading = { key, text } while one is being zipped
+  const [downloading, setDownloading] = useState(null);
+  const downloadDocuments = async (r) => {
+    const key = `${r.source}:${r.ref}`;
+    setDownloading({ key, text: 'Starting…' });
+    setMessage({ tone: '', text: '' });
+    try {
+      const count = await downloadScreenedDocuments(r, (text) => setDownloading({ key, text }));
+      if (!count) setMessage({ tone: 'error', text: `${r.ref} has no attached documents to download.` });
+    } catch (err) {
+      setMessage({ tone: 'error', text: `Could not download the documents of ${r.ref}: ${err.message}` });
+    }
+    setDownloading(null);
+  };
+
   const remove = async (r) => {
     setRemoving(`${r.source}:${r.ref}`);
     setMessage({ tone: '', text: '' });
@@ -147,16 +163,30 @@ export default function ScreenedPage() {
     },
     {
       label: '',
-      width: '6.5rem',
+      width: '15rem',
       render: (r) => (
-        <button
-          type="button"
-          onClick={() => remove(r)}
-          disabled={removing === `${r.source}:${r.ref}`}
-          className="rounded-lg border border-[#CBD5E1] px-3 py-1.5 text-xs font-medium text-black/62 transition hover:border-[#B3312C]/40 hover:bg-[#B3312C]/6 hover:text-[#B3312C] disabled:cursor-wait disabled:opacity-60"
-        >
-          {removing === `${r.source}:${r.ref}` ? 'Removing…' : 'Remove'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => downloadDocuments(r)}
+            disabled={Boolean(downloading)}
+            title="All attached documents in one ZIP"
+            className="flex items-center gap-1.5 rounded-lg bg-[#1EA0DA] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#1790C5] disabled:cursor-wait disabled:opacity-60"
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+              <path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M3.5 16.5h13" />
+            </svg>
+            {downloading?.key === `${r.source}:${r.ref}` ? downloading.text : 'Documents'}
+          </button>
+          <button
+            type="button"
+            onClick={() => remove(r)}
+            disabled={removing === `${r.source}:${r.ref}`}
+            className="rounded-lg border border-[#CBD5E1] px-3 py-1.5 text-xs font-medium text-black/62 transition hover:border-[#B3312C]/40 hover:bg-[#B3312C]/6 hover:text-[#B3312C] disabled:cursor-wait disabled:opacity-60"
+          >
+            {removing === `${r.source}:${r.ref}` ? 'Removing…' : 'Remove'}
+          </button>
+        </div>
       ),
     },
   ];
