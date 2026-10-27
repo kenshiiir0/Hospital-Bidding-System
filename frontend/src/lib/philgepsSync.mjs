@@ -575,7 +575,7 @@ export async function readTenderDocuments(supabase, matchProducts, o, details) {
     details: {
       ...details,
       package: packaged || undefined,
-      documents_products: products,
+      documents_products: packaged ? [] : products,
       documents_items: items.slice(0, 300),
       // Lines naming our products outside any table: not shown, kept for checking (psDocs.mjs isTableRow)
       documents_outside_table: outcome.result?.outside_table || [],

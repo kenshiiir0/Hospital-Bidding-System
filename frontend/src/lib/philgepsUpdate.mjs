@@ -344,7 +344,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
         items_text: t.items_text ?? null,
         abc_amount: t.abc_amount ?? null,
         details,
-        matched_molecules: [...new Set([...t.matched_molecules, ...onList(details?.documents_products)])],
+        matched_molecules: isPackageTender(t.title, details?.package) ? [] : [...new Set([...t.matched_molecules, ...onList(details?.documents_products)])],
       };
     });
     for (let i = 0; i < rows.length; i += 200) {
