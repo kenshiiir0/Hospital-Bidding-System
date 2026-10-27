@@ -279,7 +279,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
       const lines = expandVariants(raw);
       const found = matchProducts.details(`${t.title}\n${lines.join('\n')}`);
       // None for a tender bought as one package or lot (lib/packageTender.js)
-      t.matched_molecules = isPackageTender(t.title, t.details?.package) ? [] : [...new Set([...found.matched, ...onList(t.details?.documents_products)])];
+      t.matched_molecules = isPackageTender(t.items_text, t.details?.package) ? [] : [...new Set([...found.matched, ...onList(t.details?.documents_products)])];
       if (t.details) {
         t.details = {
           ...t.details,
@@ -344,7 +344,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
         items_text: t.items_text ?? null,
         abc_amount: t.abc_amount ?? null,
         details,
-        matched_molecules: isPackageTender(t.title, details?.package) ? [] : [...new Set([...t.matched_molecules, ...onList(details?.documents_products)])],
+        matched_molecules: isPackageTender(t.items_text, details?.package) ? [] : [...new Set([...t.matched_molecules, ...onList(details?.documents_products)])],
       };
     });
     for (let i = 0; i < rows.length; i += 200) {

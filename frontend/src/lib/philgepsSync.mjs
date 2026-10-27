@@ -569,12 +569,12 @@ export async function readTenderDocuments(supabase, matchProducts, o, details) {
   const items = outcome.result?.items || [];
   const products = [...new Set(items.flatMap((i) => i.our_products))];
   // A tender bought as one package or lot isn't ours to bid on: no molecules (lib/packageTender.js)
-  const packaged = isPackageTender(o.title, outcome.result?.package);
+  const packaged = isPackageTender(o.items_text, outcome.result?.package);
   return {
     matched_molecules: packaged ? [] : [...new Set([...matchProducts(`${o.title || ''}\n${o.items_text || ''}`), ...products])],
     details: {
       ...details,
-      package: packaged || undefined,
+      package: outcome.result?.package || undefined,
       documents_products: packaged ? [] : products,
       documents_items: items.slice(0, 300),
       // Lines naming our products outside any table: not shown, kept for checking (psDocs.mjs isTableRow)

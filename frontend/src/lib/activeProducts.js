@@ -4,7 +4,6 @@
 
 import { authFetch } from '@/lib/authFetch';
 import { isPackageTender } from '@/lib/packageTender';
-import { psRefOf } from '@/lib/opportunityWorkbook';
 
 let cached = null;
 
@@ -23,7 +22,7 @@ export function loadActiveNames() {
 /** A PhilGEPS tender with only active molecules in matched_molecules (no list known: unchanged); none for a tender
  * bought as one package or lot (lib/packageTender.js) */
 export function activeTender(bid, active) {
-  if (isPackageTender(bid.title, bid.details?.package)) return { ...bid, matched_molecules: [] };
+  if (isPackageTender(bid.items_text, bid.details?.package)) return { ...bid, matched_molecules: [] };
   if (!active) return bid;
   return { ...bid, matched_molecules: (bid.matched_molecules || []).filter((name) => active.has(name)) };
 }
@@ -39,13 +38,8 @@ export function activeTenders(bids, active, screened) {
  * team picked them, so their lines are exported and shown, user 2026-10-27) */
 export function activePsData(data, active, { keepPackages = false } = {}) {
   if (!data) return data;
-  // Tenders bought as one package or lot: by their title or their documents (lib/packageTender.js); no products
-  const list = data.lists?.bidMatch;
-  const titleAt = list?.headers?.indexOf('Notice Title') ?? -1;
-  const packaged = new Set(keepPackages ? [] : [
-    ...(list?.rows || []).filter((row) => titleAt >= 0 && isPackageTender(row.cells[titleAt])).map((row) => psRefOf(row)),
-    ...Object.entries(data.analysis || {}).filter(([, r]) => r?.result?.package).map(([ref]) => ref),
-  ]);
+  // Tenders bought as one package or lot, by their documents (lib/packageTender.js); no products
+  const packaged = new Set(keepPackages ? [] : Object.entries(data.analysis || {}).filter(([, r]) => isPackageTender('', r?.result?.package)).map(([ref]) => ref));
   const keep = (ref, name) => !packaged.has(ref) && (!active || active.has(name));
   const notices = Object.fromEntries(Object.entries(data.notices || {}).map(([ref, n]) => [ref, n?.matched ? { ...n, matched: n.matched.filter((name) => keep(ref, name)) } : n]));
   const analysis = Object.fromEntries(
