@@ -98,49 +98,56 @@ export async function loadScreenedDetails(r) {
   return row ? { kind: 'ps', data, row } : { kind: 'saved' };
 }
 
-// Download all (user, 2026-10-27): every attached document of a screened tender in one ZIP named
-// "<ref>-<hospital>.zip" that extracts to a folder of the same name. onProgress(text) while it works.
-// Returns the number of files, 0 when the tender has none.
-export async function downloadScreenedDocuments(r, onProgress = () => {}) {
-  let documents;
-  let bucket;
-  if (r.source === 'philgeps') {
-    const { data, error: err } = await supabase.from('philgeps_opportunities').select('details->documents').eq('ref_no', r.ref).limit(1);
-    if (err) throw new Error(err.message);
-    documents = data?.[0]?.documents || [];
-    bucket = 'philgeps-documents';
-  } else {
-    // The reference in quotes: a bare number would be read as a list position
-    const { data, error: err } = await supabase.from('ps_philgeps_snapshot').select(`documents:notices->"${r.ref}"->documents`).eq('id', 'latest').maybeSingle();
-    if (err) throw new Error(err.message);
-    documents = data?.documents || [];
-    bucket = 'ps-documents';
-  }
-  if (!documents.length) return 0;
+// Download documents (user, 2026-10-27), beside Export Excel: the attached documents of the screened tenders
+// listed, in one ZIP; extracted, each tender is a folder "<ref>-<hospital>" holding its files.
+// onProgress(text) while it works. Returns { tenders, files, none } (none: the screened rows with no files).
+export async function downloadScreenedDocuments(list, onProgress = () => {}) {
   const { default: JSZip } = await import('jszip');
-  const name = zipName(r.ref, r.tender?.hospital);
   const zip = new JSZip();
-  const folder = zip.folder(name);
-  const used = new Set();
-  for (const [i, doc] of documents.entries()) {
-    onProgress(`File ${i + 1} of ${documents.length}…`);
-    folder.file(uniqueName(doc.name, used), await documentBlob(doc, bucket, r));
+  const folders = new Set();
+  let files = 0;
+  const none = [];
+  for (const [i, r] of list.entries()) {
+    onProgress(`Tender ${i + 1} of ${list.length}…`);
+    const { documents, bucket } = await screenedDocuments(r);
+    if (!documents.length) {
+      none.push(r);
+      continue;
+    }
+    const folder = zip.folder(uniqueName(folderName(r.ref, r.tender?.hospital), folders));
+    const used = new Set();
+    for (const doc of documents) folder.file(uniqueName(doc.name, used), await documentBlob(doc, bucket, r));
+    files += documents.length;
   }
+  if (!files) return { tenders: 0, files, none };
   onProgress('Zipping…');
   const url = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${name}.zip`;
+  a.download = `SCREENED DOCUMENTS ${new Date().toISOString().slice(0, 10)}.zip`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
-  return documents.length;
+  return { tenders: list.length - none.length, files, none };
+}
+
+// A screened tender's attached documents and their Storage bucket
+async function screenedDocuments(r) {
+  if (r.source === 'philgeps') {
+    const { data, error: err } = await supabase.from('philgeps_opportunities').select('details->documents').eq('ref_no', r.ref).limit(1);
+    if (err) throw new Error(err.message);
+    return { documents: data?.[0]?.documents || [], bucket: 'philgeps-documents' };
+  }
+  // The reference in quotes: a bare number would be read as a list position
+  const { data, error: err } = await supabase.from('ps_philgeps_snapshot').select(`documents:notices->"${r.ref}"->documents`).eq('id', 'latest').maybeSingle();
+  if (err) throw new Error(err.message);
+  return { documents: data?.documents || [], bucket: 'ps-documents' };
 }
 
 // Characters Windows doesn't allow in a file or folder name are dropped
 const safeName = (text) => String(text || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
-const zipName = (ref, hospital) => [safeName(ref), safeName(hospital)].filter(Boolean).join('-').slice(0, 150) || 'Documents';
+const folderName = (ref, hospital) => [safeName(ref), safeName(hospital)].filter(Boolean).join('-').slice(0, 150) || 'Documents';
 // Two files with the same name are kept as "name (2).pdf"
 function uniqueName(name, used) {
   const clean = safeName(name) || 'file';

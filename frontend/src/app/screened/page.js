@@ -95,6 +95,24 @@ export default function ScreenedPage() {
     setExporting(false);
   };
 
+  // Download documents: the listed tenders' attached files in one ZIP, a "<ref>-<hospital>" folder each
+  const [downloading, setDownloading] = useState('');
+  const runDownload = async () => {
+    setDownloading('Starting…');
+    setMessage({ tone: '', text: '' });
+    try {
+      const { tenders, files, none } = await downloadScreenedDocuments(shown, setDownloading);
+      const noFiles = none.length ? ` No documents yet: ${none.map((r) => r.ref).join(', ')}.` : '';
+      setMessage({
+        tone: files ? 'success' : 'error',
+        text: files ? `Downloaded ${files} document${files === 1 ? '' : 's'} of ${tenders} screened tender${tenders === 1 ? '' : 's'}, one folder each.${noFiles}` : `No documents to download.${noFiles}`,
+      });
+    } catch (err) {
+      setMessage({ tone: 'error', text: `Download failed: ${err.message}` });
+    }
+    setDownloading('');
+  };
+
   const remove = async (r) => {
     setRemoving(`${r.source}:${r.ref}`);
     setMessage({ tone: '', text: '' });
@@ -175,6 +193,15 @@ export default function ScreenedPage() {
               {rows ? ` · ${all.length} screened` : ''}
             </p>
           </div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <button
+            onClick={runDownload}
+            disabled={Boolean(downloading) || !shown.length}
+            title="The attached documents of the tenders listed below in one ZIP, a folder per tender named reference-hospital"
+            className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#1EA0DA] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#1790C5] disabled:cursor-not-allowed disabled:bg-[#1EA0DA]/50"
+          >
+            {downloading ? <>{downloading.replace(/…$/, '')} <WorkingDots /></> : `⬇ Download documents${rows ? ` (${shown.length})` : ''}`}
+          </button>
           <button
             onClick={runExport}
             disabled={exporting || !shown.length}
@@ -183,6 +210,7 @@ export default function ScreenedPage() {
           >
             {exporting ? <>Exporting <WorkingDots /></> : `⬇ Export Excel${rows ? ` (${shown.length})` : ''}`}
           </button>
+          </div>
         </header>
 
         {error && <Notice tone="error">{error}</Notice>}
@@ -235,9 +263,9 @@ export default function ScreenedPage() {
       </div>
 
       {details?.result?.kind === 'philgeps' ? (
-        <TenderDetails bid={details.result.bid} onClose={closeDetails} downloadAll={(onProgress) => downloadScreenedDocuments(details.r, onProgress)} />
+        <TenderDetails bid={details.result.bid} onClose={closeDetails} />
       ) : details?.result?.kind === 'ps' ? (
-        <PsBidMatchDetails data={details.result.data} row={details.result.row} onClose={closeDetails} downloadAll={(onProgress) => downloadScreenedDocuments(details.r, onProgress)} />
+        <PsBidMatchDetails data={details.result.data} row={details.result.row} onClose={closeDetails} />
       ) : details ? (
         <SavedDetails r={details.r} loading={!details.result} error={details.error} onClose={closeDetails} />
       ) : null}
