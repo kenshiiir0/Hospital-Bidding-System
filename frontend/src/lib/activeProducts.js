@@ -35,13 +35,14 @@ export function activeTenders(bids, active, screened) {
 }
 
 /** PS data ({ notices, analysis }) with archived molecules taken out of notice matches and document items, and
- * package or lot tenders left with none. */
-export function activePsData(data, active) {
+ * package or lot tenders left with none. keepPackages: leave package or lot tenders as read (Screened Tenders: the
+ * team picked them, so their lines are exported and shown, user 2026-10-27) */
+export function activePsData(data, active, { keepPackages = false } = {}) {
   if (!data) return data;
   // Tenders bought as one package or lot: by their title or their documents (lib/packageTender.js); no products
   const list = data.lists?.bidMatch;
   const titleAt = list?.headers?.indexOf('Notice Title') ?? -1;
-  const packaged = new Set([
+  const packaged = new Set(keepPackages ? [] : [
     ...(list?.rows || []).filter((row) => titleAt >= 0 && isPackageTender(row.cells[titleAt])).map((row) => psRefOf(row)),
     ...Object.entries(data.analysis || {}).filter(([, r]) => r?.result?.package).map(([ref]) => ref),
   ]);

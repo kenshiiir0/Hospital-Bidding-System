@@ -80,7 +80,8 @@ async function loadPsData() {
   const active = await loadActiveNames().catch(() => null);
   return activePsData(
     { syncedAt: snap?.synced_at, lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) },
-    active
+    active,
+    { keepPackages: true }
   );
 }
 
@@ -146,9 +147,12 @@ async function currentTenders(list) {
           ? psTender(psRows[r.ref], bidMatch.headers, ps.notices[r.ref], ps.analysis[r.ref])
           : null;
     if (!current) return saved;
-    return current.molecules?.length ? current : { ...current, molecules: saved.molecules || [] };
+    return hasLines(current.molecules) || !hasLines(saved.molecules) ? current : { ...current, molecules: saved.molecules };
   });
 }
+
+// Molecule rows with a real line (a quantity or an amount), not only the products' names
+const hasLines = (molecules) => (molecules || []).some(([, qty, unitPrice, total]) => qty || unitPrice != null || total != null);
 
 // The team's Opportunity sheet for these screened rows, stacked in the order they were screened: the first
 // screened at the top, the latest at the bottom (so each day's additions land under the earlier ones)
