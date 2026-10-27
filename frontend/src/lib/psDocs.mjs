@@ -3,6 +3,7 @@ import { loadMatcher } from './products.mjs';
 import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
 import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from './ocr.mjs';
+import { PACKAGE_ROW } from './packageTender.js';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -17,8 +18,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-30: only a table's rows are fetched (isTableRow; others kept as outside_table), a header starts at its own first line. rules-29: a row's price on its wrapped next line (with or without a header). rules-28: "Unit PR Price" and the bidder's empty bid columns, an empty Brand column keeps the description, Item | Qty | Unit | Description | amount, quantity on a scan's second line, dots in amounts, quantity written twice; worked-out amounts marked computed. rules-27: numbers lines below a row with no header, "... 100's box 50" rows, "Within twenty (20)" delivery; missing ABC/Unit or Total worked out. rules-26: a description going on with a strength ("100 mg tablet") is not the next row. rules-25: an ABC/unit of 100,000 or more is the ABC total. rules-24: one amount after the quantity (unit price for injectables, total for cheap tablets), delivery text and -do- set aside, only real unit words as units. rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-30';
+// rules-31: big single amount is the total, unit price from total when they disagree, garbled amounts set aside, next row on a line cut, heading after the amounts, rows read once (best file first), package Schedule of Requirements. rules-30: only a table's rows are fetched (isTableRow; others kept as outside_table), a header starts at its own first line. rules-29: a row's price on its wrapped next line (with or without a header). rules-28: "Unit PR Price" and the bidder's empty bid columns, an empty Brand column keeps the description, Item | Qty | Unit | Description | amount, quantity on a scan's second line, dots in amounts, quantity written twice; worked-out amounts marked computed. rules-27: numbers lines below a row with no header, "... 100's box 50" rows, "Within twenty (20)" delivery; missing ABC/Unit or Total worked out. rules-26: a description going on with a strength ("100 mg tablet") is not the next row. rules-25: an ABC/unit of 100,000 or more is the ABC total. rules-24: one amount after the quantity (unit price for injectables, total for cheap tablets), delivery text and -do- set aside, only real unit words as units. rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-31';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -94,8 +95,8 @@ export const isVariantParent = (lines, n) => VARIANT_PARENT.test(lines[n] || '')
 // A line that starts a new table row: a number, then a word or another number ("26 bottle ...", "DM14 Amikacin
 // ...", "5,000 tablet", "10 30,000 Tablet"); not a row's continuation such as "10mg Tablet 100's 250" or a lone
 // quantity. Also a row whose number OCR smudged ("© 1s boxes Cefuroxime ..."): a short word, then a unit.
-// (Not a strength going on: "100 mg tablet")
-const ROW_START = new RegExp(String.raw`^(?:[A-Z]{0,4}-?\d[\d,]*[.)]*\s+(?!(?:mg|mcg|µg|g|gm|grams?|ml|l|iu|units?|meq|mmol|%)\b)[\dA-Za-z]|\W*\S{1,3}\s+${KNOWN_UNIT_RE}\s)`, 'i');
+// (Not a strength going on: "100 mg tablet", "mL ampoule 596.00", PhilGEPS 13309762)
+const ROW_START = new RegExp(String.raw`^(?:[A-Z]{0,4}-?\d[\d,]*[.)]*\s+(?!(?:mg|mcg|µg|g|gm|grams?|ml|l|iu|units?|meq|mmol|%)\b)[\dA-Za-z]|\W*(?!(?:mg|mcg|µg|g|gm|ml|l|iu)\s)\S{1,3}\s+${KNOWN_UNIT_RE}\s)`, 'i');
 const LONE_NUMBER = /^\d[\d,]*$/;
 // The form around a table, never a row's continuation ("Purpose: Purchase of Drugs ...", "Requested By:")
 const FORM_TEXT = /^\W*(?:purpose|requested|approved|prepared|received|certified|noted|recommend\w*|submitted|signed|signature|name|designation|total|grand total|sub-?total|note|notes|remarks|page \d)\b/i;
@@ -125,11 +126,20 @@ export function rowText(lines, n) {
 // A table's rules OCR left in a line ("| 60 | vials] Cefoxitin ... |", "4m| 800") are not text; nor is the peso
 // sign before an amount ("₱ 90.00")
 const withoutRules = (line) => (line || '').replace(/\s*[|[\]]+\s*/g, ' ').replace(/₱\s*/g, '').trim();
+/** A row with the next row run onto its line ("9 Bupivacaine 0.5%, 5ml ... 700,000.00 10 CalciumCarbonate 6.00 ...",
+ * PS 94918; "22 Carboplatin ... vial 600 23 Carvedilol 6.25 mg tablet 564,000", PhilGEPS 13300871): cut where the
+ * next row's number and name begin (k+1, then a name that is not a unit) */
+function withoutNextRow(line) {
+  const own = /^\W{0,2}(\d{1,4})[.)]?\s+[A-Za-z]/.exec(line);
+  if (!own) return line;
+  const next = new RegExp(String.raw`\s${Number(own[1]) + 1}[.)]?\s+(?!${KNOWN_UNIT_RE}\b)[A-Z][A-Za-z]{3,}`).exec(line.slice(own[0].length));
+  return next ? line.slice(0, own[0].length + next.index).trim() : line;
+}
 // The same lines cleaned once per page (the header found on a page is kept with them)
 const cleanedCache = new WeakMap();
 const cleanLines = (rawLines) => {
   let lines = cleanedCache.get(rawLines);
-  if (!lines) cleanedCache.set(rawLines, (lines = rawLines.map(withoutRules)));
+  if (!lines) cleanedCache.set(rawLines, (lines = rawLines.map((line) => withoutNextRow(withoutRules(line)))));
   return lines;
 };
 
@@ -214,8 +224,15 @@ function rowBelow(lines, n) {
 // An ABC/unit can't be hundreds of thousands (user, 2026-10-27: "always assume it as abc total"): such an amount
 // read as the unit price is the ABC total
 const UNIT_PRICE_MAX = 100000;
+// One amount that, as the unit price, would make the line's total this big while still a sensible price a unit is
+// the ABC total ("Amikacin ... 2mL Vial 700 49,000.00" under "Approved Budget Cost": ₱70 a vial, not ₱34.3M; PS 102904)
+const LINE_TOTAL_TOO_BIG = 10000000;
+const SENSIBLE_UNIT_PRICE = 0.5;
 function abcTotalNotUnit(row) {
-  if (!(row.unit_price >= UNIT_PRICE_MAX)) return row;
+  const tooBig =
+    row.unit_price >= UNIT_PRICE_MAX ||
+    (row.total == null && row.quantity > 0 && row.unit_price * row.quantity > LINE_TOTAL_TOO_BIG && row.unit_price / row.quantity >= SENSIBLE_UNIT_PRICE);
+  if (!tooBig) return row;
   const { unit_price: amount, ...rest } = row;
   return { ...rest, total: rest.total ?? amount };
 }
@@ -225,6 +242,11 @@ function abcTotalNotUnit(row) {
 // "adds up")
 export function withBothAmounts(row) {
   if (!(row.quantity > 0)) return row;
+  // A unit price that doesn't give the total (a scan misreading a digit: "800 ... 1043.00 1,316,480.00" for 1645.60,
+  // PS 107166): the row's quantity and ABC total stand, the ABC/Unit is worked out from them
+  if (row.unit_price != null && row.total != null && !adds(row.quantity, row.unit_price, row.total) && Math.abs(row.quantity * row.unit_price - row.total) > row.total * 0.01) {
+    return { ...row, unit_price: Math.round((row.total / row.quantity) * 100) / 100, computed: 'unit_price', read_unit_price: row.unit_price };
+  }
   // computed: which amount was worked out, not read (shown green: View details, the Excel)
   if (row.unit_price == null && row.total != null) return { ...row, unit_price: Math.round((row.total / row.quantity) * 100) / 100, computed: 'unit_price' };
   if (row.total == null && row.unit_price != null) return { ...row, total: Math.round(row.quantity * row.unit_price * 100) / 100, computed: 'total' };
@@ -331,7 +353,9 @@ export function carryHeader(rawLines, columns) {
 
 // An amount, also with OCR's dots between thousands ("413.074.00")
 const MONEY_TOKEN = /^(?:\d[\d,]*|\d{1,3}(?:[.,]\d{3})+)\.\d{2}$/;
-const money = (s) => Number(s.replace(/[.,](?=\d{3}(?:[.,]|$))/g, ''));
+// An amount with letters the scan put in for digits ("3IRS.000.00"): ends in .dd, mostly digits
+const GARBLED_MONEY = /^(?=(?:[^\d]*\d){3})[\dA-Za-z,.]{4,}[.,]\d{2}$/;
+const money = (s) =>Number(s.replace(/[.,](?=\d{3}(?:[.,]|$))/g, ''));
 const COUNT_TOKEN = /^(?:\d{1,3}(?:[.,]\d{3})+|\d+)$/;
 const ITEM_TOKEN = /^[A-Z]{0,4}-?\d+[.)]*$/;
 const WORD_TOKEN = /^[A-Za-z][A-Za-z/.'’-]*$/;
@@ -345,7 +369,9 @@ function byHeader(lines, n) {
   const columns = headerFor(lines, n);
   if (!columns) return null;
   const read = (text) => {
-    const tokens = text.split(/\s+/).filter(Boolean);
+    // Delivery text after the numbers also when the header has no column for it ("... 138,000.00 Fifteen (15)
+    // calendar days upon receipt of an advice for delivery.", PhilGEPS 13299419)
+    const tokens = text.replace(DELIVERY_TAIL, '').split(/\s+/).filter(Boolean);
     const out = { written: text };
     const middle = columns.indexOf('description');
     // From the left: Item No., Unit, Quantity written before the description
@@ -372,9 +398,15 @@ function byHeader(lines, n) {
         const numbersRead = out.total != null || out.unit_price != null || out.quantity != null;
         while (!numbersRead && tokens.length && !MONEY_TOKEN.test(tokens.at(-1)) && !COUNT_TOKEN.test(tokens.at(-1))) tokens.pop();
       } else if ((key === 'total' || key === 'price') && MONEY_TOKEN.test(token)) out[key === 'total' ? 'total' : 'unit_price'] = money(tokens.pop());
+      // An amount the scan garbled ("3IRS.000.00" for 385,000.00, PS 108640): its cell is set aside, the amount
+      // worked out from the others
+      else if ((key === 'total' || key === 'price') && GARBLED_MONEY.test(token)) tokens.pop();
       else if (key === 'quantity' && COUNT_TOKEN.test(token) && !STRENGTH_TOKEN.test(tokens.at(-2) || '')) out.quantity = num(tokens.pop().replace(/\./g, ''));
       else if (key === 'unit' && WORD_TOKEN.test(token) && !STRENGTH_TOKEN.test(token) && out.quantity == null) out.unit = tokens.pop();
     }
+    // A header the scan read only in part (no Unit Cost column found, PS 108640 "Item Nao."): an amount left ending
+    // the description is the unit cost (a description never ends in an amount)
+    if (out.unit_price == null && !columns.includes('price') && MONEY_TOKEN.test(tokens.at(-1) || '')) out.unit_price = money(tokens.pop());
     out.description = tokens.join(' ');
     if (out.quantity == null || !/[A-Za-z]/.test(out.description)) return null;
     // Several rows on one line ("Cetirizine 10 mg 500 Tablets Cinnarizine 25 mg 3000 Tablets Epinephrine ... 100
@@ -418,7 +450,8 @@ function byHeader(lines, n) {
 
 // The numbers of a row on a line of their own: "2,100 Ampule 90.00 189,000.00" (Quantity, Unit, Unit Cost,
 // Total Cost after the description's lines)
-const NUMBERS_LINE = /^\d[\d,]*\s+[A-Za-z][A-Za-z/.'’-]*(?:\s+[A-Za-z][A-Za-z/.'’-]*)?\s+\d[\d,]*\.\d{2}\b/;
+// (an amount, not a strength: "14 Chlorhexidine 0.12%, 120" is the next row, PhilGEPS 13299419)
+const NUMBERS_LINE = /^\d[\d,]*\s+[A-Za-z][A-Za-z/.'’-]*(?:\s+[A-Za-z][A-Za-z/.'’-]*)?\s+\d[\d,]*\.\d{2}(?![\d%])/;
 // How many lines a row of a table with a header may take (a long description broken over lines)
 const ROW_LINES = 12;
 
@@ -427,8 +460,12 @@ const ROW_LINES = 12;
 function numbersBelow(lines, n) {
   if (NUMBERS_LINE.test(lines[n])) return null;
   const parts = [lines[n]];
+  // The next row's own line, starting with the number after this row's ("10 CalciumCarbonate 6.00 30,000 ..." after
+  // "9 Bupivacaine ...", PS 94918), is never this row's numbers line
+  const rowNo = leadingNumber(lines[n]);
+  const nextRow = rowNo == null ? null : new RegExp(String.raw`^${rowNo + 1}[.)]?\s+[A-Za-z]{4,}`);
   for (const next of lines.slice(n + 1, n + ROW_LINES)) {
-    if (!next) break;
+    if (!next || nextRow?.test(next)) break;
     if (NUMBERS_LINE.test(next)) return [...parts, next].join(' ');
     // The next numbered row ("49 IMATINIB ..."), not a strength going on ("100 mg tablet")
     if (/^\d{1,4}[.)]?\s+(?!(?:mg|mcg|µg|g|gm|grams?|ml|l|iu|units?|meq|mmol|%)\b)[A-Za-z]/i.test(next) || FORM_TEXT.test(next)) break;
@@ -544,8 +581,12 @@ function oneAmount(line, parsed) {
   };
 }
 
+// A heading or place in capitals after a row's last amount ("... 2,150.00 ANTIBACTERIALS", "... 1,038.00 LOT 3: ORAL
+// MEDICINES: TABLETS/CAPSULES", "... 2,000.00 GSO WAREHOUSE /"; PS 106978, PhilGEPS 13299861, 13298409)
+const HEADING_TAIL = /(\d\.\d{2})\s+[A-Z][A-Z0-9 :;&,/()'.-]{4,}$/;
+
 export function parseItemLine(fullLine) {
-  const line = fullLine.replace(DELIVERY_TAIL, '');
+  const line = fullLine.replace(DELIVERY_TAIL, '').replace(HEADING_TAIL, '$1');
   const parsed = parseItemColumns(line);
   // A priced row is taken as is when its quantity × unit price gives its total (a row whose own numbers
   // never add up keeps these columns)
@@ -556,6 +597,12 @@ export function parseItemLine(fullLine) {
   const tail = /^(.*\S)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2})$/.exec(line);
   if (!tail) return oneAmount(line, priceBeforeQuantity(line, parsed));
   const [, rest, priceText, totalText] = tail;
+  // "... <unit price> <quantity> <total>" ("9 Bupivacaine 0.5%, 5ml Solution for 350.00 2,000 700,000.00", PS 94918):
+  // a whole number between two amounts is the quantity
+  if (!priceText.includes('.') && /\d\.\d{2}$/.test(rest)) {
+    const swapped = priceBeforeQuantity(line, parsed);
+    if (swapped.quantity === num(priceText)) return swapped;
+  }
   const unitPrice = num(priceText);
   const total = num(totalText);
   const quantity = (rest.match(/\d[\d,]*/g) || []).map(num).findLast((q) => adds(q, unitPrice, total));
@@ -750,6 +797,29 @@ async function fileText(name, bytes) {
 
 const letterCount = (text) => (text || '').replace(/\s/g, '').length;
 
+// The files that hold the item table (user, 2026-10-27: "always use the tech specs and price sched")
+const TABLE_FILE = /tech\w*[\s._-]*spec|price[\s._-]*sched|schedule[\s._-]*of[\s._-]*req|bill[\s._-]*of[\s._-]*quant|bid[\s._-]*form|\bsor\b/i;
+const DOSE = /\d+(?:[.,]\d+)?\s*(?:(?:mg|mcg|µg|g|gm|ml|l|iu)\b|%)/i;
+
+/** The same row read from several files (or pages): one kept, the most complete reading (quantity, then prices),
+ * the Technical Specifications / Price Schedule / Schedule of Requirements first when equal (PhilGEPS 13300871,
+ * 13300773, 13304186). Rows are the same when they name the same products, Item No. and strength. In place. */
+export function keepBestReading(items) {
+  const flat = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const keyOf = (i) => (i.item_no == null ? null : `${[...i.our_products].sort().join('+')}|${i.item_no}|${flat(DOSE.exec(i.written || i.line || i.description)?.[0])}`);
+  const score = (i) => (i.quantity != null ? 8 : 0) + (i.unit_price != null && i.computed !== 'unit_price' ? 2 : 0) + (i.total != null && i.computed !== 'total' ? 2 : 0) + (TABLE_FILE.test(i.source || '') ? 1 : 0);
+  const best = new Map();
+  for (const i of items) {
+    const key = keyOf(i);
+    if (key && (!best.has(key) || score(i) > score(best.get(key)))) best.set(key, i);
+  }
+  for (let k = items.length - 1; k >= 0; k--) {
+    const key = keyOf(items[k]);
+    if (key && best.get(key) !== items[k]) items.splice(k, 1);
+  }
+  return items;
+}
+
 /** A line read as a table's row: with its quantity, or numbered as a table's rows are (its Item No. on it, the
  * rows around it numbered in order, or its number alone on the line above) */
 export function isTableRow(lines, n, row) {
@@ -899,6 +969,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
   const items = [];
   // Lines naming our products outside any table: kept for checking, never shown (isTableRow)
   const outside = [];
+  // A Schedule of Requirements asking for the whole as one package or lot ("1 Package Drugs and Medicines 1"):
+  // the tender isn't ours to bid on (lib/packageTender.js)
+  let isPackage = false;
   const seen = new Set();
   const read = [];
   const texts = [];
@@ -943,12 +1016,16 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     let carried = null;
     marked.forEach(({ text: page, quantities: column }, i) => {
       const raw = page.split('\n').map(clean);
+      if (/schedule\s+of\s+requirements/i.test(page) && raw.some((l) => PACKAGE_ROW.test(l))) isPackage = true;
       const lines = expandVariants(raw);
       carried = carryHeader(lines, carried);
       const quantities = column && columnAgrees(lines, column) ? column : null;
+      // Lines already read as part of a row above (a description's second line naming the molecule again, "FOLIC
+      // ACID) 5 mg capsule 430 5.00 2,150.00" under "15 CAPSULE FOLIC ACID (VITAMIN B12 AND", PS 106978)
+      let coveredUntil = -1;
       lines.forEach((line, n) => {
         // A molecule whose strengths follow as sub-rows: the sub-rows are the rows
-        if (isVariantParent(raw, n)) return;
+        if (isVariantParent(raw, n) || n <= coveredUntil) return;
         // Our molecule on this line in one of our dosages (the dosage may be on the next two lines)
         const products = matchProducts.line(line, lines.slice(n + 1, n + 3).join('\n'));
         if (!products.length || line.length > 400) return;
@@ -959,6 +1036,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
         // so keep the next two lines to show with it when the line alone has no quantity
         const context = lines.slice(n, n + 3).filter(Boolean).join(' / ');
         const row = parseItemRow(lines, n);
+        if (row.quantity != null && row.written) {
+          for (let k = n + 1; k < n + ROW_LINES && lines[k] && row.written.includes(withoutRules(lines[k])); k++) coveredUntil = k;
+        }
         // The page's Quantity column read on its own (lib/ocr.mjs quantityColumn) gives the row's quantity by its
         // Item No., also when the column is shifted against the rows
         // A row whose own numbers add up (quantity × unit price = total) keeps its own quantity
@@ -981,12 +1061,13 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     });
   }
   dropRepeatedRows(items);
+  keepBestReading(items);
   if (!read.some((d) => d.kind !== 'unsupported')) return { status: 'skipped', read, error: 'No PDF, Word or Excel documents.' };
   if (!texts.length) return { status: 'skipped', read, error: 'No readable text (scanned or damaged documents).' };
   return {
     status: 'done',
     read,
-    result: { bid_data_sheet: readBidDataSheet(clean(texts.join('\n'))), items, outside_table: outside.slice(0, 100) },
+    result: { bid_data_sheet: readBidDataSheet(clean(texts.join('\n'))), items, outside_table: outside.slice(0, 100), ...(isPackage && { package: true }) },
   };
 }
 

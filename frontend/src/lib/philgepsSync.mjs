@@ -4,6 +4,7 @@ import { checkLogin, recordLogin } from './loginGuard.mjs';
 import { logActivity } from './activityLog.mjs';
 import { loadMatcher, ocrPending, readDocuments } from './psDocs.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
+import { isPackageTender } from './packageTender.js';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
 // server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
@@ -49,8 +50,8 @@ const RECHECK_MS = 24 * 60 * 60 * 1000;
 // tender that doesn't name our products there gets its documents ordered and read too
 const DESCRIPTION_ITEMS_MIN = 1500;
 // Version of the document reading stored per tender (documents_read_key); a change reads them again
-// read-28: psDocs.mjs rules-30. read-27: psDocs.mjs rules-29. read-26: psDocs.mjs rules-28. read-25: psDocs.mjs rules-27. read-24: psDocs.mjs rules-26. read-23: psDocs.mjs rules-25. read-22: psDocs.mjs rules-24. read-21: psDocs.mjs rules-23. read-20: psDocs.mjs rules-22. read-19: psDocs.mjs rules-21. read-18: psDocs.mjs rules-20. read-17: psDocs.mjs rules-19. read-16: psDocs.mjs rules-18. read-15: psDocs.mjs rules-17. read-14: psDocs.mjs rules-16. read-13: psDocs.mjs rules-15. read-12: psDocs.mjs rules-14. read-11: psDocs.mjs rules-13. read-10: psDocs.mjs rules-12. read-9: psDocs.mjs rules-11. read-8: psDocs.mjs rules-10. read-7: row numbers no longer read as quantities (psDocs.mjs rules-9). read-6: misspelled names (lib/products.mjs)
-const READ_RULES = 'read-28';
+// read-29: psDocs.mjs rules-31, package or lot tenders get no molecules. read-28: psDocs.mjs rules-30. read-27: psDocs.mjs rules-29. read-26: psDocs.mjs rules-28. read-25: psDocs.mjs rules-27. read-24: psDocs.mjs rules-26. read-23: psDocs.mjs rules-25. read-22: psDocs.mjs rules-24. read-21: psDocs.mjs rules-23. read-20: psDocs.mjs rules-22. read-19: psDocs.mjs rules-21. read-18: psDocs.mjs rules-20. read-17: psDocs.mjs rules-19. read-16: psDocs.mjs rules-18. read-15: psDocs.mjs rules-17. read-14: psDocs.mjs rules-16. read-13: psDocs.mjs rules-15. read-12: psDocs.mjs rules-14. read-11: psDocs.mjs rules-13. read-10: psDocs.mjs rules-12. read-9: psDocs.mjs rules-11. read-8: psDocs.mjs rules-10. read-7: row numbers no longer read as quantities (psDocs.mjs rules-9). read-6: misspelled names (lib/products.mjs)
+const READ_RULES = 'read-29';
 // Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;
@@ -567,10 +568,13 @@ export async function readTenderDocuments(supabase, matchProducts, o, details) {
   const outcome = await readDocuments(supabase, BUCKET, details.documents, matchProducts);
   const items = outcome.result?.items || [];
   const products = [...new Set(items.flatMap((i) => i.our_products))];
+  // A tender bought as one package or lot isn't ours to bid on: no molecules (lib/packageTender.js)
+  const packaged = isPackageTender(o.title, outcome.result?.package);
   return {
-    matched_molecules: [...new Set([...matchProducts(`${o.title || ''}\n${o.items_text || ''}`), ...products])],
+    matched_molecules: packaged ? [] : [...new Set([...matchProducts(`${o.title || ''}\n${o.items_text || ''}`), ...products])],
     details: {
       ...details,
+      package: packaged || undefined,
       documents_products: products,
       documents_items: items.slice(0, 300),
       // Lines naming our products outside any table: not shown, kept for checking (psDocs.mjs isTableRow)

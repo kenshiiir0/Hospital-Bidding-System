@@ -4,7 +4,8 @@
 // row number the molecule tracker must show. The row number must never be read as the quantity (user,
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
+import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -116,7 +117,8 @@ expect(parseItemRow(PG13264900, 1), { item_no: '28', quantity: 340 }, 'quantity 
 // A strength split over lines is not a quantity (PS 102904 "1" / "g", PS 105627 "4000" / "IU/Ml", PhilGEPS
 // 13277104 "4" / "mL")
 const PS102904 = ['68 Cefazolin sodium 1 g Vial 100 20,000.00', '69 Cefepime hydrochloride 1', 'g Vial 50 15,000.00', '70 Cefepime hydrochloride 500mg 1,000 500,000.00'];
-expect(parseItemRow(PS102904, 1), { item_no: '69', quantity: undefined }, '"1" / "g": a strength');
+// Read through to its quantity on the next line: 1 g, 50 vials (not 1)
+expect(parseItemRow(PS102904, 1), { item_no: '69', quantity: 50 }, '"1" / "g": a strength');
 const PG13277104 = ['30 Bupivacaine 0.5%, 10 mL Amp 100', '31 Bupivacaine + Dextrose 0.5% + 8%, 4', 'mL Solution for Injection Amp', '32 Butamirate 50 mg Modified Release'];
 expect(parseItemRow(PG13277104, 1), { item_no: '31', quantity: undefined }, '"4" / "mL": a strength');
 // A bare quantity checked by price x quantity = total stays (PS 99596)
@@ -276,4 +278,36 @@ assert.equal(isTableRow(['7', 'Epoetin alfa 4000iu/0.4ml OR'], 1, {}), true, 'ro
 const TITLED = ['BAC No. EPA 2027-002', 'Supply and Delivery of Anesthetic Medications and Agents', 'Quantity Unit ! Item Description Souree Unit Cost Total Cost Bid Docs Price', '(Award by Item) RAF 4. 875.160.54 5,000.00', 'oo BUPIVACAINE 0.5% a . HN', 'as hydrochlordey 4 ml.', '6.000 amp-vial (spinal) with 8% 69.18 413.074.00 |', 'dextrose'];
 expect(parseItemRow(TITLED, 4), { quantity: 6000, unit_price: 69.18 }, 'header below a title');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4} rows).`);
+// The user's corrections (2026-10-27)
+// One amount that big is the ABC total: "Amikacin ... 2mL 700 49,000.00" under "Approved Budget Cost" (PS 102904)
+expect(parseItemRow(['56 Amikacin 125mg/mL Solution for Injection, 2mL Vial 700 49,000.00'], 0), { quantity: 700, total: 49000, unit_price: undefined }, 'big single amount is the total');
+// A scan's misread unit price: quantity and total stand, the ABC/Unit worked out (PS 107166 Sugammadex 1645.60)
+expect(withBothAmounts({ quantity: 800, unit_price: 1043, total: 1316480 }), { unit_price: 1645.6, computed: 'unit_price' }, 'unit price from the total when they disagree');
+// A garbled amount set aside, the total worked out (PS 108640 Sevelamer 35,000 x 11.00 = 385,000.00)
+const EPA6 = ['Quantity Unit Item Description Source Unit Cost Total Cost', '.. IP SLVELAMLR 800 mg (as Ces', '35.000 tah carbonate! 11.00 3IRS.000.00'];
+expect(withBothAmounts(parseItemRow(EPA6, 1)), { quantity: 35000, unit_price: 11, total: 385000, computed: 'total' }, 'garbled total');
+// The next row run onto the line is cut (PS 94918, PhilGEPS 13300871)
+expect(parseItemRow(['9 Bupivacaine 0.5%, 5ml Solution for 350.00 2,000 700,000.00 10 CalciumCarbonate 6.00 30,000 180,000.00'], 0), { quantity: 2000, unit_price: 350, total: 700000 }, 'next row on the line');
+expect(parseItemRow(['22 Carboplatin - lot bidding 10 mg/mL (IV) 45 mL vial 600 23 Carvedilol 6.25 mg tablet 564,000'], 0), { quantity: 600 }, 'next row on the line, no prices');
+// "mL ampoule 596.00" goes on the row, it doesn't start one (PhilGEPS 13309762)
+expect(parseItemRow(['16 1010 Ampoule Bupivacaine Hydrochloride 5mg/mL (0.5% ) Solution for Injection, 10', 'mL ampoule 596.00', '17 3000 Box Calcium'], 0), { quantity: 1010, unit_price: 596 }, 'strength unit starting the wrapped line');
+// The next row's "0.12%" is no amount; delivery text set aside under a header without its column (PhilGEPS 13299419)
+const DDH = ['Item Description Unit Quantity Unit Cost Total Cost', '13 Cetirizine 10 mg Tablet tablet 15,000 9.20 138,000.00 Fifteen (15) calendar', 'days upon receipt of', 'an advice for', 'delivery.', '14 Chlorhexidine 0.12%, 120', 'mL Oral Solution Bottle'];
+expect(parseItemRow(DDH, 1), { quantity: 15000, unit_price: 9.2, total: 138000 }, 'delivery text, next row with a percent');
+// The same row from several files: the complete one kept, the Technical Specifications first
+const SAME = [
+  { our_products: ['Carboplatin'], item_no: '22', description: 'Carboplatin 10 mg/mL (IV) 45 mL vial', quantity: 600, source: 'Section VI. Schedule of Requirements.pdf, page 1' },
+  { our_products: ['Carboplatin'], item_no: '22', description: 'Carboplatin 10 mg/mL (IV) 45 mL vial', quantity: 600, unit_price: 1712, total: 1027200, source: 'Section VII. Technical Specifications.pdf, page 1' },
+  { our_products: ['Carboplatin'], item_no: '21', description: 'Carboplatin 10 mg/mL (IV) 15 mL vial', quantity: 200, source: 'Section VII. Technical Specifications.pdf, page 1' },
+];
+keepBestReading(SAME);
+assert.deepEqual(SAME.map((i) => `${i.item_no} ${i.unit_price ?? '-'}`), ['22 1712', '21 -'], 'best reading kept per row');
+
+// Package or lot tenders aren't fetched (user, 2026-10-27): Taguig's "... - Lot F", a Schedule of Requirements "1 Package"
+assert.equal(isPackageTender('Supply and Delivery of Medicines - Lot F'), true, 'lot in the title');
+assert.equal(isPackageTender('Carboplatin - lot bidding'), false, 'lot bidding is not a lot');
+assert.equal(isPackageTender('Supply and Delivery of Drugs and Medicines for TIDH Use', true), true, 'package in the documents');
+assert.equal(PACKAGE_ROW.test('1 Package Drugs and Medicines 1 30 Calendars Days'), true, 'package row');
+assert.equal(PACKAGE_ROW.test('1 box Cetirizine 10mg 1'), false, 'a row of one box is not a package');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5} rows).`);

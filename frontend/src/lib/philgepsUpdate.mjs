@@ -4,6 +4,7 @@ import { Session, getPage, postBack, postbackLinks } from './philgepsSync.mjs';
 import { expandVariants, isVariantParent, loadMatcher, parseItemRow, withBothAmounts } from './psDocs.mjs';
 import { extractSchedule } from './schedule.mjs';
 import { logActivity } from './activityLog.mjs';
+import { isPackageTender } from './packageTender.js';
 
 // The hourly public PhilGEPS update (6 AM–5 PM) on the deployed server, without a browser: the same steps as
 // scraper.js runScrape on the office PC (which this replaces), sent as the pages' own ASP.NET posts:
@@ -277,7 +278,8 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
         .filter(Boolean);
       const lines = expandVariants(raw);
       const found = matchProducts.details(`${t.title}\n${lines.join('\n')}`);
-      t.matched_molecules = [...new Set([...found.matched, ...onList(t.details?.documents_products)])];
+      // None for a tender bought as one package or lot (lib/packageTender.js)
+      t.matched_molecules = isPackageTender(t.title, t.details?.package) ? [] : [...new Set([...found.matched, ...onList(t.details?.documents_products)])];
       if (t.details) {
         t.details = {
           ...t.details,
