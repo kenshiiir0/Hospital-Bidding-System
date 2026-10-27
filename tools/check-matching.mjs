@@ -103,6 +103,8 @@ const MUST_MATCH = [
   ['PROPOFOL 10 mg ml. - 3.500 amp vial 2 mt 61.64 333.520.00', 'Propofol'],
 ];
 const MUST_NOT_MATCH = [
+  // Chewable only when our row says so (user, 2026-10-27): our Loratadine is a plain tablet
+  ['Loratadine 10 mg Chewable Tablet', 'Loratadine'],
   // Our form only (user, 2026-10-27): our Folic Acid is a tablet
   ['22 Folic Acid 5 mg Capsule capsule 3,000 2.59 7,770.00', 'Folic Acid'],
   // A volume-only row is no match for a line with another strength

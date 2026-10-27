@@ -224,6 +224,13 @@ export function formsOf(product) {
   return formsIn(`${product.dosage_form || ''} ${product.unit || ''}`);
 }
 
+// Kinds of a form a line asks for that only a product stated that way fits: our Loratadine is a plain "Tablet", so
+// "Loratadine 10 mg Chewable Tablet" is not ours (user, 2026-10-27: "Do not include if not stated as chewable")
+const SPECIAL_KINDS = { chewable: /\bchew(?:able)?s?\b/i };
+const specialKinds = (text) => Object.keys(SPECIAL_KINDS).filter((kind) => SPECIAL_KINDS[kind].test(text || ''));
+/** The special kinds our product row states (generic name, dosage, Dosage Form, Unit) */
+export const kindsOf = (product) => new Set(specialKinds(`${product.generic_name || ''} ${product.dosage || ''} ${product.dosage_form || ''} ${product.unit || ''}`));
+
 // A product "in" something is matched by the strength our Product List gives, nothing more: Bupidex "Bupivacaine
 // Hydrochloride in dextrose" is 5mg/mL (0.5%), so "0.5%, 5ML ISOBARIC" is ours and "0.5%, 4ML W/ 8% DEXTROSE HEAVY"
 // is not (user, 2026-10-27: "The 8% is the wrong one. Check the product list"; PhilGEPS 13309076).
@@ -294,7 +301,7 @@ export function buildMatcher(products) {
     // The full generic names ("Bupivacaine Hydrochloride in dextrose"): a "+ Dextrose" in a tender is then part of it
     byName.get(name).generics.push(String(p.generic_name || '').toLowerCase());
     const dosage = dosageOf(p);
-    if (dosage) byName.get(name).dosages.push({ ...dosage, forms: formsOf(p), otherStrength: otherStrengthOf(p) });
+    if (dosage) byName.get(name).dosages.push({ ...dosage, forms: formsOf(p), kinds: kindsOf(p), otherStrength: otherStrengthOf(p) });
     else byName.get(name).nameOnly = true;
   }
   const compiled = [...byName.values()].map((entry) => {
@@ -382,7 +389,7 @@ export function buildMatcher(products) {
     if (!text) return [];
     const window = `${text}\n${next}`;
     return names(text)
-      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, window) && !d.otherStrength?.(ownPart(p, window))))
+      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, window) && !d.otherStrength?.(ownPart(p, window)) && specialKinds(ownPart(p, window)).every((kind) => d.kinds.has(kind))))
       .map((p) => p.name);
   };
   const details = (text) => {
