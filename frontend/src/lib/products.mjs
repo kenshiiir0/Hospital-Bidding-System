@@ -177,8 +177,14 @@ export function dosageOf(product) {
     return null;
   };
   // Bleomycin's "15 Units" is in the Dosage Form column ("-" as its strength)
-  return pick(product.dosage) || (/\d/.test(product.dosage || '') ? null : pick((product.dosage_form || '').match(/^[\d.,]+\s*\w+/)?.[0] || ''));
+  const dosage = pick(product.dosage) || (/\d/.test(product.dosage || '') ? null : pick((product.dosage_form || '').match(/^[\d.,]+\s*\w+/)?.[0] || ''));
+  // Atracurium's "10mg" on the Product List is 10 mg per mL (user, 2026-10-27), as tenders write it ("10mg/mL, 2.5mL")
+  if (dosage && PER_ML_AS_AMOUNT.test(product.generic_name || '')) {
+    return { ...dosage, concentrations: [...dosage.concentrations, ...dosage.doses.map((d) => ({ value: d.value, unit: `${d.unit}/ml` }))] };
+  }
+  return dosage;
 }
+const PER_ML_AS_AMOUNT = /^atracurium\b/i;
 
 // Does a tender text (one line plus its next lines) ask for this dosage?
 function dosageMatches(dosage, text) {
@@ -186,7 +192,10 @@ function dosageMatches(dosage, text) {
   if (dosage.gauges.length) return dosage.gauges.some((g) => found.gauges.includes(g));
   if (dosage.volumes.length) return dosage.volumes.some((v) => found.amounts.some((a) => a.unit === 'ml' && same(a.value, v.value)));
   return (
-    dosage.doses.some((d) => found.amounts.some((a) => a.unit === d.unit && same(a.value, d.value))) ||
+    // Exact (user, 2026-10-27: "THE DOSAGE SHOULD BE EXACT"): an amount written as such, never one worked out from a
+    // concentration and a volume ("10mg/mL, 2mL" is not our 20 mg) nor a concentration read as an amount
+    // ("100mg/mL" is not our 100 mg)
+    dosage.doses.some((d) => found.amounts.some((a) => !a.derived && !a.perUnit && a.unit === d.unit && same(a.value, d.value))) ||
     dosage.concentrations.some((c) => found.concentrations.some((f) => f.unit === c.unit && same(f.value, c.value)))
   );
 }

@@ -33,6 +33,10 @@ const products = [
   P('Folic acid (Vitamin B9)', '5 mg'),
   P('Cetirizine', '10 mg'),
   P('Propofol', '10 mg/ml (200 mg/20 ml)'),
+  P('Cytarabine', '100 mg'),
+  P('Docetaxel [COLD CHAIN]', '20 mg/0.5 ml'),
+  P('Oxaliplatin', '2 mg/ml (50 mg/25 ml)'),
+  P('Atracurium', '10mg'),
 ];
 const match = buildMatcher(products);
 
@@ -73,8 +77,16 @@ const MUST_MATCH = [
   ['6 Propofol, Inj: 10mg/ml, 20ml 120 amps 390.00 46,800.00', 'Propofol'],
   ['22 Cefazolin, Inj: 1g 400 vials 45.00 18,000.00', 'Cefazolin'],
   ['31 Bupivacaine + Dextrose 0.5% + 8%, 4 mL Solution for Injection Amp', 'Bupivacaine'],
+  // Atracurium's "10mg" is 10 mg per mL (user, 2026-10-27)
+  ['26 Atracurium 10mg/mL, 2.5mL. Amp. ampule 150 327.00', 'Atracurium'],
+  ['Oxaliplatin 50 mg/25 mL vial', 'Oxaliplatin'],
 ];
 const MUST_NOT_MATCH = [
+  // Exact dosage (user, 2026-10-27): a concentration is not an amount, nor concentration x volume
+  ['CYTARABINE Inj.: 100mg/mL solution, 1mL (IM', 'Cytarabine'],
+  ['DOCETAXEL Inj.: 10mg/mL, solution for infusion (IV), 2mL VAT-exempt', 'Docetaxel'],
+  ['OXALIPLATIN Inj.: 5mg/mL concentrate solution, 10mL vial (IV infusion)', 'Oxaliplatin'],
+  ['56 Amikacin 125mg/mL Solution for Injection, 2mL 700 49,000.00', 'Amikacin'],
   // Only the exact dosage we offer (user, 2026-10-26): another ingredient's dosage on the line doesn't count
   ['E: 4mg, Folic Acid: 65mcg, Niacin: 5mg', "Niacin's 5 mg is not Folic Acid's"],
   ['Ferrous sulfate 5 mg + Folic Acid 400 mcg tablet', "the iron's 5 mg is not Folic Acid's"],
