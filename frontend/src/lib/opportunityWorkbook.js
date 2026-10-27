@@ -259,6 +259,9 @@ function psDate(text) {
   return { iso: `${m[3]}-${String(MONTHS[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`, date: new Date(Date.UTC(+m[3], MONTHS[m[2].toLowerCase()] - 1, +m[1], hour, +(m[5] || 0))) };
 }
 
+// Sr. NO. of every PS-PhilGEPS tender in the Opportunity sheet; PhilGEPS tenders keep their solicitation number
+export const PS_SR_NO = 'Merchant';
+
 // The PS-PhilGEPS notice number of a Bid Match row: its link to the notice page, else a numeric first cell
 export function psRefOf(row) {
   const link = row.links.find((l) => /viewBidNotice\/(\d+)/.test(l.href));
@@ -267,7 +270,7 @@ export function psRefOf(row) {
 }
 
 // A PS-PhilGEPS Bid Match row, with its notice (Sync) and what was read in its documents (ps_tender_analysis).
-// PS-PhilGEPS shows no contact person or solicitation number, so those columns stay blank.
+// PS-PhilGEPS shows no contact person, so those columns stay blank; its Sr. NO. is "Merchant" (user, 2026-10-27).
 export function psTender(row, headers, notice, reading) {
   const cell = (name) => row.cells[headers.indexOf(name)] || '';
   const schedule = notice?.schedule || {};
@@ -278,7 +281,7 @@ export function psTender(row, headers, notice, reading) {
   const lastUpdated = psDate(schedule.lastUpdated) || psDate(/Last updated:\s*([^\n]+)/i.exec(schedule.closing || '')?.[1]);
   return {
     type: psType(cell('Mode of Procurement')).code,
-    solicitationNo: '',
+    solicitationNo: PS_SR_NO,
     published: psDate(cell('Publish Date'))?.iso || '',
     hospital: cell('Agency name'),
     ref: psRefOf(row) || '',

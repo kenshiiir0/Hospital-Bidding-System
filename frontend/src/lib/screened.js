@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from 'react';
 import { supabase } from '@/lib/supabase';
-import { downloadOpportunityWorkbook, moleculeText, philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
+import { downloadOpportunityWorkbook, moleculeText, philgepsTender, PS_SR_NO, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 
 // Screened Tenders (Supabase screened_tenders, shared by the team): tenders picked with "Add to Screened" in
@@ -137,7 +137,8 @@ async function currentTenders(list) {
   // A current reading with no molecule lines (e.g. its documents being read again at that moment) keeps the lines
   // saved when the tender was screened, so an export never comes out empty when they were known
   return list.map((r) => {
-    const saved = revive(r.tender || {});
+    // Copies saved before 2026-10-27 have a blank Sr. NO. for PS-PhilGEPS
+    const saved = revive(r.source === 'ps' ? { ...r.tender, solicitationNo: PS_SR_NO } : r.tender || {});
     const current =
       r.source === 'philgeps' && bids[r.ref]
         ? philgepsTender(bids[r.ref])
