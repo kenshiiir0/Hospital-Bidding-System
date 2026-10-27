@@ -17,8 +17,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-23';
+// rules-24: one amount after the quantity (unit price for injectables, total for cheap tablets), delivery text and -do- set aside, only real unit words as units. rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+const RULES_VERSION = 'rules-24';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -50,8 +50,14 @@ export { loadMatcher };
 
 const num = (s) => Number(s.replace(/,/g, ''));
 
-// A delivery period after the amounts ("... 78,120.00 15 calendar days") is not part of the item
-const DELIVERY_TAIL = /\s+\d+\s*(?:calendar\s+|working\s+)?days?\b.*$/i;
+// A delivery period after the amounts ("... 78,120.00 15 calendar days", "... 462,500.00 Fifteen (15)
+// calendar days", "... 70,000.00 Fifteen (15)") or a "-do-" (ditto) is not part of the item
+const DELIVERY_TAIL = /\s+(?:\d+\s*(?:calendar\s+|working\s+)?days?\b|(?:[A-Za-z-]+\s+)?\(\s*\d+\s*\)\s*(?:calendar|working|days?)?\b).*$|\s+-do-\s*$/i;
+// "<description> <quantity> [unit] <amount>": the one amount is the ABC total when it is at least this and comes
+// to this much a unit or more (70 vials, 10,500.00 = 150.00 each), else the unit price (100 vials, 215.00 each)
+const TOTAL_AT_LEAST = 1000;
+const TOTAL_PER_UNIT_AT_LEAST = 0.2;
+const CHEAP_UNIT_PRICE_UP_TO = 100;
 
 // An amount after a row's quantity above this, with at least this quantity, is the ABC total, not the unit price
 const LARGE_AMOUNT = 50000;
@@ -354,12 +360,12 @@ const MONEY_END = /(?<![\d.,])(\d[\d,]*\.\d{2})$/;
  * "Filgrastim 300 mcg/0.5 mL solution for injection" / "in pre-filled syringe (IV, SC) 1,500.00", PhilGEPS
  * 13298769). The unit price is the amount ending this line or one of the next two, before the next row. */
 function quantityAbove(lines, n, parsed) {
-  if (parsed.quantity != null) return parsed;
   const above = QTY_UNIT_LINE.exec(lines[n - 1] || '');
-  if (!above) return parsed;
   // "<Item No.> <Unit>" above a row ending in "<qty> <unit price>": the row's start broken onto the line above
   // ("1 Ampule" / "or Vial Rocuronium Br 10Mg/Ml-5Ml Iv 180 99.78", PhilGEPS 13303642)
   const ends = /(?<![\d.,])(\d[\d,]*)\s+(\d[\d,]*\.\d{2})$/.exec(lines[n]);
+  if (above && ends && parsed.item_no == null && /^[a-z]/.test(lines[n])) return { ...parsed, item_no: above[1], unit: above[2], quantity: num(ends[1]), unit_price: num(ends[2]), total: undefined };
+  if (parsed.quantity != null || !above) return parsed;
   if (ends) return { ...parsed, item_no: above[1], unit: above[2], quantity: num(ends[1]), unit_price: num(ends[2]) };
   // Only under a header that puts the Quantity before the Description: elsewhere "<qty> <unit>" above is the end
   // of the row before (PhilGEPS 13283536)
@@ -412,6 +418,34 @@ function readRow(lines, n) {
   return whole.quantity != null ? whole : own;
 }
 
+/** "<description> <quantity> [unit] <amount>" with no quantity read otherwise ("68 Cefazolin sodium 1 g Vial 70
+ * 10,500.00", "18 Cetirizine 10mg tablet 3000 pcs 2,100.00", "1 Amikacin ... 2ml 100 vial 215.00"): the whole number
+ * before the amount (and its unit) is the quantity; the amount is the total or the unit price (TOTAL_AT_LEAST) */
+function oneAmount(line, parsed) {
+  if (parsed.quantity != null) return parsed;
+  const m = /^(.*[A-Za-z].*?)\s+(\d{1,3}(?:,\d{3})+|\d+)(?:\s+([A-Za-z][A-Za-z/.'’-]*))?\s+(\d[\d,]*\.\d{2})$/.exec(line);
+  if (!m) return parsed;
+  const [, before, qtyText, unit, amountText] = m;
+  // Not a strength ("... 500 mg 200.00") nor a number glued to the description's last word
+  if (unit && /^(?:mg|mcg|g|gm|ml|l|iu|units?|%)\.?$/i.test(unit)) return parsed;
+  const quantity = num(qtyText);
+  const amount = num(amountText);
+  if (!quantity) return parsed;
+  // Tablets, capsules, pieces cost little each: a large amount coming to ₱100 or less each is their total. Vials,
+  // ampules, syringes, bottles: the amount is the unit price (Sugammadex "40 vial 5,818.00") unless it can't be
+  const cheap = !/\b(?:vials?|amp\w*|syringes?|pfs|bottles?|btls?|bots?|inj\w*)\b/i.test(`${before} ${unit || ''}`);
+  const isTotal = amount > LARGE_AMOUNT || (cheap && amount >= TOTAL_AT_LEAST && amount / quantity >= TOTAL_PER_UNIT_AT_LEAST && amount / quantity <= CHEAP_UNIT_PRICE_UP_TO);
+  const item = /^(\d{1,4}(?:\.\d{1,2})?)[.)]?\s+/.exec(before);
+  return {
+    ...parsed,
+    ...(item && { item_no: item[1] }),
+    description: item ? before.slice(item[0].length) : before,
+    quantity,
+    ...(unit && { unit }),
+    ...(isTotal ? { total: amount } : { unit_price: amount }),
+  };
+}
+
 export function parseItemLine(fullLine) {
   const line = fullLine.replace(DELIVERY_TAIL, '');
   const parsed = parseItemColumns(line);
@@ -422,7 +456,7 @@ export function parseItemLine(fullLine) {
   // gives the total, the one nearest the price when several do, e.g. "500 TABLET Amlodipine 5 mg Tablet 2
   // 1,000.00", or "55100000 vial Vancomycin ..., 1gram 3000 450.00 1,350,000.00" (55100000 is a stock number)
   const tail = /^(.*\S)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2})$/.exec(line);
-  if (!tail) return priceBeforeQuantity(line, parsed);
+  if (!tail) return oneAmount(line, priceBeforeQuantity(line, parsed));
   const [, rest, priceText, totalText] = tail;
   const unitPrice = num(priceText);
   const total = num(totalText);
@@ -432,7 +466,7 @@ export function parseItemLine(fullLine) {
     // "33.01 Amikacin sulfate 250mg/ml, 2ml ampule 2,000 235.00 5,640,000.00", Philippine Heart Center): the
     // whole number right before the unit price is the quantity
     const before = parsed.quantity == null && /^(.*[A-Za-z].*?)\s+(\d[\d,]*)$/.exec(rest);
-    if (!before || STRENGTH_UNIT_START.test(priceText)) return parsed;
+    if (!before || STRENGTH_UNIT_START.test(priceText)) return oneAmount(line, parsed);
     const item = /^(\d{1,4}(?:\.\d{1,2})?)[.)]?\s+/.exec(before[1]);
     const description = item ? before[1].slice(item[0].length) : before[1];
     const unit = /([A-Za-z]+)$/.exec(description)?.[1];
@@ -441,7 +475,10 @@ export function parseItemLine(fullLine) {
   // "<stock no.> <unit> <description> <quantity>" (PhilGEPS RFQ tables: Stock/Property No. | Unit | Description | Qty)
   const stock = /^(\S*\d\S*)\s+([A-Za-z][A-Za-z.'’]*)\s+(.+?)\s+([\d,]+)$/.exec(rest);
   if (stock && num(stock[4]) === quantity) {
-    return { item_no: stock[1], unit: stock[2], description: stock[3], quantity, unit_price: unitPrice, total };
+    // Only a real unit word is the unit ("13 Cetirizine 10 mg Tablet tablet 15,000 ...": Cetirizine is the product)
+    if (KNOWN_UNIT_WORD.test(stock[2])) return { item_no: stock[1], unit: stock[2], description: stock[3], quantity, unit_price: unitPrice, total };
+    const unit = new RegExp(`(${KNOWN_UNIT_RE})$`, 'i').exec(stock[3])?.[1];
+    return { item_no: stock[1], ...(unit && { unit }), description: `${stock[2]} ${stock[3]}`, quantity, unit_price: unitPrice, total };
   }
   const base = parseItemColumns(rest);
   return { ...base, description: base.description || rest, quantity: adds(base.quantity, unitPrice, total) ? base.quantity : quantity, unit_price: unitPrice, total };

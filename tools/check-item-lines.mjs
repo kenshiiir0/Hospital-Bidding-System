@@ -216,4 +216,19 @@ const ITEMS = [
 dropRepeatedRows(ITEMS);
 assert.equal(ITEMS.length, 2, 'repeated Rocuronium line dropped, Bupivacaine (no row with a quantity) kept');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72} rows).`);
+// One amount after the quantity (audit of all tenders, 2026-10-27): the unit price for injectables, the total when it
+// comes to ₱100 or less a tablet/piece; delivery text ("Fifteen (15) calendar") and "-do-" set aside
+const ONE = [
+  ['12 Sugammadex 100mg/ml,2ml solution for injection CPR & COD 40 vial 5,818.00', { quantity: 40, unit: 'vial', unit_price: 5818, total: undefined }],
+  ['1 Amikacin, 125mg/mL (as sulfate), 2ml 100 vial 215.00', { quantity: 100, unit_price: 215 }],
+  ['18 Cetirizine 10mg tablet 3000 pcs 2,100.00', { quantity: 3000, unit: 'pcs', total: 2100, unit_price: undefined }],
+  ['34 Cetirizine 10mg 18800 6,392.00', { quantity: 18800, total: 6392 }],
+  ['15 Epoetin (4000IU) vial 1400 1,050,000.00', { quantity: 1400, total: 1050000 }],
+  ['85 Cetirizine 10mg CPR & COD 2,500 tablet 3.00', { quantity: 2500, unit: 'tablet', unit_price: 3 }],
+  ['1 Anastrozole 1 mg tablet 25,000 18.50 462,500.00 Fifteen (15)', { quantity: 25000, unit_price: 18.5, total: 462500 }],
+  ['13 Cetirizine 10 mg Tablet tablet 15,000 9.20 138,000.00 Fifteen (15) calendar', { quantity: 15000, unit: 'tablet', unit_price: 9.2, total: 138000 }],
+  ['4 Propofol ampule 10mg/ml, 20ml 50 amp 50 amp -do-', { quantity: 50 }],
+];
+for (const [line, want] of ONE) expect(parseItemRow([line], 0), want, line);
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length} rows).`);
