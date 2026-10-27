@@ -52,7 +52,7 @@ const num = (s) => Number(s.replace(/,/g, ''));
 
 // A delivery period after the amounts ("... 78,120.00 15 calendar days", "... 462,500.00 Fifteen (15)
 // calendar days", "... 70,000.00 Fifteen (15)") or a "-do-" (ditto) is not part of the item
-const DELIVERY_TAIL = /\s+(?:\d+\s*(?:calendar\s+|working\s+)?days?\b|(?:[A-Za-z-]+\s+)?\(\s*\d+\s*\)\s*(?:calendar|working|days?)?\b).*$|\s+-do-\s*$/i;
+const DELIVERY_TAIL = /\s+(?:\d+\s*(?:calendar\s+|working\s+)?days?\b|(?:[A-Za-z-]+\s+)?\(\s*\d+\s*\)(?:\s*(?:calendar|working|days?)\b)?).*$|\s+-do-\s*$/i;
 // "<description> <quantity> [unit] <amount>": the one amount is the ABC total when it is at least this and comes
 // to this much a unit or more (70 vials, 10,500.00 = 150.00 each), else the unit price (100 vials, 215.00 each)
 const TOTAL_AT_LEAST = 1000;
