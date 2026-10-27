@@ -28,7 +28,7 @@ const COLUMNS = [
   ['Final Remarks', 18.9, 14],
   ['Delivery Period', 18.9, 14],
   ['Last Updated Date', 18.9, 14],
-  ['Closing Date', 13, 14],
+  ['Closing Date', 16, 14], // widened from 13: "11/16/26 13:00" showed as ####
   ['Contact Person', 18.9, 14],
   ['Designation', 18.9, 14],
   ['Contact No.', 18.9, 14],
