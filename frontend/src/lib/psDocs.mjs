@@ -962,11 +962,24 @@ function readTender(supabase, matchProducts, notice, options) {
   return readDocuments(supabase, BUCKET, notice.documents, matchProducts, options);
 }
 
+// A file download tried again after a dropped connection ("fetch failed"), so a brief network blip doesn't leave a
+// tender unread until the next run
+const DOWNLOAD_TRIES = 3;
+async function downloadWithRetry(supabase, bucket, path) {
+  let result;
+  for (let attempt = 1; attempt <= DOWNLOAD_TRIES; attempt++) {
+    result = await supabase.storage.from(bucket).download(path);
+    if (!result.error || !/fetch failed|network|timed? ?out|ECONN|ETIMEDOUT/i.test(result.error.message || '')) return result;
+    await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+  }
+  return result;
+}
+
 /** For checking the readings (tools, never the Syncs): a file's pages as readDocuments reads them (text layer,
  * scanned pages from the OCR cache only — nothing new is read or saved), each page's lines, and per line the two
  * readings before the Quantity column: { pages: [{ lines, quantities }] } */
 export async function documentPages(supabase, bucket, doc) {
-  const { data: blob, error } = await supabase.storage.from(bucket).download(doc.path);
+  const { data: blob, error } = await downloadWithRetry(supabase, bucket, doc.path);
   if (error) throw new Error(`${doc.name}: ${error.message}`);
   let { pages, pdf } = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer()));
   if (pdf) ({ pages } = await withOcr({ storage: { from: (b) => ({ download: (p) => supabase.storage.from(b).download(p), upload: async () => ({}) }) } }, bucket, doc, pdf, pages, 0));
@@ -999,7 +1012,7 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       if (doc.path) read.push({ name: doc.name, kind: 'unsupported' });
       continue;
     }
-    const { data: blob, error } = await supabase.storage.from(bucket).download(doc.path);
+    const { data: blob, error } = await downloadWithRetry(supabase, bucket, doc.path);
     if (error) throw new Error(`${doc.name}: ${error.message}`);
     let pages;
     let pdf;
