@@ -134,10 +134,18 @@ async function currentTenders(list) {
   const bids = Object.fromEntries(philgeps.map((bid) => [bid.ref_no, bid]));
   const bidMatch = ps?.lists?.bidMatch;
   const psRows = Object.fromEntries((bidMatch?.rows || []).map((row) => [psRefOf(row), row]));
+  // A current reading with no molecule lines (e.g. its documents being read again at that moment) keeps the lines
+  // saved when the tender was screened, so an export never comes out empty when they were known
   return list.map((r) => {
-    if (r.source === 'philgeps' && bids[r.ref]) return philgepsTender(bids[r.ref]);
-    if (r.source === 'ps' && psRows[r.ref]) return psTender(psRows[r.ref], bidMatch.headers, ps.notices[r.ref], ps.analysis[r.ref]);
-    return revive(r.tender);
+    const saved = revive(r.tender || {});
+    const current =
+      r.source === 'philgeps' && bids[r.ref]
+        ? philgepsTender(bids[r.ref])
+        : r.source === 'ps' && psRows[r.ref]
+          ? psTender(psRows[r.ref], bidMatch.headers, ps.notices[r.ref], ps.analysis[r.ref])
+          : null;
+    if (!current) return saved;
+    return current.molecules?.length ? current : { ...current, molecules: saved.molecules || [] };
   });
 }
 

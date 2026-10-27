@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { Session, getPage, postBack, postbackLinks } from './philgepsSync.mjs';
-import { expandVariants, isVariantParent, loadMatcher, parseItemRow, withBothAmounts } from './psDocs.mjs';
+import { expandVariants, isVariantParent, loadMatcher, parseItemRow, rowAhead, withBothAmounts } from './psDocs.mjs';
 import { extractSchedule } from './schedule.mjs';
 import { logActivity } from './activityLog.mjs';
 import { isPackageTender } from './packageTender.js';
@@ -285,7 +285,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
           ...t.details,
           matched_items: lines.flatMap((line, i) => {
             if (isVariantParent(raw, i)) return [];
-            const products = matchProducts.line(line, lines.slice(i + 1, i + 3).join('\n'));
+            const products = matchProducts.line(line, rowAhead(lines, i));
             return products.length ? [{ line, products, ...withBothAmounts(parseItemRow(lines, i)) }] : [];
           }),
           named_without_dosage: found.undosed.filter((name) => !t.matched_molecules.includes(name)),

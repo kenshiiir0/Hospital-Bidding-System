@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, rowAhead, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -310,4 +310,16 @@ assert.equal(isPackageTender('Supply and Delivery of Drugs and Medicines for TID
 assert.equal(PACKAGE_ROW.test('1 Package Drugs and Medicines 1 30 Calendars Days'), true, 'package row');
 assert.equal(PACKAGE_ROW.test('1 box Cetirizine 10mg 1'), false, 'a row of one box is not a package');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5} rows).`);
+// PhilGEPS 13300232 Price Schedule: the bidder's fields under each row end it; a row's dosage is never the next row's;
+// a delivery plan's copy of a row goes when the Price Schedule has it
+const PSCHED = ['45 Aztreonam 1g, powder for injection,', 'with Bio-Assay/Bio-Equivalence 400 vial 1,274.00 509,600.00', 'brand', 'packaging/model'];
+expect(parseItemRow(PSCHED, 0), { quantity: 400, unit_price: 1274, total: 509600 }, 'bidder fields end the row');
+assert.equal(rowAhead(['80 500 Bottle Cetirizine 2.5mg/ml, 10ml-', '81 5470 Bottle Cetirizine 5mg/5ml syrup'], 0), '', 'next row is not this row');
+const PLAN = [
+  { our_products: ['Sevelamer'], item_no: '277', quantity: 350000, unit_price: 34.63, total: 12120500, written: '277 Sevelamer Carbonate 800mg 350000 Tablet 34.63 12,120,500.00', source: 'Price Schedule and Technical Specifications.pdf, page 67' },
+  { our_products: ['Sevelamer'], item_no: '277', quantity: 350000, written: '277 350,000 Tablet Sevelamer Carbonate', source: 'Delivery Plans.pdf, page 10' },
+];
+keepBestReading(PLAN);
+assert.equal(PLAN.length, 1, 'delivery plan copy dropped');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3} rows).`);
