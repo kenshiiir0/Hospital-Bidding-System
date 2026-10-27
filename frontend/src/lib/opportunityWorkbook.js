@@ -90,7 +90,8 @@ const MOLECULE_FILL = solid('FFFFFF00');
 const COMPUTED_FILL = solid('FFC6EFCE');
 const WHITE_FILL = solid('FFFFFFFF'); // tender cells are filled white in the original (hides gridlines)
 const ITEM_FONT = { name: 'Segoe UI', size: 11, color: { argb: 'FF0D0D0D' } };
-const CENTER = { horizontal: 'center', vertical: 'middle', wrapText: true };
+// Every data cell starts from the left (user, 2026-10-27); headers stay centered
+const LEFT = { horizontal: 'left', vertical: 'middle', wrapText: true };
 const DATE_TIME_FORMAT = 'm/d/yy h:mm';
 const EMAIL = /^[^\s@<>"'()]+@[^\s@<>"'()]+\.[a-z]{2,}$/i;
 const PHONE = /^[\d\s()+\-/.,]{7,}(?:ext\.?\s*\d+)?$/i;
@@ -383,8 +384,8 @@ export function buildOpportunitySheet(workbook, tenders) {
     for (const [col, value] of Object.entries(facts)) {
       const cell = ws.getCell(`${col}${first}`);
       cell.value = value || null;
-      cell.font = { name: 'Calibri', size: 11, bold: col === 'D' || col === 'L' };
-      cell.alignment = CENTER;
+      cell.font = { name: 'Calibri', size: 11, bold: col === 'A' || col === 'D' || col === 'L' };
+      cell.alignment = LEFT;
       cell.border = BOX;
       cell.fill = col === 'D' ? HOSPITAL_FILL : WHITE_FILL;
     }
@@ -398,7 +399,7 @@ export function buildOpportunitySheet(workbook, tenders) {
       cell.border = BOX;
       cell.fill = WHITE_FILL;
       cell.font = { name: 'Calibri', size: 11, bold: col === 'L' };
-      cell.alignment = CENTER;
+      cell.alignment = LEFT;
     }
 
     // Molecule rows
@@ -413,17 +414,15 @@ export function buildOpportunitySheet(workbook, tenders) {
         const cell = ws.getCell(`${col}${row}`);
         cell.value = value === '' ? null : value;
         cell.font = ITEM_FONT;
-        // F and H carry the side borders; G and I sit between them
-        const sides = col === 'F' || col === 'H' ? { left: MEDIUM, right: MEDIUM } : {};
+        // F, H and I carry the side borders (I's right edge closes the ABC Total column); G sits between them
+        const sides = col === 'F' || col === 'H' || col === 'I' ? { left: MEDIUM, right: MEDIUM } : {};
         cell.border = { ...sides, top: i === 0 ? MEDIUM : undefined, bottom: row === last ? MEDIUM : undefined };
       }
       ws.getCell(`F${row}`).fill = MOLECULE_FILL;
       for (const col of ['H', 'I']) if (cells[col]?.formula) ws.getCell(`${col}${row}`).fill = COMPUTED_FILL;
-      ws.getCell(`F${row}`).alignment = { vertical: 'middle', wrapText: true };
-      ws.getCell(`G${row}`).alignment = { vertical: 'middle', wrapText: true };
-      ws.getCell(`H${row}`).alignment = { vertical: 'middle', wrapText: true };
+      for (const col of ['F', 'G', 'H']) ws.getCell(`${col}${row}`).alignment = LEFT;
       ws.getCell(`H${row}`).numFmt = '#,##0.00';
-      ws.getCell(`I${row}`).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      ws.getCell(`I${row}`).alignment = LEFT;
       ws.getCell(`I${row}`).numFmt = '#,##0.00';
 
       // Height for this molecule row's own text
@@ -457,7 +456,7 @@ export function buildOpportunitySheet(workbook, tenders) {
     sum.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFF0000' } };
     sum.alignment = { horizontal: 'left', vertical: 'middle' };
     sum.numFmt = '#,##0.00';
-    sum.border = { top: MEDIUM, bottom: MEDIUM };
+    sum.border = BOX;
     ws.getRow(sep).height = 20;
     r = sep + 1;
   }
