@@ -90,7 +90,8 @@ const MOLECULE_FILL = solid('FFFFFF00');
 const COMPUTED_FILL = solid('FFC6EFCE');
 const WHITE_FILL = solid('FFFFFFFF'); // tender cells are filled white in the original (hides gridlines)
 const ITEM_FONT = { name: 'Segoe UI', size: 11, color: { argb: 'FF0D0D0D' } };
-// Every data cell starts from the left (user, 2026-10-27); headers stay centered
+const CENTER = { horizontal: 'center', vertical: 'middle', wrapText: true };
+// Qty, ABC/Unit and ABC Total start from the left (user, 2026-10-27); the tender cells stay centered
 const LEFT = { horizontal: 'left', vertical: 'middle', wrapText: true };
 const DATE_TIME_FORMAT = 'm/d/yy h:mm';
 const EMAIL = /^[^\s@<>"'()]+@[^\s@<>"'()]+\.[a-z]{2,}$/i;
@@ -385,7 +386,7 @@ export function buildOpportunitySheet(workbook, tenders) {
       const cell = ws.getCell(`${col}${first}`);
       cell.value = value || null;
       cell.font = { name: 'Calibri', size: 11, bold: col === 'A' || col === 'D' || col === 'L' };
-      cell.alignment = LEFT;
+      cell.alignment = CENTER;
       cell.border = BOX;
       cell.fill = col === 'D' ? HOSPITAL_FILL : WHITE_FILL;
     }
@@ -399,7 +400,7 @@ export function buildOpportunitySheet(workbook, tenders) {
       cell.border = BOX;
       cell.fill = WHITE_FILL;
       cell.font = { name: 'Calibri', size: 11, bold: col === 'L' };
-      cell.alignment = LEFT;
+      cell.alignment = CENTER;
     }
 
     // Molecule rows
@@ -420,7 +421,8 @@ export function buildOpportunitySheet(workbook, tenders) {
       }
       ws.getCell(`F${row}`).fill = MOLECULE_FILL;
       for (const col of ['H', 'I']) if (cells[col]?.formula) ws.getCell(`${col}${row}`).fill = COMPUTED_FILL;
-      for (const col of ['F', 'G', 'H']) ws.getCell(`${col}${row}`).alignment = LEFT;
+      ws.getCell(`F${row}`).alignment = { vertical: 'middle', wrapText: true };
+      for (const col of ['G', 'H']) ws.getCell(`${col}${row}`).alignment = LEFT;
       ws.getCell(`H${row}`).numFmt = '#,##0.00';
       ws.getCell(`I${row}`).alignment = LEFT;
       ws.getCell(`I${row}`).numFmt = '#,##0.00';
