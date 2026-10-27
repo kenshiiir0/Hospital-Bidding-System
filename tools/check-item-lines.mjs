@@ -303,12 +303,13 @@ const SAME = [
 keepBestReading(SAME);
 assert.deepEqual(SAME.map((i) => `${i.item_no} ${i.unit_price ?? '-'}`), ['22 1712', '21 -'], 'best reading kept per row');
 
-// Package or lot tenders aren't fetched (user, 2026-10-27): a Schedule of Requirements "1 Package" in the documents or
-// the description; a title or file name naming a package is not enough (Adela Serra Ty "PACKAGE 1-3" list their items)
-assert.equal(isPackageTender('PROCUREMENT OF DRUGS AND MEDICINES: PACKAGE 3 - EARLY PROCUREMENT ACTIVITY'), false, 'package in the title alone is not a package');
+// Package or lot tenders aren't fetched (user, 2026-10-27): a "1 Package" / "1 Lot" row in the description or the
+// documents' Schedule of Requirements; never the tender's name or a file name (Adela "PACKAGE 1", Taguig "Lot F")
+assert.equal(isPackageTender('Description / Supply and Delivery of Medicines - Lot F'), false, 'lot in the name alone is not a lot');
+assert.equal(isPackageTender('PROCUREMENT OF DRUGS AND MEDICINES: PACKAGE 3 - EARLY PROCUREMENT ACTIVITY'), false, 'package in the name alone is not a package');
 assert.equal(isPackageTender('Item\n1 Package Drugs and Medicines 1 30 Calendars Days'), true, 'package row in the description');
-assert.equal(isPackageTender('Carboplatin - lot bidding'), false, 'lot bidding is not a lot');
-assert.equal(isPackageTender('Supply and Delivery of Drugs and Medicines for TIDH Use', true), true, 'package in the documents');
+assert.equal(isPackageTender('Item\n1 Lot Various Drugs and Medicines 1'), true, 'lot row in the description');
+assert.equal(isPackageTender('', true), true, 'package in the documents');
 assert.equal(PACKAGE_ROW.test('1 Package Drugs and Medicines 1 30 Calendars Days'), true, 'package row');
 assert.equal(PACKAGE_ROW.test('1 box Cetirizine 10mg 1'), false, 'a row of one box is not a package');
 

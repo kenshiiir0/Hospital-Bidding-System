@@ -80,8 +80,7 @@ async function loadPsData() {
   const active = await loadActiveNames().catch(() => null);
   return activePsData(
     { syncedAt: snap?.synced_at, lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) },
-    active,
-    { keepPackages: true }
+    active
   );
 }
 
@@ -146,6 +145,8 @@ async function currentTenders(list) {
         : r.source === 'ps' && psRows[r.ref]
           ? psTender(psRows[r.ref], bidMatch.headers, ps.notices[r.ref], ps.analysis[r.ref])
           : null;
+    // Removed from the lists (a package or lot tender, or none of our products left): left out of the export
+    if (current && !current.molecules?.length) return null;
     if (!current) return saved;
     return hasLines(current.molecules) || !hasLines(saved.molecules) ? current : { ...current, molecules: saved.molecules };
   });
@@ -155,10 +156,13 @@ async function currentTenders(list) {
 const hasLines = (molecules) => (molecules || []).some(([, qty, unitPrice, total]) => qty || unitPrice != null || total != null);
 
 // The team's Opportunity sheet for these screened rows, stacked in the order they were screened: the first
-// screened at the top, the latest at the bottom (so each day's additions land under the earlier ones)
+// screened at the top, the latest at the bottom (so each day's additions land under the earlier ones).
+// Tenders removed from the lists are left out rather than exported blank (user, 2026-10-27).
+// Returns { exported, left } (left: the screened rows left out)
 export async function exportScreened(list) {
   const inScreenedOrder = [...list].sort((a, b) => String(a.added_at).localeCompare(String(b.added_at)));
-  const tenders = await currentTenders(inScreenedOrder);
-  await downloadOpportunityWorkbook(tenders);
-  return tenders.length;
+  const current = await currentTenders(inScreenedOrder);
+  const tenders = current.filter(Boolean);
+  if (tenders.length) await downloadOpportunityWorkbook(tenders);
+  return { exported: tenders.length, left: inScreenedOrder.filter((r, i) => !current[i]) };
 }

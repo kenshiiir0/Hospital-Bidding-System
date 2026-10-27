@@ -83,8 +83,12 @@ export default function ScreenedPage() {
     setExporting(true);
     setMessage({ tone: '', text: '' });
     try {
-      const count = await exportScreened(shown);
-      setMessage({ tone: 'success', text: `Exported ${count} screened tender${count === 1 ? '' : 's'}, first screened at the top, latest at the bottom.` });
+      const { exported, left } = await exportScreened(shown);
+      const leftOut = left.length ? ` Left out ${left.length} with none of our products or bought as one lot: ${left.map((r) => r.ref).join(', ')}.` : '';
+      setMessage({
+        tone: exported ? 'success' : 'error',
+        text: exported ? `Exported ${exported} screened tender${exported === 1 ? '' : 's'}, first screened at the top, latest at the bottom.${leftOut}` : `Nothing to export.${leftOut}`,
+      });
     } catch (err) {
       setMessage({ tone: 'error', text: `Export failed: ${err.message}` });
     }

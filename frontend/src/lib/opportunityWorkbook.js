@@ -10,6 +10,8 @@
 import { philgepsType, psType } from './tenderType';
 // Bid dates and delivery period read in the bid documents, cut to the value alone
 import { bidDateText, deliveryText } from './bidDates';
+// A package or lot tender (by its documents or description) has no rows, so it is left out
+import { isPackageTender } from './packageTender';
 
 const COLUMNS = [
   // header, width, header font size
@@ -214,16 +216,15 @@ function itemRow(item) {
 // Molecule rows: the documents hold the real data, so a product with lines read in the bid documents (lines
 // with a quantity; others are context such as "Project Name: ...") gets those, and the notice's own item lines
 // fill in only the products the documents don't give; else just our product names
-function moleculeRows(noticeItems, documentItems, productNames, title) {
+function moleculeRows(noticeItems, documentItems, productNames) {
   const fromDocs = (documentItems || []).filter((item) => item.quantity != null);
   const inDocuments = new Set(fromDocs.flatMap((item) => item.our_products || []));
   const fromNotice = (noticeItems || []).filter((item) => !(item.products || []).length || !item.products.every((p) => inDocuments.has(p)));
   const rows = [...fromDocs, ...fromNotice];
   if (rows.length) return rows.map(itemRow);
   // No item lines read yet (e.g. scanned documents still being read with OCR)
-  if (productNames.length) return [[productNames.join(', '), '', null, null]];
-  // None of our products in its notice or documents: say so rather than leave the cell blank
-  return [[`None of our products found in its notice or documents (${title || 'no title'})`, '', null, null]];
+  // None of our products (or a package or lot tender): no rows, so the export leaves the tender out
+  return productNames.length ? [[productNames.join(', '), '', null, null]] : [];
 }
 
 // A PhilGEPS tender (philgeps_opportunities row)
@@ -237,7 +238,7 @@ export function philgepsTender(bid) {
     published: bid.publish_date || '',
     hospital: bid.procuring_entity || '',
     ref: bid.ref_no || '',
-    molecules: moleculeRows(d.matched_items, d.documents_items, bid.matched_molecules || [], bid.title),
+    molecules: isPackageTender(bid.items_text, d.package) ? [] : moleculeRows(d.matched_items, d.documents_items, bid.matched_molecules || []),
     // What the bid documents say, else the notice's description (as in View details)
     preBid: bidDateText(bds.prebid_conference) || d.pre_bid || '',
     bidOpening: bidDateText(bds.bid_opening) || d.bid_opening || '',
@@ -287,7 +288,7 @@ export function psTender(row, headers, notice, reading) {
     published: psDate(cell('Publish Date'))?.iso || '',
     hospital: cell('Agency name'),
     ref: psRefOf(row) || '',
-    molecules: moleculeRows(null, done?.items, products, cell('Notice Title')),
+    molecules: moleculeRows(null, done?.items, products),
     // Date and time only, like the team's sheet (the venue is in View details)
     preBid: schedule.prebid || bidDateText(bds.prebid_conference) || '',
     bidOpening: schedule.bidOpening || bidDateText(bds.bid_opening) || '',

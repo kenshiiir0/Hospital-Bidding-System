@@ -1,11 +1,10 @@
 // Tenders bought as one package or lot, which the team doesn't bid on (user, 2026-10-27: "When the sched of
-// requirements were package or lot then do not fetch it anymore", e.g. Taguig's "Supply and Delivery of Medicines -
-// Lot B"). Their molecules aren't fetched, so they leave the lists on both portals (PhilGEPS: no matched_molecules,
-// PS-PhilGEPS: no products).
+// requirements were package or lot then do not fetch it anymore"). Their molecules aren't fetched, so they leave
+// the lists and the Screened export on both portals (PhilGEPS: no matched_molecules, PS-PhilGEPS: no products).
 
-// Not by the title or a file name: "PACKAGE 1 - EARLY PROCUREMENT ACTIVITY" (Adela Serra Ty) lists its items one by
-// one (user, 2026-10-27: "The adela was fine. It was just the file name"). Only what the documents or the
-// description say counts.
+// Never by the tender's name or a file name: Adela Serra Ty "PACKAGE 1 - ..." and Taguig "Medicines - Lot F" both
+// list their items one by one (user, 2026-10-27: only what the description or the documents say counts, for both
+// "Lot" and "Package").
 
 // A Schedule of Requirements row asking for the whole as one: "1 Package Drugs and Medicines 1 30 Calendars Days"
 export const PACKAGE_ROW = /^\W{0,2}1[.)]?\s+(?:package|lot|lump[\s-]*sum)s?\b.*?\s1(?:\s|$)/i;
