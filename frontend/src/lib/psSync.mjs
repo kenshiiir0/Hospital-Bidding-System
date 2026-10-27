@@ -280,11 +280,12 @@ function readSchedule(root) {
 // The agency's address, centered under its name at the top of the notice: the lines between the name and the
 // notice type ("Invitation to Bid", "Request for Quotation"), e.g. "DOH Adela Serra Ty Memorial Medical Center,
 // Tandag, Surigao Del Sur, Caraga". null when the page doesn't give one.
-const NOTICE_TYPE_LINE = /^(?:invitation|request|notice|expression|call|negotiated|small value|shopping)/i;
-function readAgencyAddress(root) {
+const NOTICE_TYPE_LINE = /^(?:invitation|request|notice|expression|call|negotiated|small value|shopping)\b/i;
+export function readAgencyAddress(root) {
   const lines = root.querySelectorAll('center.verdhana_twelvepx').map((c) => clean(c.text));
   const end = lines.findIndex((line, i) => i > 0 && NOTICE_TYPE_LINE.test(line));
-  return lines.slice(1, end < 0 ? 3 : end).filter(Boolean).join(', ') || null;
+  // A line may end in its own comma ("Carig,"): drop it so the parts don't read "Carig,, Tuguegarao City"
+  return lines.slice(1, end < 0 ? 3 : end).map((line) => line.replace(/[\s,]+$/, '')).filter(Boolean).join(', ') || null;
 }
 
 // The notice's "View all activity" pop-up: PhilGEPS's own Schedule of activity, on every notice (pre-bid meeting
