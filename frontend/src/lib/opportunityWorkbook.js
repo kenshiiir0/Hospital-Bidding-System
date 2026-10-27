@@ -86,7 +86,7 @@ function dmyTime(value) {
 
 
 // Contact lines are [designation, address lines..., phone numbers, e-mail]
-function splitContact(info = []) {
+export function splitContact(info = []) {
   const [designation = '', ...rest] = info;
   // PhilGEPS often repeats the same number for phone and fax
   const unique = (lines) => [...new Set(lines)].join(' / ');
@@ -275,7 +275,8 @@ export function psTender(row, headers, notice, reading) {
     designation: '',
     phone: '',
     email: '',
-    address: '',
+    // The agency's address from the top of the notice (psSync.mjs readAgencyAddress)
+    address: notice?.address || '',
   };
 }
 

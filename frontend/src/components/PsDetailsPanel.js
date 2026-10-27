@@ -15,8 +15,9 @@ import { readingDocuments } from '@/lib/documentsReading';
 //   budget as the "total", then `children` (our products, bid data sheet, documents…),
 // - a footer: Close / `action` (Add to Screened) / Open original PhilGEPS notice.
 // Only the body scrolls; the page behind is locked while the drawer is open.
-// titleColumn / subtitleColumn: the columns for the heading (subtitle = the agency); wide: room for tables.
-export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, link, wide = false, lead, action, children, onClose }) {
+// titleColumn / subtitleColumn: the columns for the heading (subtitle = the agency); address: the agency's address,
+// shown under its name; wide: room for tables.
+export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn, address, link, wide = false, lead, action, children, onClose }) {
   const closeButton = useRef(null);
 
   useEffect(() => {
@@ -102,6 +103,16 @@ export default function PsDetailsPanel({ list, row, titleColumn, subtitleColumn,
             <div className="min-w-0">
               <div className="text-xs font-medium uppercase tracking-wide text-black/40">{agency ? 'Procuring entity' : 'Line item'}</div>
               <div className="mt-1 break-words text-sm font-semibold text-black">{agency || title}</div>
+              {/* The agency's address as the notice gives it, right under its name */}
+              {address && (
+                <p className="mt-0.5 flex items-start gap-1 text-xs leading-snug text-black/62">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="#12769F" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden>
+                    <path d="M10 17.5s5.5-5 5.5-9.5a5.5 5.5 0 0 0-11 0c0 4.5 5.5 9.5 5.5 9.5Z" />
+                    <circle cx="10" cy="8" r="2" />
+                  </svg>
+                  <span className="break-words">{address}</span>
+                </p>
+              )}
               {/* The agency's own website and latest postings */}
               {agency && <HospitalLinks name={agency} />}
             </div>

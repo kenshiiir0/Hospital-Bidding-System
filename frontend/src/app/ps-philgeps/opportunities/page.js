@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { matchesSearch, usePsPhilgeps } from '@/lib/psContext';
+import { psRefOf } from '@/lib/opportunityWorkbook';
 import PsListTable from '@/components/PsListTable';
 import PsDetailsPanel from '@/components/PsDetailsPanel';
 import { usePsFilters, PS_SORTS } from '@/components/PsFilters';
@@ -70,6 +71,8 @@ export default function MyOpportunitiesPage() {
           row={selected}
           titleColumn="Notice Title"
           subtitleColumn="Agency name"
+          // Known when the notice is also on Bid Match (read by the Sync)
+          address={data?.notices?.[psRefOf(selected)]?.address}
           link={selected.links.find((l) => /viewBidNotice/.test(l.href))?.href}
           onClose={() => setSelected(null)}
         />

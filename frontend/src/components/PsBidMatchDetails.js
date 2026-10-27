@@ -28,6 +28,7 @@ export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose }) {
       row={row}
       titleColumn="Notice Title"
       subtitleColumn="Agency name"
+      address={notice?.address}
       link={row.links.find((l) => /viewBidNotice/.test(l.href))?.href}
       wide
       onClose={onClose}

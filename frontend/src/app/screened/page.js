@@ -289,6 +289,7 @@ function SavedDetails({ r, loading, error, onClose }) {
       row={{ cells: cells.map((c) => c || ''), links: [] }}
       titleColumn="Notice Title"
       subtitleColumn="Agency name"
+      address={t.address}
       wide
       onClose={onClose}
       action={<ScreenButton source={r.source} tenderRef={r.ref} title={r.title} products={t.products} getTender={() => t} />}

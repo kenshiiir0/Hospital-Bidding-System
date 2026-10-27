@@ -7,7 +7,7 @@ import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
 import ScreenButton from '@/components/ScreenButton';
-import { asWritten, moleculeText, philgepsTender } from '@/lib/opportunityWorkbook';
+import { asWritten, moleculeText, philgepsTender, splitContact } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { ChecklistList, KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -130,6 +130,8 @@ export default function TenderDetails({ bid, onClose }) {
       row={row}
       titleColumn="Notice Title"
       subtitleColumn="Agency name"
+      // Street, town and province from the notice's contact block
+      address={splitContact(d.contact_info).address || null}
       link={PHILGEPS_LINK.test(bid.detail_link || '') ? bid.detail_link : null}
       wide
       onClose={onClose}
