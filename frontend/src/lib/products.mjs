@@ -222,6 +222,14 @@ export function formsOf(product) {
   return formsIn(`${product.dosage_form || ''} ${product.unit || ''}`);
 }
 
+// What a product "in" something must also name ("Bupivacaine Hydrochloride in dextrose": the heavy spinal one, so
+// "0.5%, 5ML ISOBARIC" is not it; PhilGEPS 13309076): that ingredient or its usual words, else null
+const IN_WORDS = { dextrose: /\b(?:dextrose|glucose|heavy|hyperbaric)\b/i };
+export function needsOf(product) {
+  const word = /\bin\s+([a-z]+)/i.exec(String(product.generic_name || '').replace(/\(.*?\)/g, ' '))?.[1]?.toLowerCase();
+  return word ? IN_WORDS[word] || new RegExp(`\\b${word}\\b`, 'i') : null;
+}
+
 // A tender text naming no form fits any; one naming forms fits when one of them is ours ("tablet/capsule" fits a tablet)
 function formMatches(forms, text) {
   if (!forms?.size) return true;
@@ -233,7 +241,12 @@ function formMatches(forms, text) {
 function dosageMatches(dosage, text) {
   const found = strengthsOf(text);
   if (dosage.gauges.length) return dosage.gauges.some((g) => found.gauges.includes(g));
-  if (dosage.volumes.length) return dosage.volumes.some((v) => found.amounts.some((a) => a.unit === 'ml' && same(a.value, v.value)));
+  // A row with only a volume ("450 ML" blood bag, Methotrexate "10ml"): that volume, and no strength on the line
+  // ("METHOTREXATE 100 mg/mL, 10 mL" is a strength, not ours; PhilGEPS 13309534)
+  if (dosage.volumes.length) {
+    const strength = found.amounts.some((a) => a.unit !== 'ml') || found.concentrations.length;
+    return !strength && dosage.volumes.some((v) => found.amounts.some((a) => a.unit === 'ml' && same(a.value, v.value)));
+  }
   // Exact (user, 2026-10-27: "THE DOSAGE SHOULD BE EXACT"):
   // - one of our amounts written as such ("Methotrexate 500mg/5ml"); never a concentration read as an amount
   //   ("Cytarabine 100mg/mL" is not our 100 mg)
@@ -271,7 +284,7 @@ export function buildMatcher(products) {
     // The full generic names ("Bupivacaine Hydrochloride in dextrose"): a "+ Dextrose" in a tender is then part of it
     byName.get(name).generics.push(String(p.generic_name || '').toLowerCase());
     const dosage = dosageOf(p);
-    if (dosage) byName.get(name).dosages.push({ ...dosage, forms: formsOf(p) });
+    if (dosage) byName.get(name).dosages.push({ ...dosage, forms: formsOf(p), needs: needsOf(p) });
     else byName.get(name).nameOnly = true;
   }
   const compiled = [...byName.values()].map((entry) => {
@@ -359,7 +372,7 @@ export function buildMatcher(products) {
     if (!text) return [];
     const window = `${text}\n${next}`;
     return names(text)
-      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, window)))
+      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, window) && (!d.needs || d.needs.test(window))))
       .map((p) => p.name);
   };
   const details = (text) => {

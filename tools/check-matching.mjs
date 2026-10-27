@@ -38,6 +38,7 @@ const products = [
   P('Oxaliplatin', '2 mg/ml (50 mg/25 ml)'),
   P('Atracurium', '10mg'),
   P('Methotrexate', '100mg/ml (500mg / 5ml)'),
+  P('Methotrexate', '10ml'),
   P('Enoxaparin sodium*', '6000 IU/0.6 mL (60 mg/0.6 ml)'),
 ];
 const match = buildMatcher(products);
@@ -100,6 +101,9 @@ const MUST_MATCH = [
 const MUST_NOT_MATCH = [
   // Our form only (user, 2026-10-27): our Folic Acid is a tablet
   ['22 Folic Acid 5 mg Capsule capsule 3,000 2.59 7,770.00', 'Folic Acid'],
+  // A volume-only row is no match for a line with another strength; our Bupivacaine is in dextrose (user, 2026-10-27)
+  ['60 METHOTREXATE Inj.: 100 mg/mL, 10 mL vial (as base) VAT-exempt', 'Methotrexate'],
+  ['3 BUPIVACAINE (AS HYDROCHLORIDE) 0.5%, 5ML ISOBARIC POLYAMP 1,500 Ampule', 'Bupivacaine'],
   // Exact dosage (user, 2026-10-27): a concentration is not an amount, nor concentration x volume
   ['CYTARABINE Inj.: 100mg/mL solution, 1mL (IM', 'Cytarabine'],
   ['Methotrexate 100 mg/mL, 10 mL vial', 'Methotrexate'],
