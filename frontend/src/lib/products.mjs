@@ -138,7 +138,10 @@ const same = (a, b) => Math.abs(a - b) <= Math.max(a, b) * 0.01;
 // Every amount (mg, IU, %, ml), concentration (per ml) and gauge in a text
 export function strengthsOf(text) {
   // "125mmg/ml" (a slip in a hospital's list) is 125 mg/ml
-  const s = String(text || '').replace(/(\d)\s*mmg(?![a-z])/gi, '$1mg');
+  // A scan that lost the slash ("PROPOFOL 10 mg ml.", PS 107166) is 10 mg/ml
+  const s = String(text || '')
+    .replace(/(\d)\s*mmg(?![a-z])/gi, '$1mg')
+    .replace(/(\d\s*(?:mg|mcg|iu))\s+ml\b/gi, '$1/ml');
   const amounts = [];
   const concentrations = [];
   for (const m of s.matchAll(AMOUNT)) {
@@ -147,10 +150,15 @@ export function strengthsOf(text) {
     const perUnit = new RegExp(`^\\s*\\/\\s*${UNITS}(?![a-z])`, 'i').test(s.slice(m.index + m[0].length));
     if (a) amounts.push(perUnit ? { ...a, perUnit: true } : a);
   }
+  // perVolume: "250MG/2ML" as written (amount over volume), for hospitals' shorthand (dosageMatches)
+  const perVolume = [];
   for (const m of s.matchAll(PER_VOLUME)) {
     const a = norm(m[1], m[2]);
     const v = norm(m[3], m[4]);
-    if (a && v && v.unit === 'ml' && v.value > 0 && a.unit !== 'ml') concentrations.push({ value: a.value / v.value, unit: `${a.unit}/ml` });
+    if (a && v && v.unit === 'ml' && v.value > 0 && a.unit !== 'ml') {
+      concentrations.push({ value: a.value / v.value, unit: `${a.unit}/ml` });
+      perVolume.push({ amount: a.value, unit: a.unit, volume: v.value });
+    }
   }
   for (const m of s.matchAll(PER_UNIT)) {
     const a = norm(m[1], m[2]);
@@ -161,14 +169,15 @@ export function strengthsOf(text) {
   const volumes = amounts.filter((a) => a.unit === 'ml' && !a.perUnit);
   for (const c of concentrations) for (const v of volumes) amounts.push({ value: c.value * v.value, unit: c.unit.split('/')[0], derived: true });
   const gauges = [...s.matchAll(GAUGE)].map((m) => Number(m[1] || m[2] || m[3]));
-  return { amounts, concentrations, gauges };
+  return { amounts, concentrations, gauges, perVolume };
 }
 
 // What a product row's dosage requires of a tender line, or null when it has no usable dosage (match by name)
 export function dosageOf(product) {
   const pick = (text) => {
     const { amounts, concentrations, gauges } = strengthsOf(text);
-    const doses = amounts.filter((a) => a.unit !== 'ml' && !a.derived);
+    // Our amounts as written: "500mg" of "100mg/ml (500mg / 5ml)", not the 100 mg of its concentration
+    const doses = amounts.filter((a) => a.unit !== 'ml' && !a.derived && !a.perUnit);
     if (doses.length || concentrations.length) return { doses, concentrations, gauges: [], volumes: [] };
     if (gauges.length) return { doses: [], concentrations: [], gauges, volumes: [] };
     // A supply sold by volume ("450 ML" blood bag)
@@ -179,24 +188,70 @@ export function dosageOf(product) {
   // Bleomycin's "15 Units" is in the Dosage Form column ("-" as its strength)
   const dosage = pick(product.dosage) || (/\d/.test(product.dosage || '') ? null : pick((product.dosage_form || '').match(/^[\d.,]+\s*\w+/)?.[0] || ''));
   // Atracurium's "10mg" on the Product List is 10 mg per mL (user, 2026-10-27), as tenders write it ("10mg/mL, 2.5mL")
+  // (in any volume: "2.5mL" and "5mL" ampules)
   if (dosage && PER_ML_AS_AMOUNT.test(product.generic_name || '')) {
-    return { ...dosage, concentrations: [...dosage.concentrations, ...dosage.doses.map((d) => ({ value: d.value, unit: `${d.unit}/ml` }))] };
+    return { ...dosage, concentrations: [...dosage.concentrations, ...dosage.doses.map((d) => ({ value: d.value, unit: `${d.unit}/ml` }))], anyVolume: true };
+  }
+  // The other way round (user, 2026-10-27): Epoetin's "4000 IU/ml" is 4000 IU a syringe ("4000 IU/0.4 mL"): the
+  // amount counts in any volume
+  if (dosage && AMOUNT_IN_ANY_VOLUME.test(product.generic_name || '')) {
+    return { ...dosage, doses: [...dosage.doses, ...dosage.concentrations.map((c) => ({ value: c.value, unit: c.unit.split('/')[0] }))] };
   }
   return dosage;
 }
 const PER_ML_AS_AMOUNT = /^atracurium\b/i;
+const AMOUNT_IN_ANY_VOLUME = /^epoetin\b/i;
+
+// ---------- dosage forms ----------
+
+// Strict in the form too (user, 2026-10-27: "the folic acid dosage form in ours is tablet but we are fetching not
+// tablet"): each row's form from its Dosage Form and Unit, and a tender line that names a form must name ours
+const FORMS = {
+  tablet: /\b(?:tablets?|tabs?|film[\s-]*coated|caplets?)\b/i,
+  capsule: /\b(?:capsules?|caps?)\b/i,
+  'oral liquid': /\b(?:syrups?|suspensions?|susp|oral\s+solution|oral\s+drops|drops|elixirs?)\b/i,
+  injection: /\b(?:inj\w*|vials?|vl|amp(?:ule|oule)?s?|infusion|pre[\s-]*filled|pfs|syringes?|lyophili[sz]ed|i\.?v\.?|i\.?m\.?|s\.?c\.?|intrathecal|emulsion\s+for)\b/i,
+  topical: /\b(?:creams?|ointments?|gels?|lotions?)\b/i,
+  inhalation: /\b(?:nebules?|inhalers?|inhalation|respules?)\b/i,
+  sachet: /\b(?:sachets?)\b/i,
+};
+const formsIn = (text) => new Set(Object.entries(FORMS).filter(([, re]) => re.test(text || '')).map(([form]) => form));
+
+/** A product row's forms ("Film-coated Tablet" -> tablet), none when its Dosage Form and Unit don't say */
+export function formsOf(product) {
+  return formsIn(`${product.dosage_form || ''} ${product.unit || ''}`);
+}
+
+// A tender text naming no form fits any; one naming forms fits when one of them is ours ("tablet/capsule" fits a tablet)
+function formMatches(forms, text) {
+  if (!forms?.size) return true;
+  const named = formsIn(text);
+  return !named.size || [...named].some((form) => forms.has(form));
+}
 
 // Does a tender text (one line plus its next lines) ask for this dosage?
 function dosageMatches(dosage, text) {
   const found = strengthsOf(text);
   if (dosage.gauges.length) return dosage.gauges.some((g) => found.gauges.includes(g));
   if (dosage.volumes.length) return dosage.volumes.some((v) => found.amounts.some((a) => a.unit === 'ml' && same(a.value, v.value)));
-  return (
-    // Exact (user, 2026-10-27: "THE DOSAGE SHOULD BE EXACT"): an amount written as such, never one worked out from a
-    // concentration and a volume ("10mg/mL, 2mL" is not our 20 mg) nor a concentration read as an amount
-    // ("100mg/mL" is not our 100 mg)
-    dosage.doses.some((d) => found.amounts.some((a) => !a.derived && !a.perUnit && a.unit === d.unit && same(a.value, d.value))) ||
-    dosage.concentrations.some((c) => found.concentrations.some((f) => f.unit === c.unit && same(f.value, c.value)))
+  // Exact (user, 2026-10-27: "THE DOSAGE SHOULD BE EXACT"):
+  // - one of our amounts written as such ("Methotrexate 500mg/5ml"); never a concentration read as an amount
+  //   ("Cytarabine 100mg/mL" is not our 100 mg)
+  if (dosage.doses.some((d) => found.amounts.some((a) => !a.derived && !a.perUnit && a.unit === d.unit && same(a.value, d.value)))) return true;
+  // - our concentration; with a volume on the line, concentration x volume gives our amount ("100mg/ml, 5ml" = our
+  //   100mg/ml (500mg / 5ml): "that is how we know we are compliant"), never another concentration whose product
+  //   happens to equal one of our amounts ("Docetaxel 10mg/mL, 2mL" is not our 20 mg/0.5 ml)
+  const volumes = found.amounts.filter((a) => a.unit === 'ml' && !a.perUnit);
+  const givesOurAmount = (f) => {
+    // Only our amounts in the concentration's unit (a Bupivacaine "0.5%" gives no mg amount to check against)
+    const ours = dosage.doses.filter((d) => d.unit === f.unit.split('/')[0]);
+    return dosage.anyVolume || !ours.length || !volumes.length || volumes.some((v) => ours.some((d) => same(f.value * v.value, d.value)));
+  };
+  if (dosage.concentrations.some((c) => found.concentrations.some((f) => f.unit === c.unit && same(f.value, c.value) && givesOurAmount(f)))) return true;
+  // - hospitals' shorthand: our concentration written over our pack volume ("AMIKACIN 250MG/2ML" for 250 mg/ml, 2 ml =
+  //   our 500 mg/2 ml; "Rocuronium 10mg/5ml"; user, 2026-10-27: keep them)
+  return dosage.concentrations.some((c) =>
+    found.perVolume.some((pv) => `${pv.unit}/ml` === c.unit && same(pv.amount, c.value) && dosage.doses.some((d) => d.unit === pv.unit && same(pv.amount * pv.volume, d.value))),
   );
 }
 
@@ -216,7 +271,7 @@ export function buildMatcher(products) {
     // The full generic names ("Bupivacaine Hydrochloride in dextrose"): a "+ Dextrose" in a tender is then part of it
     byName.get(name).generics.push(String(p.generic_name || '').toLowerCase());
     const dosage = dosageOf(p);
-    if (dosage) byName.get(name).dosages.push(dosage);
+    if (dosage) byName.get(name).dosages.push({ ...dosage, forms: formsOf(p) });
     else byName.get(name).nameOnly = true;
   }
   const compiled = [...byName.values()].map((entry) => {
@@ -304,7 +359,7 @@ export function buildMatcher(products) {
     if (!text) return [];
     const window = `${text}\n${next}`;
     return names(text)
-      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window))))
+      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, window)))
       .map((p) => p.name);
   };
   const details = (text) => {

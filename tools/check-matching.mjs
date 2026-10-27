@@ -30,13 +30,15 @@ const products = [
   P('Sugammadex', '100 mg/ml (200 mg/2 ml)'),
   P('Intravenous Infusion Set', '-', '-'),
   P('Amikacin', '250 mg/ml (500 mg/2 ml)'),
-  P('Folic acid (Vitamin B9)', '5 mg'),
+  P('Folic acid (Vitamin B9)', '5 mg', 'Tablet'),
   P('Cetirizine', '10 mg'),
   P('Propofol', '10 mg/ml (200 mg/20 ml)'),
   P('Cytarabine', '100 mg'),
   P('Docetaxel [COLD CHAIN]', '20 mg/0.5 ml'),
   P('Oxaliplatin', '2 mg/ml (50 mg/25 ml)'),
   P('Atracurium', '10mg'),
+  P('Methotrexate', '100mg/ml (500mg / 5ml)'),
+  P('Enoxaparin sodium*', '6000 IU/0.6 mL (60 mg/0.6 ml)'),
 ];
 const match = buildMatcher(products);
 
@@ -80,10 +82,29 @@ const MUST_MATCH = [
   // Atracurium's "10mg" is 10 mg per mL (user, 2026-10-27)
   ['26 Atracurium 10mg/mL, 2.5mL. Amp. ampule 150 327.00', 'Atracurium'],
   ['Oxaliplatin 50 mg/25 mL vial', 'Oxaliplatin'],
+  // Concentration x volume = our amount (user, 2026-10-27: "100mg/ml multiplied by 5 equals 500")
+  ['Methotrexate 100 mg/mL, 5 mL vial', 'Methotrexate'],
+  ['Methotrexate 500mg/5ml solution for injection', 'Methotrexate'],
+  ['Methotrexate 100mg/ml solution for injection', 'Methotrexate'],
+  ['Atracurium besylate 10mg/mL, 5mL ampule', 'Atracurium'],
+  // User, 2026-10-27: Amikacin "250MG/2ML" is our vial; Epoetin 4000 IU a syringe in any volume; Enoxaparin 0.6 mL
+  ['15 AMIKACIN (AS SULFATE) 250MG/2ML, VIAL 5,000 Vial 55.00 275,000.00', 'Amikacin'],
+  ['37 Erythropoietin Alfa 4,000IU/0.4ml PFS 1,000 pfs 525.00', 'Epoetin Alfa'],
+  ['Enoxaparin 100mg/ml, 0.6ml pre-filled syringe', 'Enoxaparin'],
+  // Our concentration over our pack volume (hospitals' shorthand); a percent product with a mg/ml line
+  ['56. Rocuronium 10mg/5ml as bromide vial (IV) 1,000 vial 114.89', 'Rocuronium'],
+  ['44 Bupivacaine HCl Heavy, 5 mg/ml. 4 ml. 400 400', 'Bupivacaine'],
+  ['Folic acid 5mg tablet or capsule', 'Folic Acid'],
+  ['PROPOFOL 10 mg ml. - 3.500 amp vial 2 mt 61.64 333.520.00', 'Propofol'],
 ];
 const MUST_NOT_MATCH = [
+  // Our form only (user, 2026-10-27): our Folic Acid is a tablet
+  ['22 Folic Acid 5 mg Capsule capsule 3,000 2.59 7,770.00', 'Folic Acid'],
   // Exact dosage (user, 2026-10-27): a concentration is not an amount, nor concentration x volume
   ['CYTARABINE Inj.: 100mg/mL solution, 1mL (IM', 'Cytarabine'],
+  ['Methotrexate 100 mg/mL, 10 mL vial', 'Methotrexate'],
+  ['50 Enoxaparin 100mg/ml,0.4ml (SC) pre filled syringe', 'Enoxaparin'],
+  ['Methotrexate 25 mg/mL, 2 mL (as base) vial', 'Methotrexate'],
   ['DOCETAXEL Inj.: 10mg/mL, solution for infusion (IV), 2mL VAT-exempt', 'Docetaxel'],
   ['OXALIPLATIN Inj.: 5mg/mL concentrate solution, 10mL vial (IV infusion)', 'Oxaliplatin'],
   ['56 Amikacin 125mg/mL Solution for Injection, 2mL 700 49,000.00', 'Amikacin'],
