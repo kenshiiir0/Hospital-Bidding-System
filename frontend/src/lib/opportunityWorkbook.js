@@ -51,6 +51,32 @@ function wrappedLines(text, width, charsPerUnit) {
     .split('\n')
     .reduce((n, part) => n + Math.max(1, Math.ceil(part.length / perLine)), 0);
 }
+// Molecule rows (Segoe UI 11) wrap word by word, and capitals are wider than lower case or punctuation, so a plain
+// character count gave long names a second, empty line (user, 2026-10-27). Widths in column units, measured on the
+// export: "FILGRASTIM (G-CSF), 300 mcg/0.5 mL solution, pre-filled" just fits Molecule's 55.9.
+const SEGOE_PER_UNIT = 0.91;
+const segoeWidth = (ch) => (/[A-Z]/.test(ch) ? 1.3 : /[iljtfrI]/.test(ch) ? 0.6 : /[a-z0-9]/.test(ch) ? 1 : 0.55);
+function segoeLines(text, width) {
+  if (text == null || text === '') return 1;
+  const room = width * SEGOE_PER_UNIT;
+  return String(text)
+    .split('\n')
+    .reduce((n, part) => {
+      // Excel breaks after spaces and hyphens
+      let lines = 1;
+      let used = 0;
+      for (const word of part.match(/[^\s-]*[\s-]*/g).filter(Boolean)) {
+        const w = [...word].reduce((sum, ch) => sum + segoeWidth(ch), 0);
+        // a trailing space may hang past the edge
+        if (used && used + w - (/\s$/.test(word) ? 0.55 : 0) > room) {
+          lines++;
+          used = 0;
+        }
+        used += w;
+      }
+      return n + lines;
+    }, 0);
+}
 const CALIBRI_LINE = 15; // points per line, Calibri 11
 const SEGOE_LINE = 17; // Segoe UI 11
 
@@ -393,7 +419,7 @@ export function buildOpportunitySheet(workbook, tenders) {
       }
       ws.getCell(`F${row}`).fill = MOLECULE_FILL;
       for (const col of ['H', 'I']) if (cells[col]?.formula) ws.getCell(`${col}${row}`).fill = COMPUTED_FILL;
-      ws.getCell(`F${row}`).alignment = { wrapText: true };
+      ws.getCell(`F${row}`).alignment = { vertical: 'middle', wrapText: true };
       ws.getCell(`G${row}`).alignment = { vertical: 'middle', wrapText: true };
       ws.getCell(`H${row}`).alignment = { vertical: 'middle', wrapText: true };
       ws.getCell(`H${row}`).numFmt = '#,##0.00';
@@ -402,9 +428,9 @@ export function buildOpportunitySheet(workbook, tenders) {
 
       // Height for this molecule row's own text
       const lines = Math.max(
-        wrappedLines(molecule, WIDTH.F, 0.85),
-        wrappedLines(qty, WIDTH.G, 0.85),
-        wrappedLines(unitPrice, WIDTH.H, 0.85)
+        segoeLines(molecule, WIDTH.F),
+        segoeLines(qty, WIDTH.G),
+        segoeLines(unitPrice, WIDTH.H)
       );
       ws.getRow(row).height = Math.max(20, lines * SEGOE_LINE + 4);
     });
