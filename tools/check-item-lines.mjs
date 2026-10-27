@@ -231,4 +231,8 @@ const ONE = [
 ];
 for (const [line, want] of ONE) expect(parseItemRow([line], 0), want, line);
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length} rows).`);
+// An ABC/unit can't be hundreds of thousands: always the ABC total (user, 2026-10-27), whatever the layout
+expect(parseItemRow(['5 vial Rocuronium 10mg/ml 5ml 10 150,000.00'], 0), { quantity: 10, total: 150000, unit_price: undefined }, 'one amount of 150,000.00 is the total');
+expect(parseItemRow(['Item No. Description Quantity Unit Cost', '7 Propofol 10mg/ml, 20ml 200 189,000.00'], 1), { quantity: 200, total: 189000, unit_price: undefined }, 'header "Unit Cost" of 189,000.00 is the total');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 2} rows).`);
