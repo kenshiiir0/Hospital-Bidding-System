@@ -173,7 +173,8 @@ export async function readList(session, list, onPage = () => {}) {
     const { headers, rows } = readTable(root);
     if (!result.headers.length) result.headers = headers;
     result.rows.push(...rows);
-    onPage(result.pages);
+    // (awaited: the Sync's progress stops here when it was cancelled)
+    await onPage(result.pages);
     url = nextPageUrl(root, url);
   }
   return result;
@@ -429,6 +430,25 @@ export async function claimSync(by) {
   return { started: true };
 }
 
+// ---------- cancel (the progress ring's Cancel button) ----------
+
+// Saved as its own row (philgeps_sync_relay 'ps-cancel', like the PhilGEPS Sync's cancel), so the Sync's
+// progress updates never overwrite it; it applies to the Sync running when it was asked for. The Sync stops
+// before its next list page or notice and saves nothing (the last Sync's lists stay). PS-PhilGEPS stays connected:
+// its session is kept (a new connection needs the captcha).
+const CANCEL_ROW = 'ps-cancel';
+const CANCEL_CHECK_MS = 3 * 1000;
+
+export async function requestCancel(by) {
+  const supabase = admin();
+  const { data } = await supabase.from('ps_sync_status').select('status').eq('id', 'latest').maybeSingle();
+  if (data?.status !== 'running') return { cancelling: false };
+  const { error } = await supabase.from('philgeps_sync_relay').upsert({ id: CANCEL_ROW, requested_at: new Date().toISOString(), requested_by: by || null });
+  if (error) throw new PsSyncError('DB', `Saving the cancel: ${error.message}`);
+  await setStatus(supabase, { stage: 'Cancelling: stops before the next page' }).catch(() => {});
+  return { cancelling: true };
+}
+
 // ---------- the Sync ----------
 
 // Time from the Sync's start until it stops reading documents (the host stops a request at 300 s); tenders
@@ -441,7 +461,21 @@ export async function runSync() {
   // For the History page (activityLog.mjs)
   const { data: started } = await supabase.from('ps_sync_status').select('started_by, started_at').eq('id', 'latest').maybeSingle();
   const tookMs = () => (started?.started_at ? Date.now() - Date.parse(started.started_at) : null);
-  const progress = (percent, stage) => setStatus(supabase, { percent: Math.round(percent), stage }).catch(() => {});
+  // The Cancel button (requestCancel): looked for at most every CANCEL_CHECK_MS; throws CANCELLED
+  let cancel = null;
+  let cancelCheckedAt = 0;
+  const stopIfCancelled = async () => {
+    if (!cancel && Date.now() - cancelCheckedAt >= CANCEL_CHECK_MS) {
+      cancelCheckedAt = Date.now();
+      const { data } = await supabase.from('philgeps_sync_relay').select('requested_at, requested_by').eq('id', CANCEL_ROW).maybeSingle();
+      if (data?.requested_at && started?.started_at && Date.parse(data.requested_at) >= Date.parse(started.started_at)) cancel = data;
+    }
+    if (cancel) throw new PsSyncError('CANCELLED', `Cancelled${cancel.requested_by ? ` by ${cancel.requested_by}` : ''}. Nothing was changed; the last Sync's lists stay, and PS-PhilGEPS stays connected.`);
+  };
+  const progress = async (percent, stage) => {
+    await stopIfCancelled();
+    await setStatus(supabase, { percent: Math.round(percent), stage }).catch(() => {});
+  };
   try {
     const { data: saved } = await supabase.from('ps_philgeps_session').select('cookies').eq('id', 'current').maybeSingle();
     if (!saved?.cookies?.length) throw new PsSyncError('NOT_CONNECTED', 'PS-PhilGEPS is not connected. A person must connect (captcha).');
@@ -485,7 +519,7 @@ export async function runSync() {
       lists.bidMatch.rows.push(...extra);
       lists.bidMatch.fromOpenOpportunities = extra.length;
     } catch (e) {
-      if (e.code === 'NOT_CONNECTED') throw e;
+      if (e.code === 'NOT_CONNECTED' || e.code === 'CANCELLED') throw e;
       lists.bidMatch.openOpportunitiesError = e.message;
     }
     await saveCookies();
@@ -561,6 +595,12 @@ export async function runSync() {
     await setStatus(supabase, { stage }).catch(() => {});
     return stage;
   } catch (e) {
+    // Cancelled: nothing saved, the session kept (still connected)
+    if (e.code === 'CANCELLED') {
+      await setStatus(supabase, { status: 'cancelled', stage: e.message, error: null, finished_at: new Date().toISOString() }).catch(() => {});
+      await logActivity({ event: 'ps-sync', status: 'cancelled', by: started?.started_by, summary: e.message, details: { duration_ms: tookMs() } });
+      return e.message;
+    }
     const fields = { status: 'failed', error: e.message, finished_at: new Date().toISOString() };
     // Session gone: forget it, so every dashboard shows "not connected" until someone connects again
     if (e.code === 'NOT_CONNECTED') {

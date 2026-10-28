@@ -251,14 +251,36 @@ export default function Home() {
     }
   };
 
+  // The ring's Cancel button: the Sync stops after the tender in progress and logs out of PhilGEPS (DELETE
+  // /api/scrape). cancelFor: the Sync it was pressed for, shown as cancelling until the server confirms the end.
+  const [cancelFor, setCancelFor] = useState(null);
+  const cancelSync = async () => {
+    if (!window.confirm('Cancel the Sync? It stops after the tender in progress and logs out of PhilGEPS.')) return;
+    setCancelFor(fetchJob?.startedAt ?? null);
+    try {
+      const res = await authFetch('/api/scrape', { method: 'DELETE' });
+      const result = await res.json();
+      if (!result.ok) throw new Error(result.error || `Could not cancel (${res.status})`);
+    } catch (err) {
+      setCancelFor(null);
+      window.alert(`The Sync could not be cancelled: ${err.message}`);
+    }
+    wakePoll.current?.();
+  };
+
   // What the ring (Sync) and the bottom bar (automatic update) show
   const jobRunning = fetchJob?.status === 'running';
   const jobShown = fetchJob && (jobRunning || (fetchJob.finishedAt && !dismissed.includes(fetchJob.startedAt)));
   const syncQueued = (fetchJob?.queued || []).includes('sync');
+  const cancelPressed = jobRunning && cancelFor != null && cancelFor === fetchJob.startedAt && !fetchJob.cancelling;
   const syncView =
     localSync ||
     (syncQueued ? { status: 'queued', stage: 'Starts when the automatic update finishes' } : null) ||
-    (jobShown && fetchJob.kind === 'sync' ? fetchJob : null);
+    (jobShown && fetchJob.kind === 'sync'
+      ? cancelPressed
+        ? { ...fetchJob, cancelling: true, stage: 'Cancelling: stops after the tender in progress, then logs out of PhilGEPS' }
+        : fetchJob
+      : null);
   const autoView = jobShown && fetchJob.kind === 'auto' ? fetchJob : null;
   // Each tender's state in the current/last Sync, for the rolling number circles
   const syncTenders = (fetchJob?.kind === 'sync' && fetchJob.tenders) || {};
@@ -775,7 +797,7 @@ export default function Home() {
         // The freshest copy of the open tender (the list reloads while a Sync saves each result)
         <TenderDetails bid={ourBids.find((b) => b.id === selectedBid.id) || selectedBid} onClose={() => setSelectedBid(null)} />
       )}
-      <ScrapeProgress job={syncView} raised={Boolean(autoView)} onDismiss={() => (localSync ? setLocalSync(null) : dismissFetch())} />
+      <ScrapeProgress job={syncView} raised={Boolean(autoView)} onCancel={cancelSync} onDismiss={() => (localSync ? setLocalSync(null) : dismissFetch())} />
       <AutoFetchBar job={autoView} onDismiss={dismissFetch} />
     </div>
   );

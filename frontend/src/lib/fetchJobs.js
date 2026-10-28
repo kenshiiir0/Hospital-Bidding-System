@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { claimRelayRequest, publishJob } from './philgepsRelay';
+import { claimRelayRequest, publishJob, readCancelRequest } from './philgepsRelay';
 
 // Runs every PhilGEPS fetch of the dashboard server, one at a time:
 // - 'auto': the hourly public fetch, 6 AM to 5 PM. The 6 AM one also tries the log-in for documents and
@@ -23,8 +23,9 @@ const SWEEP_MS = 5 * 60 * 1000;
 const SESSION_COOKIES = path.join(REPO_ROOT, '.philgeps', 'session-cookies.json');
 // Only a team computer (the repo with the scraper and its Chrome) runs fetches; a deployed copy has neither
 const CAN_RUN_FETCHES = existsSync(path.join(REPO_ROOT, 'scraper.js')) && existsSync(path.join(REPO_ROOT, 'node_modules', 'puppeteer'));
-// How often a team computer checks for a Sync asked for on another dashboard
+// How often a team computer checks for a Sync (or a cancel) asked for on another dashboard
 const RELAY_CHECK_MS = 5 * 1000;
+const CANCEL_CLOCK_SLACK_MS = 30 * 1000;
 // When the last automatic fetch finished and the day of the last one that logged in for documents, so a
 // fetch missed while the PC slept or the dashboard was closed is made up as soon as it is back
 const AUTO_STATE_FILE = path.join(REPO_ROOT, '.philgeps', 'auto-fetch.json');
@@ -89,6 +90,34 @@ export async function requestSync() {
   return run('sync');
 }
 
+// The progress ring's Cancel button: stops the running fetch and logs out of PhilGEPS. The scraper is stopped,
+// then the session it saved at log-in is logged out (philgeps-session.js --logout, confirmed by PhilGEPS; the
+// run's watchdog does the same within seconds as a second line). The job ends as cancelled once the session file
+// is gone (it is only deleted on a confirmed log-out), or with a warning after CANCEL_LOGOUT_WAIT_MS.
+// Returns { cancelling } (false: nothing running).
+const CANCEL_LOGOUT_WAIT_MS = 3 * 60 * 1000;
+export function cancelJob(by) {
+  if (!isRunning() || !state.child || state.job.cancelling) return { cancelling: Boolean(state.job.cancelling) };
+  Object.assign(state.job, { cancelling: true, cancelledBy: by || null, stage: 'Cancelling: stopping the Sync and logging out of PhilGEPS' });
+  // A Sync waiting behind it is not started either
+  state.queue = [];
+  publishJob(currentJob());
+  state.child.kill();
+  return { cancelling: true };
+}
+
+async function logOutAfterCancel() {
+  if (!existsSync(SESSION_COOKIES)) return null;
+  await new Promise((resolve) => {
+    const out = spawn(process.execPath, ['philgeps-session.js', '--logout'], { cwd: REPO_ROOT, stdio: 'ignore', windowsHide: true });
+    out.on('close', resolve);
+    out.on('error', resolve);
+  });
+  const until = Date.now() + CANCEL_LOGOUT_WAIT_MS;
+  while (existsSync(SESSION_COOKIES) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 3000));
+  return !existsSync(SESSION_COOKIES);
+}
+
 function run(mode) {
   if (isRunning()) {
     if (!state.queue.includes(mode)) state.queue.push(mode);
@@ -99,6 +128,7 @@ function run(mode) {
   publishJob(currentJob());
   const job = state.job;
   const child = spawn(process.execPath, ['scraper.js', ...ARGS[mode], '--progress'], { cwd: REPO_ROOT });
+  state.child = child;
   // A killed scraper can't log out of PhilGEPS itself; its watchdog (philgeps-session.js) does that
   let stalled = false;
   let timer;
@@ -152,6 +182,7 @@ function run(mode) {
 
   const finish = (error) => {
     clearTimeout(timer);
+    state.child = null;
     if (job.status !== 'running') return;
     if (kind === 'auto' && !error) {
       const autoState = readAutoState();
@@ -169,9 +200,25 @@ function run(mode) {
     const next = state.queue.shift();
     if (next) run(next);
   };
-  child.on('error', (err) => finish(err.message));
+  // Cancelled (cancelJob): the job ends once the log-out is settled
+  const finishCancelled = async () => {
+    clearTimeout(timer);
+    state.child = null;
+    const loggedOut = await logOutAfterCancel();
+    if (job.tenders) for (const ref of Object.keys(job.tenders)) if (job.tenders[ref] === 'waiting' || job.tenders[ref] === 'working') job.tenders[ref] = 'not-reached';
+    const who = job.cancelledBy ? ` by ${job.cancelledBy}` : '';
+    const out =
+      loggedOut === null ? 'It had not logged in to PhilGEPS.' : loggedOut ? 'Logged out of PhilGEPS (confirmed).' : 'The PhilGEPS log-out is not confirmed yet; the watchdog keeps trying.';
+    Object.assign(job, { status: 'cancelled', cancelling: false, stage: `Cancelled${who}. ${out}`, finishedAt: Date.now(), ...(loggedOut === false && { warning: out }) });
+    publishJob(currentJob());
+    // A Sync asked for while the cancel was logging out
+    const next = state.queue.shift();
+    if (next) run(next);
+  };
+  child.on('error', (err) => (job.cancelling ? finishCancelled() : finish(err.message)));
   child.on('close', (code, signal) => {
-    if (code === 0) finish(null);
+    if (job.cancelling) finishCancelled();
+    else if (code === 0) finish(null);
     else if (stalled) finish(`Stopped: no progress for ${STALL_MS / 60000} minutes. The PhilGEPS session is logged out by the watchdog.`);
     else if (signal) finish(`Stopped (${signal}).`);
     // The scraper prints its error as the last stderr line; warnings come before it
@@ -229,6 +276,16 @@ export function startRelayWatcher() {
   globalThis.philgepsRelayStarted = true;
   setInterval(async () => {
     try {
+      // The Cancel button pressed on another dashboard, for the fetch running here (CANCEL_CLOCK_SLACK_MS: the two
+      // computers' clocks may differ a little)
+      // Each cancel acts once (handledCancel), so one pressed just before a new Sync never stops that Sync too
+      if (isRunning() && !state.job.cancelling) {
+        const cancel = await readCancelRequest();
+        if (cancel?.requested_at && cancel.requested_at !== state.handledCancel && Date.parse(cancel.requested_at) >= state.job.startedAt - CANCEL_CLOCK_SLACK_MS) {
+          state.handledCancel = cancel.requested_at;
+          cancelJob(cancel.requested_by);
+        }
+      }
       const request = await claimRelayRequest();
       if (!request) return;
       console.log(`PhilGEPS Sync requested by ${request.requested_by || 'another dashboard'}`);

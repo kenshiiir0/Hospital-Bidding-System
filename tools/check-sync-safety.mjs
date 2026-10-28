@@ -155,6 +155,26 @@ const checks = [
     },
   ],
   [
+    'A cancel stops only the Sync it was pressed for, never the next one',
+    async () => {
+      const job = { startedAt: Date.parse('2026-10-28T06:00:00Z') };
+      assert.equal(sync.cancelApplies({ requested_at: '2026-10-28T06:03:00Z' }, job), true, 'a cancel pressed during the Sync must stop it');
+      assert.equal(sync.cancelApplies({ requested_at: '2026-10-28T05:59:00Z' }, job), false, "an earlier Sync's cancel stopped a new Sync");
+      assert.equal(sync.cancelApplies(null, job), false, 'no cancel stopped the Sync');
+    },
+  ],
+  [
+    'After a cancel, the log-out frees the account (a new log-in works)',
+    async () => {
+      // The cancelled round logs out with the same confirmed log-out as a finished one (runSyncRound finally)
+      const session = new sync.Session();
+      await sync.login(session, async () => {});
+      assert.equal(await sync.logout(session), true, 'the log-out after a cancel was not confirmed');
+      assert.equal(state.accountHolder, null, 'PhilGEPS still holds the account after the cancel');
+      await sync.login(new sync.Session(), async () => {});
+    },
+  ],
+  [
     'A failing add-on (e.g. reading documents) is skipped and never stops the Sync',
     async () => {
       const job = {};

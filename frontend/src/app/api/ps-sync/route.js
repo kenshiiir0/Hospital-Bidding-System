@@ -1,6 +1,6 @@
 import { after } from 'next/server';
 import { hasCronSecret, requireUser } from '@/lib/auth';
-import { claimSync, runSync } from '@/lib/psSync.mjs';
+import { claimSync, requestCancel, runSync } from '@/lib/psSync.mjs';
 
 // The Sync reads every list page, notice and new document; give it the longest time the host allows
 export const maxDuration = 300;
@@ -28,4 +28,16 @@ export async function POST(request) {
   }
   after(() => runSync().catch((e) => console.error(`[ps-sync] ${e.code || 'ERROR'}: ${e.message}`)));
   return Response.json({ ok: true }, { status: 202 });
+}
+
+// The progress ring's Cancel button: the running Sync stops before its next page and saves nothing; PS-PhilGEPS
+// stays connected (psSync.mjs requestCancel)
+export async function DELETE(request) {
+  const { user, response } = await requireUser(request);
+  if (response) return response;
+  try {
+    return Response.json({ ok: true, ...(await requestCancel(user.email)) });
+  } catch (e) {
+    return Response.json({ ok: false, error: e.message }, { status: 500 });
+  }
 }

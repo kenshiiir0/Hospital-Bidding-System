@@ -94,6 +94,8 @@ function TenderLine({ tender, note, onOpen }) {
 function ActivityEntry({ entry, onOpen }) {
   const [open, setOpen] = useState(false);
   const failed = entry.status === 'failed';
+  // Stopped with the progress ring's Cancel button
+  const cancelled = entry.status === 'cancelled';
   const details = entry.details || {};
   const newMatched = details.new_matched || [];
   const newSupplements = details.new_supplements || [];
@@ -103,14 +105,14 @@ function ActivityEntry({ entry, onOpen }) {
     <li className="relative pl-8">
       {/* Timeline dot */}
       <span
-        className={`absolute left-0 top-1.5 h-3 w-3 rounded-full ring-4 ring-white ${failed ? 'bg-[#B3312C]' : 'bg-[#61A644]'}`}
+        className={`absolute left-0 top-1.5 h-3 w-3 rounded-full ring-4 ring-white ${failed ? 'bg-[#B3312C]' : cancelled ? 'bg-[#94A3B8]' : 'bg-[#61A644]'}`}
         aria-hidden
       />
       <div className="bg-white border border-[#E2E8F0] rounded-[14px] p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
           <div>
             <div className="text-sm font-semibold text-black">
-              {EVENT_TITLES[entry.event] || entry.event} {failed ? 'failed' : 'completed'}
+              {EVENT_TITLES[entry.event] || entry.event} {failed ? 'failed' : cancelled ? 'cancelled' : 'completed'}
               <span className="font-normal text-black/46">
                 {' '}· started {details.started_by ? `by ${displayName(details.started_by)}` : TRIGGER_LABELS[entry.trigger] || entry.trigger || ''}
               </span>
@@ -343,7 +345,7 @@ export default function HistoryView({ site = 'philgeps' }) {
           )}
           <MetricCard
             label="Last Run"
-            value={lastRun ? (lastRun.status === 'failed' ? 'Failed' : 'OK') : '—'}
+            value={lastRun ? (lastRun.status === 'failed' ? 'Failed' : lastRun.status === 'cancelled' ? 'Cancelled' : 'OK') : '—'}
             tone={lastRun?.status === 'failed' ? 'text-[#B3312C]' : 'text-[#12769F]'}
             note={lastRun ? formatInstant(lastRun.created_at) : 'No runs logged yet'}
           />

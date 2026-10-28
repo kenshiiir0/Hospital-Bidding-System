@@ -39,6 +39,13 @@ export async function requestRelaySync(email) {
   if (error) throw new Error(error.message);
 }
 
+// The Cancel button's request (philgepsSync.mjs requestCancel): { requested_at, requested_by } or null
+export async function readCancelRequest() {
+  const { data, error } = await table().select('requested_at, requested_by').eq('id', 'cancel').maybeSingle();
+  if (error) throw new Error(error.message);
+  return data || null;
+}
+
 // Team computer: say it is online, and take a waiting request (only one computer gets it). Returns the row
 // when this computer should start a Sync, else null.
 export async function claimRelayRequest() {

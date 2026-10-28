@@ -43,6 +43,11 @@ const BUCKET = 'philgeps-documents';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
 // Time a round may start new tenders in; the host stops a request at 300 s and the log-out needs a moment
 export const ROUND_MS = 200 * 1000;
+// How often a round looks for the Cancel button's request
+const CANCEL_CHECK_MS = 3 * 1000;
+// A cancelled Sync still "running" this long after the cancel lost its round (the host stops a request at 300 s):
+// the 5-minute clean-up logs it out and ends it as cancelled
+const CANCEL_ORPHAN_MS = 330 * 1000;
 // A Sync whose progress hasn't moved for this long was cut off (host time limit) and may be started again
 export const STALE_RUN_MS = 6 * 60 * 1000;
 const RECHECK_MS = 24 * 60 * 60 * 1000;
@@ -611,6 +616,46 @@ export async function claimSync(by) {
   return { started: true };
 }
 
+// ---------- cancel (the progress ring's Cancel button) ----------
+
+// A cancel is its own row of philgeps_sync_relay (requested_at, requested_by), so a round saving its progress
+// never overwrites it. It applies to the Sync running when it was asked for (requested at or after its start):
+// the round stops before its next tender and logs out of PhilGEPS; a team computer's Chrome Sync is stopped by
+// its dashboard (fetchJobs.js), whose log-out watchdog then logs out.
+const CANCEL_ROW = 'cancel';
+
+export const cancelApplies = (cancel, job) => Boolean(cancel?.requested_at && job?.startedAt && Date.parse(cancel.requested_at) >= job.startedAt);
+
+export async function readCancel(supabase = admin()) {
+  const { data } = await supabase.from('philgeps_sync_relay').select('requested_at, requested_by').eq('id', CANCEL_ROW).maybeSingle();
+  return data || null;
+}
+
+// Asks the running Sync to stop. Returns { cancelling } (false: no Sync is running).
+export async function requestCancel(by) {
+  const supabase = admin();
+  const { job } = await readJob(supabase);
+  if (job?.status !== 'running') return { cancelling: false };
+  const { error } = await supabase.from('philgeps_sync_relay').upsert({ id: CANCEL_ROW, requested_at: new Date().toISOString(), requested_by: by || null });
+  if (error) throw new PhilgepsSyncError('DB', `Saving the cancel: ${error.message}`);
+  // Shown at once; the round confirms it when it stops
+  await saveJob(supabase, { ...job, cancelling: true, stage: 'Cancelling: stops after the tender in progress, then logs out of PhilGEPS' });
+  return { cancelling: true };
+}
+
+// The Sync ends as cancelled once its log-out is settled. loggedOut: true confirmed by PhilGEPS, false not
+// confirmed (the 5-minute clean-up keeps trying), null when this Sync had not logged in.
+async function endCancelled(supabase, job, loggedOut) {
+  const cancel = await readCancel(supabase).catch(() => null);
+  for (const ref of Object.keys(job.tenders || {})) if (['waiting', 'working'].includes(job.tenders[ref])) job.tenders[ref] = 'not-reached';
+  const who = cancel?.requested_by ? ` by ${cancel.requested_by}` : '';
+  const out =
+    loggedOut === null ? 'It had not logged in to PhilGEPS.' : loggedOut ? 'Logged out of PhilGEPS (confirmed).' : 'The PhilGEPS log-out is not confirmed yet; the 5-minute clean-up keeps trying.';
+  Object.assign(job, { status: 'cancelled', cancelling: false, stage: `Cancelled${who}. ${out}`, finishedAt: Date.now(), ...(loggedOut === false && { warning: out }) });
+  await saveJob(supabase, job).catch(() => {});
+  await optional(job, 'History', () => logRun(job));
+}
+
 // The finished Sync on the History page: how many tenders ended in each state
 function logRun(job) {
   const counts = {};
@@ -618,7 +663,7 @@ function logRun(job) {
   const failed = job.status === 'failed';
   return logActivity({
     event: 'documents',
-    status: failed ? 'failed' : 'success',
+    status: failed ? 'failed' : job.status === 'cancelled' ? 'cancelled' : 'success',
     by: job.startedBy,
     summary: failed ? job.error : job.stage,
     details: { duration_ms: job.finishedAt && job.startedAt ? job.finishedAt - job.startedAt : null, tenders: job.total || 0, files: job.files || 0, found_in_documents: job.foundInDocuments || 0, counts, errors: job.tenderErrors || null },
@@ -650,7 +695,19 @@ export async function runSyncRound() {
   let session = new Session();
   let loginSent = false;
   let more = false;
+  // The Cancel button (requestCancel): checked at most every CANCEL_CHECK_MS, before the log-in and each tender
+  let cancelled = false;
+  let cancelCheckedAt = 0;
+  const cancelAsked = async () => {
+    if (cancelled) return true;
+    if (Date.now() - cancelCheckedAt < CANCEL_CHECK_MS) return false;
+    cancelCheckedAt = Date.now();
+    cancelled = cancelApplies(await readCancel(supabase).catch(() => null), job);
+    return cancelled;
+  };
+  let loggedOut = null;
   try {
+    if (await cancelAsked()) return { more: false, cancelled: true };
     const { data, error } = await supabase.from('philgeps_opportunities').select('ref_no, title, publish_date, closing_date, matched_molecules, items_text, details');
     if (error) throw new PhilgepsSyncError('DB', error.message);
     // Without the product list the documents are still downloaded, just not read
@@ -661,7 +718,7 @@ export async function runSyncRound() {
       await optional(job, 'Reading downloaded documents', async () => {
         const unread = await screenedFirst(supabase, data.filter((o) => needsReading(o, matchProducts.key)));
         for (const [i, o] of unread.entries()) {
-          if (Date.now() - roundStarted > ROUND_MS / 2) break;
+          if (Date.now() - roundStarted > ROUND_MS / 2 || (await cancelAsked())) break;
           job.stage = `Reading downloaded documents for our products (${i + 1} of ${unread.length})`;
           await save();
           const update = await readTenderDocuments(supabase, matchProducts, o, o.details).catch(() => null);
@@ -689,6 +746,7 @@ export async function runSyncRound() {
       job.tenderPercent = {};
       job.files = 0;
     }
+    if (await cancelAsked()) return { more: false, cancelled: true };
     if (!pending.length) {
       Object.assign(job, { status: 'success', percent: 100, stage: job.files ? `${job.files} new documents` : 'Everything is up to date — no new documents', finishedAt: Date.now() });
       await save();
@@ -723,6 +781,8 @@ export async function runSyncRound() {
     let done = Object.values(job.tenders).filter((state) => state !== 'waiting').length;
     for (const o of pending) {
       if (Date.now() - roundStarted > ROUND_MS) break;
+      // Cancelled: the tender in progress has finished; stop here and log out (finally)
+      if (await cancelAsked()) return { more: false, cancelled: true };
       job.tenders[o.ref_no] = 'working';
       job.tenderPercent[o.ref_no] = 0;
       job.stage = `Downloading documents (${done + 1} of ${job.total} tenders)`;
@@ -768,7 +828,8 @@ export async function runSyncRound() {
       job.percent = Math.round((95 * done) / Math.max(job.total, 1));
       await save();
     }
-    more = done < job.total;
+    more = done < job.total && !(await cancelAsked());
+    if (cancelled) return { more: false, cancelled: true };
     job.stage = more ? `Continuing (${done} of ${job.total} tenders done)` : 'Logging out of PhilGEPS';
     // The next round reuses this log-in: keep the newest cookies for it
     if (more) await supabase.from('philgeps_session').upsert({ id: 'current', cookies: session.cookies(), saved_at: new Date().toISOString(), logged_out_at: null });
@@ -787,13 +848,34 @@ export async function runSyncRound() {
   } finally {
     // The log-out runs whatever happened above; nothing in here may throw
     if (loginSent && !more) {
-      const loggedOut = await logout(session);
+      if (cancelled) {
+        job.stage = 'Cancelled: logging out of PhilGEPS';
+        await save();
+      }
+      loggedOut = await logout(session);
       if (loggedOut) await optional(job, 'Recording the log-out', () => markLoggedOut(supabase));
-      else {
+      else if (!cancelled) {
         job.warning = 'The PhilGEPS log-out could not be confirmed; the 5-minute clean-up keeps trying.';
         await save();
       }
     }
+    if (cancelled) {
+      // Cancelled before this round logged in: a session an earlier round of this Sync kept open is closed too
+      if (!loginSent) loggedOut = await closeLeftover(supabase);
+      await endCancelled(supabase, job, loggedOut);
+    }
+  }
+}
+
+// Closes the saved session of an earlier round, if one is still open. true: confirmed closed, null: there was
+// none, false: not confirmed. Never throws.
+async function closeLeftover(supabase) {
+  try {
+    const { data } = await supabase.from('philgeps_session').select('cookies, logged_out_at').eq('id', 'current').maybeSingle();
+    if (!data?.cookies?.length || data.logged_out_at) return null;
+    return await closeSession();
+  } catch {
+    return false;
   }
 }
 
@@ -884,6 +966,13 @@ export async function sweepSession() {
       return { open: !loggedOut, reopened: true, loggedOut };
     }
     const current = await readJob(supabase);
+    // A cancel whose round was cut off before it could stop: log out and end the Sync as cancelled now
+    const cancel = current.job?.status === 'running' ? await readCancel(supabase) : null;
+    if (cancelApplies(cancel, current.job) && Date.now() - Date.parse(cancel.requested_at) > CANCEL_ORPHAN_MS) {
+      const loggedOut = await closeSession();
+      await endCancelled(supabase, current.job, loggedOut);
+      return { open: !loggedOut, loggedOut, cancelled: true };
+    }
     const busy = current.job?.status === 'running' && Date.now() - Math.max(Date.parse(current.updated_at), Date.parse(data.saved_at)) < SESSION_IDLE_MS;
     if (busy) return { open: true, skipped: 'sync running' };
     return { open: !(await closeSession()), loggedOut: true };

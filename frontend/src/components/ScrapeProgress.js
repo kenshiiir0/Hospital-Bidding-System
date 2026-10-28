@@ -17,16 +17,22 @@ const LOOK = {
   // Finished, but something was left for later (e.g. the session time limit); blue, as amber is off-brand
   warning: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: 'Synced with a warning' },
   failed: { ring: 'stroke-[#B3312C]', text: 'text-[#B3312C]', title: 'Sync failed' },
+  // Stopped with the Cancel button (PhilGEPS: after a confirmed log-out)
+  cancelling: { ring: 'stroke-[#94A3B8]', text: 'text-[#12769F]', title: 'Cancelling Sync' },
+  cancelled: { ring: 'stroke-[#94A3B8]', text: 'text-black/80', title: 'Sync cancelled' },
 };
 
 // Bottom-left card with a progress ring for a Sync (log-in and documents; job from GET /api/scrape).
-// A failed Sync, one that finished with a warning, or one not started because PhilGEPS is down,
+// A failed Sync, one that finished with a warning, one cancelled, or one not started because PhilGEPS is down,
 // stays on screen until dismissed. raised: lifts the card above the automatic-update bar.
-export default function ScrapeProgress({ job, onDismiss, raised = false }) {
-  const look = LOOK[job?.status === 'success' && job.warning ? 'warning' : job?.status];
+// onCancel: shows a Cancel button while the Sync runs (it stops the Sync; on PhilGEPS it also logs out).
+export default function ScrapeProgress({ job, onDismiss, onCancel, raised = false }) {
+  const cancelling = job?.status === 'running' && job.cancelling;
+  const look = LOOK[cancelling ? 'cancelling' : job?.status === 'success' && job.warning ? 'warning' : job?.status];
   if (!look) return null;
 
   const percent = Math.min(100, Math.max(0, job.percent || 0));
+  const busy = ['running', 'checking', 'queued'].includes(job.status);
 
   return (
     <div
@@ -50,7 +56,7 @@ export default function ScrapeProgress({ job, onDismiss, raised = false }) {
           />
         </svg>
         <span className={`absolute inset-0 flex items-center justify-center text-[11px] font-bold tabular-nums ${look.text}`}>
-          {job.status === 'failed' ? '!' : job.status === 'unavailable' ? '–' : job.status === 'checking' || job.status === 'queued' ? '…' : `${percent}%`}
+          {job.status === 'failed' ? '!' : ['unavailable', 'cancelled'].includes(job.status) ? '–' : job.status === 'checking' || job.status === 'queued' || cancelling ? '…' : `${percent}%`}
         </span>
       </div>
 
@@ -58,11 +64,20 @@ export default function ScrapeProgress({ job, onDismiss, raised = false }) {
         <div className="flex items-start justify-between gap-2">
           <div className={`text-sm font-semibold ${look.text} flex items-center gap-1.5`}>
             {look.title}
-            {['running', 'checking', 'queued'].includes(job.status) && <WorkingDots />}
+            {busy && <WorkingDots />}
           </div>
-          {!['running', 'checking', 'queued'].includes(job.status) && (
+          {!busy && (
             <button onClick={onDismiss} aria-label="Close" className="text-black/46 hover:text-black text-sm leading-none -mt-0.5">
               ×
+            </button>
+          )}
+          {onCancel && job.status === 'running' && !cancelling && (
+            <button
+              onClick={onCancel}
+              title="Stop the Sync. On PhilGEPS it stops after the tender in progress and logs out of PhilGEPS."
+              className="shrink-0 text-xs font-semibold text-[#B3312C] border border-[#E2E8F0] hover:border-[#B3312C] rounded-full px-2.5 py-0.5 -mt-0.5"
+            >
+              Cancel
             </button>
           )}
         </div>
@@ -77,7 +92,7 @@ export default function ScrapeProgress({ job, onDismiss, raised = false }) {
           </p>
         ) : job.status === 'success' && job.warning ? (
           <p className="text-xs text-black/62 mt-1 break-words max-h-28 overflow-y-auto">{job.warning}</p>
-        ) : job.status === 'success' ? (
+        ) : job.status === 'success' || job.status === 'cancelled' ? (
           <p className="text-xs text-black/80 mt-1 break-words">{job.stage}</p>
         ) : (
           <p className="text-xs text-black/62 mt-1 truncate" title={job.stage}>{job.stage}</p>

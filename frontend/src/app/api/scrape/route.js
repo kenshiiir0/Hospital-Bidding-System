@@ -1,6 +1,7 @@
 import { rejectNonLocal } from '@/lib/localRequest';
 import { requireUser } from '@/lib/auth';
-import { currentJob, requestSync, startRelayWatcher } from '@/lib/fetchJobs';
+import { cancelJob, currentJob, requestSync, startRelayWatcher } from '@/lib/fetchJobs';
+import { requestCancel } from '@/lib/philgepsSync.mjs';
 import { readRelay, requestPending, workerOnline } from '@/lib/philgepsRelay';
 import { startServerSync } from '@/lib/philgepsRounds';
 
@@ -19,6 +20,21 @@ export async function GET(request) {
     return Response.json({ ...(row.job || { status: 'idle' }), remote: true, workerOnline: workerOnline(row), requestPending: requestPending(row) });
   } catch (err) {
     return Response.json({ status: 'idle', remote: true, error: err.message });
+  }
+}
+
+// The progress ring's Cancel button: stops the running Sync and logs out of PhilGEPS. On a team computer its own
+// fetch is stopped here (fetchJobs.js cancelJob); elsewhere the cancel is saved for the server Sync's round or the
+// team computer running the Sync (philgepsSync.mjs requestCancel). The ring shows "Cancelled" once the log-out is
+// settled.
+export async function DELETE(request) {
+  const { user, response } = await requireUser(request);
+  if (response) return response;
+  try {
+    const result = rejectNonLocal(request) ? await requestCancel(user.email) : cancelJob(user.email);
+    return Response.json({ ok: true, ...result });
+  } catch (err) {
+    return Response.json({ ok: false, error: err.message }, { status: 500 });
   }
 }
 

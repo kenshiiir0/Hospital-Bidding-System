@@ -89,12 +89,17 @@ export default function PsPhilgepsLayout({ children }) {
     return () => clearTimeout(t);
   }, [syncing, startedAt]);
   const finishedWatched = !syncing && watched && watched === startedAt && sync?.finished_at && dismissed !== watched;
+  // The ring's Cancel button (DELETE /api/ps-sync): the Sync stops before its next page and saves nothing;
+  // PS-PhilGEPS stays connected. cancelFor: the Sync it was pressed for, shown as cancelling until it ends.
+  const [cancelFor, setCancelFor] = useState(null);
   const ringJob = syncing
-    ? { status: 'running', percent: sync.percent, stage: sync.stage || 'Starting' }
+    ? { status: 'running', percent: sync.percent, stage: sync.stage || 'Starting', cancelling: cancelFor === startedAt || /^Cancelling/.test(sync.stage || '') }
     : finishedWatched
       ? sync.status === 'success'
         ? { status: 'success', percent: 100, stage: sync.stage }
-        : { status: 'failed', percent: sync.percent, stage: sync.stage, error: sync.error }
+        : sync.status === 'cancelled'
+          ? { status: 'cancelled', percent: sync.percent, stage: sync.stage }
+          : { status: 'failed', percent: sync.percent, stage: sync.stage, error: sync.error }
       : null;
   const ringDone = ringJob?.status === 'success';
   useEffect(() => {
@@ -165,6 +170,20 @@ export default function PsPhilgepsLayout({ children }) {
   const connected = Boolean(sync?.connected_at);
 
   const runSync = useCallback(() => post('/api/ps-sync', loadSync), [loadSync]);
+  const cancelSync = async () => {
+    if (!window.confirm('Cancel the PS-PhilGEPS Sync? Nothing is changed and PS-PhilGEPS stays connected.')) return;
+    setCancelFor(startedAt);
+    setRequestError('');
+    try {
+      const res = await authFetch('/api/ps-sync', { method: 'DELETE' });
+      const result = await res.json();
+      if (!result.ok) throw new Error(result.error || `Could not cancel (${res.status})`);
+    } catch (err) {
+      setCancelFor(null);
+      setRequestError(`The Sync could not be cancelled: ${err.message}`);
+    }
+    loadSync();
+  };
   const pressSync = () => {
     if (connected) return runSync();
     setSyncAfterConnect(true);
@@ -259,7 +278,7 @@ export default function PsPhilgepsLayout({ children }) {
           {children}
         </div>
       </div>
-      <ScrapeProgress job={ringJob} onDismiss={() => setDismissed(watched)} />
+      <ScrapeProgress job={ringJob} onCancel={cancelSync} onDismiss={() => setDismissed(watched)} />
     </PsContext.Provider>
   );
 }

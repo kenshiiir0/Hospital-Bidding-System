@@ -13,7 +13,8 @@ export async function startServerSync(origin, by) {
 export function runRoundsAfterResponse(origin) {
   after(async () => {
     try {
-      const { more, failed } = await runSyncRound();
+      // cancelled: the round stopped for the Cancel button and has already logged out and ended the Sync
+      const { more, failed, cancelled } = await runSyncRound();
       if (more) {
         // The next round keeps this round's log-in; if it can't be started, log out now instead of waiting
         const next = await fetch(`${origin}/api/philgeps-sync`, {
@@ -27,7 +28,7 @@ export function runRoundsAfterResponse(origin) {
             `The Sync stopped between rounds (the next round could not start${next ? `: HTTP ${next.status}` : ''}). Tenders not reached yet are listed in History; press Sync again to continue.`
           );
         }
-      } else if (!failed) {
+      } else if (!failed && !cancelled) {
         await finishSync();
       }
     } catch (e) {
