@@ -346,6 +346,9 @@ expect(parseItemRow(['8.2 Bupivacaine (as hydrochloride) 0.5%', '(isobaric), 5 m
 // PhilGEPS 13311929 / 13311841 (Gallares): No. | Stock No. | Description | Unit Price | Qty | Unit
 expect(parseItemLine('1 3100000 Amikacin Sulfate, 250mg/ml, 2ml (500mg/2ml) 97.00 4,800 ampule/vial'), { quantity: 4800, unit_price: 97, unit: 'ampule/vial' }, 'stock no. is not the quantity');
 expect(parseItemRow(['2 25200000 Folic Acid, 5mg 5.00 10,000', 'tablet/capsule 50,000.00'], 0), { quantity: 10000, unit_price: 5, total: 50000 }, 'unit and total on the next line');
+// PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
+expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
+expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
 // Copies of a row without amounts (delivery schedule, compliance form) go when a priced reading has it (PS 114538)
 const COPIES = [
   { our_products: ['Sevelamer'], quantity: 10000, total: 140000, written: 'SEVELAMER CARBONATE 800mg TABLET 10,000 Tab 140,000.00', source: 'NGPA.pdf, page 48' },
@@ -355,4 +358,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 9} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 11} rows).`);
