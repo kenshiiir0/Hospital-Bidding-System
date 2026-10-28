@@ -191,13 +191,29 @@ const MEDICINE_TITLE_WORDS = ['medicine', 'drug', 'pharma', 'oncology', 'cancer'
 // "College of Medicine Building", "HPV DNA Kit"...)
 const NOT_MEDICINE = /\b(?:testing|test kits?|kits?|ict|equipment|machines?|subscription|vehicle|building|construction|completion|repair|renovation|furniture|meals|catering|training|seminar|janitorial|security services|command center|reporting system|advocates|abuse office)\b/i;
 
-export async function searchOpenOpportunities(session, word) {
+// The search answers with the newest 100 notices only, no next page: on 2026-10-28 "medicine" gave those published
+// 20-28 Oct, so 101007 (published 15 Oct, open until 4 Nov) dropped out of Bid Match. Each word is therefore searched
+// by publish date, and a range that comes back full is split in two until every part has room (searchByPublishDate).
+const SEARCH_LIMIT = 100;
+// How far back an open notice may have been published
+const OPEN_SINCE_DAYS = 120;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// The form's dates: "15-Oct-2026" (days counted in Philippine time)
+const psDate = (day) => {
+  const d = new Date(day * DAY_MS);
+  return `${String(d.getUTCDate()).padStart(2, '0')}-${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
+};
+
+// fields: other search fields of the form (searchPublishDateFrom / searchPublishDateTo, searchRefNo...)
+export async function searchOpenOpportunities(session, word, fields = {}) {
   const page = parse(await getPage(session, OPEN_OPPORTUNITIES_URL));
   const form = page.querySelectorAll('form').find((f) => f.querySelector('[name=searchNoticeTitle]'));
   if (!form) throw new PsSyncError('LAYOUT', 'PS-PhilGEPS Open Opportunities has no search form (layout changed).');
   const body = new URLSearchParams();
   for (const field of form.querySelectorAll('input, select')) if (field.getAttribute('name')) body.set(field.getAttribute('name'), field.getAttribute('value') || '');
   body.set('searchNoticeTitle', word);
+  for (const [name, value] of Object.entries(fields)) body.set(name, value);
   for (let attempt = 1; ; attempt++) {
     try {
       const res = await fetch(OPEN_OPPORTUNITIES_URL, {
@@ -217,11 +233,23 @@ export async function searchOpenOpportunities(session, word) {
   }
 }
 
+/** Every notice whose title has the word, published between the two days (day numbers, both included): one search
+ * per range, a full one split in two. Returns [{ headers, rows }]. */
+export async function searchByPublishDate(session, word, fromDay, toDay) {
+  const result = await searchOpenOpportunities(session, word, { searchPublishDateFrom: psDate(fromDay), searchPublishDateTo: psDate(toDay) });
+  // A single day with 100 or more notices keeps what the site gives
+  if (result.rows.length < SEARCH_LIMIT || fromDay >= toDay) return [result];
+  const mid = Math.floor((fromDay + toDay) / 2);
+  return [...(await searchByPublishDate(session, word, fromDay, mid)), ...(await searchByPublishDate(session, word, mid + 1, toDay))];
+}
+
 /** Open medicine notices from Open Opportunities, as rows in Bid Match's columns (headers), for refs not in it */
 export async function openMedicineNotices(session, headers, known) {
   const byRef = new Map();
-  for (const word of MEDICINE_TITLE_WORDS) {
-    const { headers: found, rows } = await searchOpenOpportunities(session, word);
+  const today = Math.floor((Date.now() + 8 * 60 * 60 * 1000) / DAY_MS);
+  const results = [];
+  for (const word of MEDICINE_TITLE_WORDS) results.push(...(await searchByPublishDate(session, word, today - OPEN_SINCE_DAYS, today)));
+  for (const { headers: found, rows } of results) {
     const at = (name) => found.findIndex((h) => h.toLowerCase().startsWith(name));
     for (const row of rows) {
       const ref = row.cells[at('bid notice reference')] || row.cells[0];
