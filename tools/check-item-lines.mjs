@@ -402,6 +402,21 @@ assert.equal(lotSchedule(['ITEM CEILING UNIT TOTAL', 'NO. PRICE PRICE PRICE', '1
 assert.equal(lotSchedule(['1.1 The Procuring Entity is the MUNICIPALITY OF TANGALAN.', '1.2 The number of lot(s): 1 lot', 'Section VI. Schedule of Requirements', '1 Cetirizine 10mg tablet 40 box']), false, 'Bid Data Sheet 1 lot is not a lot');
 assert.equal(lotSchedule(['Section VI. Schedule of Requirements ........................ 67', 'Section VII. Technical Specifications ..... 68', '1 lot']), false, 'table of contents');
 assert.equal(lotSchedule(['Section VI. Schedule of Requirements', '5 Oxygen refill 20 tank 1,200.00 24,000.00', '6 Cetirizine 10mg 1,000 tablet 0.80 800.00']), false, 'itemised schedule');
+// A cut-off name's row ends at the next row's number alone on its line (PhilGEPS 13305194: row 11's 10 mg is not row 10's)
+assert.equal(rowAhead(['10', 'Cetirizi', 'ne', 'syrup', '288', '11', 'Dapagli', 'flozin', '10mg', 'tab'], 1), 'ne\nsyrup\n288', 'next row number ends the look-ahead');
+// A scan's dots between thousands, and its loose mark after a row number (PhilGEPS 13279404)
+expect(parseItemRow(['18 box Cetirizine 10 rna tabrl00tab/box) 300 61.00 18.300.00'], 0), { quantity: 300, unit_price: 61, total: 18300 }, 'dots between thousands');
+expect(parseItemRow(['21 DC IV Infuslon set /macroset) 100 log.50 10,850.00', '22 . IV Infusion (microset) 100 112.00 11,200.00'], 1), { quantity: 100, unit_price: 112, total: 11200 }, 'loose mark after the row number');
+// A row's numbers after its bidder field ("CPR & COD 15,000 pcs 158.00", PS 106895); a lot heading is never a row's numbers
+const CPRROW = ['Item', 'No. Description Requirements Qty Unit ABC Per Line', 'Item Unit Cost Total Cost', 'CPR & COD 4,000 pcs 115.00', '126', 'IV Infusion set adult (20gtts) needleless with anti-', 'run dry technology, auto prime capacity at least', '1.5meters kink resistant tubing roller clamp', 'precise, stable flow control, capable of full', 'occlusion,Luer lock connector, Injection port(Y-', 'site) with self sealing rubber', 'CPR & COD 15,000 pcs 158.00', '127'];
+carryHeader(CPRROW, null);
+expect(parseItemRow(CPRROW, 5), { quantity: 15000, unit_price: 158 }, 'numbers after the bidder field');
+expect(parseItemRow(['19 Sevelamer 800 mg Tablet tablet 54,000 18.15 980,100.00', 'LOT 2 2,395,500.00', '1 Sevoflurane, 250 mL Volatile'], 0), { quantity: 54000, unit_price: 18.15, total: 980100 }, 'lot heading is not the row');
+// The next row's number before marks ("18 **Butamirate ...") ends the row (PhilGEPS 13269780)
+const STARS = ['Item No. Description Quantity Total Delivery', '17 **Bupivacaine hydrochloride 0.5% 4ml heavy 570 370,500.00 Fifteen (15)', 'calendar days', '18 **Butamirate Citrate 50mg tab 100 700.00 Fifteen (15)'];
+carryHeader(STARS, null);
+expect(parseItemRow(STARS, 1), { quantity: 570, total: 370500 }, 'next row after marks');
+assert.ok(!/Butamirate/.test(parseItemRow(STARS, 1).written), 'next row after marks is not part of the row');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -414,4 +429,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 38} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 45} rows).`);

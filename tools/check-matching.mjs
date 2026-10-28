@@ -162,6 +162,9 @@ check('single after combination list', match("101 Cetirizine, 10mg tablet 9014 2
 // The row's own form wins over the next row's (PhilGEPS 13284382: our Folic Acid is a tablet)
 check("own form over the next row's", match('Capsule Folic Acid 5 mg capsule 5,000 5.00 25,000.00\nTablet Ferrous Salt tablet, (equiv. to 60 mg').length === 0, 'capsule matched by the next row');
 check('form on the next line still counts', match('Folic Acid 5 mg\ntablet 1,000 2.00 2,000.00').includes('Folic Acid'), 'wrapped tablet not matched');
+// A scan's "rna" for mg, and its "droDs" for drops (PhilGEPS 13279404)
+check('scan mg', match('18 box Cetirizine 10 rna tabrl00tab/box) 300 61.00 18.300.00').includes('Cetirizine'), 'rna not read as mg');
+check('scan drops', match('19 bot Folic Acid droDs 5ma 50 41.75 2.087.50').length === 0, 'drops matched as our tablet');
 // A dosage on the next line of a wrapped table row
 check('dosage on the following line', match('3 Paclitaxel\n300 mg/50 ml vial\n').includes('Paclitaxel'), 'wrapped row not matched');
 // Another ingredient's dose is not ours (PS 102904: Niacin 1-5mg in a vitamin B complex)

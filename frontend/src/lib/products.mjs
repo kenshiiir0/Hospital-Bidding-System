@@ -22,6 +22,10 @@ const AS_SALT = new RegExp(`^${SALT}\\b`, 'i');
 // A salt, form or pack word after a "/" (never a combination partner: "Cetirizine/ Dihydrochloride", "Ampule/Vial")
 const SALT_OR_FORM = new RegExp(`^(?:${SALT}|dihydrochloride|sulfate|sulphate|bromide|chloride|tablets?|capsules?|vials?|ampoules?|ampules?|bottles?|syringes?|solution|suspension|syrup|injection|infusion|blister|boxes)$`, "i");
 
+// "mg" as scans misread it, right after a number ("Cetirizine 10 rna tab", "droDs 10ma", "Celecoxib 200mc]",
+// PhilGEPS 13279404): read as mg
+export const withOcrUnits = (text) => String(text).replace(/(\d)\s?(?:rna|rng|mq|m9|ma|mc\])(?![A-Za-z])/g, '$1 mg');
+
 // Spelling fixes of names as written in the lists
 const NAME_FIXES = { cisatractcurium: 'Cisatracurium' };
 
@@ -213,7 +217,8 @@ const AMOUNT_IN_ANY_VOLUME = /^epoetin\b/i;
 const FORMS = {
   tablet: /\b(?:tablets?|tabs?|film[\s-]*coated|caplets?)\b/i,
   capsule: /\b(?:capsules?|caps?)\b/i,
-  'oral liquid': /\b(?:syrups?|suspensions?|susp|oral\s+solution|oral\s+drops|drops|elixirs?)\b/i,
+  // (also as a scan misreads it: "Cetirizine droDs 10ma", PhilGEPS 13279404)
+  'oral liquid': /\b(?:syrups?|suspensions?|susp|oral\s+solution|oral\s+drops|dro[pd]s|elixirs?)\b/i,
   injection: /\b(?:inj\w*|vials?|vl|amp(?:ule|oule)?s?|infusion|pre[\s-]*filled|pfs|syringes?|lyophili[sz]ed|i\.?v\.?|i\.?m\.?|s\.?c\.?|intrathecal|emulsion\s+for)\b/i,
   topical: /\b(?:creams?|ointments?|gels?|lotions?)\b/i,
   inhalation: /\b(?:nebules?|inhalers?|inhalation|respules?)\b/i,
@@ -393,8 +398,10 @@ export function buildMatcher(products) {
     }
     return rest;
   };
-  const line = (text, next = '') => {
-    if (!text) return [];
+  const line = (rawText, rawNext = '') => {
+    if (!rawText) return [];
+    const text = withOcrUnits(rawText);
+    const next = withOcrUnits(rawNext);
     const window = `${text}\n${next}`;
     // A form the row's own line names is the row's; the next lines' forms count only when it names none ("Capsule
     // Folic Acid 5 mg capsule ..." / "Tablet Ferrous Salt tablet ...": not our tablet, PhilGEPS 13284382)
@@ -427,6 +434,8 @@ export function buildMatcher(products) {
   const match = (text) => details(text).matched;
   match.details = details;
   match.line = line;
+  // Our products a line names, whatever its dosage (a priced row with no strength, paired by its Item No.: psDocs)
+  match.named = (text) => names(withOcrUnits(text || '')).map((p) => p.name);
   match.names = compiled.map((p) => p.name);
   // Fingerprint of what is screened for (molecules and dosages). Saved document readings carry it, so adding,
   // archiving or restoring a product has the documents read again (psDocs documentsKey, philgepsSync readKey).
