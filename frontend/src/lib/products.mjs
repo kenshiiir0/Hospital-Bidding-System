@@ -372,9 +372,10 @@ export function buildMatcher(products) {
     // Ends at another ingredient ("+ Folic Acid", ", Niacin: ...") or at the next numbered row (not a strength on the
     // next line: "3 Paclitaxel" / "300 mg/50 ml vial"). Not at a route or form label (", Inj: 10mg/ml"), nor at a
     // "+ partner" that is part of our product's own name ("Bupivacaine + Dextrose" for "Bupivacaine ... in dextrose")
-    const nextRow = String.raw`\n(?=\s*\d+[.)]?\s+(?!(?:mcg|µg|ug|mg|grams?|gm|g|iu|units?|u|mcl|µl|ml|cc|l|%)\b)[A-Za-z])`;
     // Any case ("Inj:", "ORAL:"): each letter as [xX]
     const anyCase = (word) => [...word].map((c) => `[${c}${c.toUpperCase()}]`).join('');
+    // (a strength in capitals too: "57 Heparin (Unfractionated)" / "1000 IU/mL, 5 mL Solution", PhilGEPS 13299385)
+    const nextRow = String.raw`\n(?=\s*\d+[.)]?\s+(?!(?:${['mcg', 'µg', 'ug', 'mg', 'grams?', 'gm', 'g', 'iu', 'units?', 'u', 'mcl', 'µl', 'ml', 'cc', 'l'].map((w) => w.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`)).join('|')}|%)\b)[A-Za-z])`;
     const label = `(?:${['injection', 'inj', 'oral', 'iv', 'im', 'sc', 'route', 'form', 'dosage', 'tablet', 'tab', 'capsule', 'cap', 'syrup', 'solution', 'suspension', 'for'].map(anyCase).join('|')})\\b`;
     const ingredient = String.raw`[,;]\s*(?!${label})[A-Z][A-Za-z .]{1,30}:`;
     const boundary = new RegExp(entry.name.includes('+') ? `${ingredient}|${nextRow}` : String.raw`\s\+\s*([A-Za-z]+)|${ingredient}|${nextRow}`, 'g');

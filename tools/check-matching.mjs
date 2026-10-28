@@ -157,13 +157,15 @@ for (const [line, why] of MUST_NOT_MATCH) {
 }
 // A dosage on the next line of a wrapped table row
 check('dosage on the following line', match('3 Paclitaxel\n300 mg/50 ml vial\n').includes('Paclitaxel'), 'wrapped row not matched');
+// A strength in capitals on the next line is not the next row (PhilGEPS 13299385)
+check('capital IU on the following line', match('57 Heparin (Unfractionated)\n1000 IU/mL, 5 mL Solution\n').includes('Heparin'), 'wrapped row not matched');
 check('named without any dosage is reported (documents get checked)', match.details('Supply of Paclitaxel').undosed.includes('Paclitaxel'), 'not reported');
 check('a wrong dosage is not "without dosage" (no documents ordered for it)', !match.details('Amlodipine 2.5 mg tablet').undosed.includes('Amlodipine'), 'reported as undosed');
 check('names: Iodine (as Iohexol) -> Iohexol', matchName('Iodine (as Iohexol)') === 'Iohexol', matchName('Iodine (as Iohexol)'));
 
 try {
   assert.equal(failed, 0);
-  console.log(`\nProduct matching check passed (${MUST_MATCH.length + MUST_NOT_MATCH.length + 4} checks).`);
+  console.log(`\nProduct matching check passed (${MUST_MATCH.length + MUST_NOT_MATCH.length + 5} checks).`);
 } catch {
   console.error(`\nProduct matching check FAILED (${failed}). Nothing may be pushed until it passes.`);
   process.exit(1);

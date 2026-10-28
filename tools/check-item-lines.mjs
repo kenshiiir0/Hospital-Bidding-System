@@ -346,6 +346,23 @@ expect(parseItemRow(['8.2 Bupivacaine (as hydrochloride) 0.5%', '(isobaric), 5 m
 // PhilGEPS 13311929 / 13311841 (Gallares): No. | Stock No. | Description | Unit Price | Qty | Unit
 expect(parseItemLine('1 3100000 Amikacin Sulfate, 250mg/ml, 2ml (500mg/2ml) 97.00 4,800 ampule/vial'), { quantity: 4800, unit_price: 97, unit: 'ampule/vial' }, 'stock no. is not the quantity');
 expect(parseItemRow(['2 25200000 Folic Acid, 5mg 5.00 10,000', 'tablet/capsule 50,000.00'], 0), { quantity: 10000, unit_price: 5, total: 50000 }, 'unit and total on the next line');
+const GALLARES = ['Item Description Quantity Unit Price Total', 'x', '2 25200000 Folic Acid, 5mg 5.00 10,000', 'tablet/capsule 50,000.00'];
+carryHeader(GALLARES, null);
+expect(parseItemRow(GALLARES, 2), { quantity: 10000, unit_price: 5, total: 50000 }, 'a header that leaves an amount in the name does not fit');
+expect(parseItemRow(['1 23800000 FILGRASTIM 300 mcg/ 0.5 ml 1,225.00 259 pre-filled', 'syringes 317,275.00'], 0), { quantity: 259, unit_price: 1225, description: 'FILGRASTIM 300 mcg/ 0.5 ml' }, 'name without amounts and stock no.');
+// PhilGEPS 13280005: an amount broken over two lines
+const SPLIT = ['Item No. Description Unit Quantity Unit Cost Total Cost', '44 ATRACURIUM (as besilate),10', 'mg/mL, 2.5 mL (IV) ampule 3,850 80.39 309,50', '1.50', '45 ATROPINE'];
+carryHeader(SPLIT, null);
+expect(parseItemRow(SPLIT, 1), { quantity: 3850, unit_price: 80.39, total: 309501.5 }, 'amount split over lines');
+// PhilGEPS 13292520: "800 vial" in one Quantity column; a row without amounts on its line keeps its words
+const QTYUNIT = ['Item Number Description Quantity Total Delivery', '68 Amikacin 250 mg/mL, 2 mL', 'Solution for Injection Vial 800 vial 25,600.00', 'Within thirty (30)'];
+carryHeader(QTYUNIT, null);
+expect(parseItemRow(QTYUNIT, 1), { quantity: 800, unit: 'vial', total: 25600 }, 'quantity cell with its unit');
+// PhilGEPS 13299243: delivery text with a number after the amounts
+expect(parseItemRow(['for delivery.', '18 Filgrastim (G-CSF) 300', 'mcg/0.5 mL, 0.5 mL', 'Solution for Injection Pre-', 'filled Syringe', 'piece 350 758.00 265,300.00 Fifteen (15) calendar'], 1), { quantity: 350, unit_price: 758, total: 265300 }, 'delivery text after the amounts');
+// PhilGEPS 13282441 / 13282466: a third amount column, the unit broken around "/"
+expect(parseItemRow(['22 Fluorouracil 50mg/ml, 10ml', 'ampule/vial (IV, IV infusion) 400 ampule /', 'vial 72.00 28,800.00 14,400.00', '23 Gefitinib 250mg'], 0), { quantity: 400, unit_price: 72, total: 28800 }, 'third amount, split unit');
+expect(parseItemRow(['x 100 vial 50.49 5,049.00 2,524.50', '5 Propofol 10mg/ml, 20ml vial/ampule (IV) 4,000', 'vial /', 'ampule 250.00 1,000,000.00 500,000.00'], 1), { quantity: 4000, unit_price: 250, total: 1000000 }, 'quantity, then the unit on the next lines');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -358,4 +375,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 11} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 18} rows).`);
