@@ -325,4 +325,34 @@ const PLAN = [
 keepBestReading(PLAN);
 assert.equal(PLAN.length, 1, 'delivery plan copy dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3} rows).`);
+// User, 2026-10-28: "they are in a one table" - every row of one table read the same way, both portals
+// PhilGEPS 13312124 (Rizal): numbers on a line starting with the unit, delivery text after them
+const RIZAL = ['ITEM NO. DESCRIPTION Preparation UNIT QTY UNIT COST (PhP) TOTAL ABC (PhP) DELIVERY SCHEDULE', '1 Atracurium 10', 'mg/mL, 2.5 mL', 'Solution for', 'Injection', 'ampule 7,000 154.00 1,078,000.00 Fifteen', '(15)', 'calendar', '2 Bupivacaine +'];
+carryHeader(RIZAL, null);
+expect(parseItemRow(RIZAL, 1), { item_no: '1', quantity: 7000, unit_price: 154, total: 1078000 }, 'Rizal numbers line starting with the unit');
+// PS 114476 (Tondo): the next row's number alone on its line ends the row
+const TONDO = ['Item No. Description Qty Unit of', 'Issue Total ABC', '1 ATRACURIUM BESILATE 10', 'mg/mL, 2.5mL AMPULE 200 amp 18,800.00', '2', 'BUPIVACAINE HCl Heavy', '0.5% , 4mL AMPULE', '1,800 amp 136,800.00'];
+carryHeader(TONDO, null);
+expect(parseItemRow(TONDO, 2), { quantity: 200, total: 18800 }, 'Tondo row ends before the next row number');
+assert.equal(rowAhead(['BUPIVACAINE HCl Heavy 0.5% ,', '4mL AMPULE (SPINAL) with 8%', 'dextrose'], 0).includes('dextrose'), true, '"4mL AMPULE" goes on the row');
+// PS 114450: the Item No. alone on the line above, one amount under "Total ABC"
+const TONDO2 = ['Item No. Description Qty Unit of', 'Issue Total ABC', '19', 'FLUOROURACIL 50mg/mL,', '10mL VIAL 200 Vial 13,600.00', '20', 'HYDROXYUREA 500mg'];
+carryHeader(TONDO2, null);
+expect(parseItemRow(TONDO2, 3), { item_no: '19', quantity: 200, total: 13600 }, 'Tondo Item No. on the line above');
+// PS 114538: no header, numbers ending the description's last line
+expect(parseItemRow(['TABLET 500 Tab 4,500.00', '55', 'SEVELAMER CARBONATE', '800mg TABLET 10,000 Tab 140,000.00', '56'], 2), { quantity: 10000, total: 140000 }, 'numbers ending the last line');
+// PhilGEPS 13309069 (Ilocos Sur): sub-numbered rows are rows of their own
+expect(parseItemRow(['8.2 Bupivacaine (as hydrochloride) 0.5%', '(isobaric), 5 mL ampul (spinal) Ampule 20 605.00 12,100.00', '8.3 PROPOFOL 10 mg/mL, 20 mL vial (IV) Vial 200 445.00 89,000.00'], 0), { quantity: 20, unit_price: 605, total: 12100 }, 'sub-numbered next row');
+// PhilGEPS 13311929 / 13311841 (Gallares): No. | Stock No. | Description | Unit Price | Qty | Unit
+expect(parseItemLine('1 3100000 Amikacin Sulfate, 250mg/ml, 2ml (500mg/2ml) 97.00 4,800 ampule/vial'), { quantity: 4800, unit_price: 97, unit: 'ampule/vial' }, 'stock no. is not the quantity');
+expect(parseItemRow(['2 25200000 Folic Acid, 5mg 5.00 10,000', 'tablet/capsule 50,000.00'], 0), { quantity: 10000, unit_price: 5, total: 50000 }, 'unit and total on the next line');
+// Copies of a row without amounts (delivery schedule, compliance form) go when a priced reading has it (PS 114538)
+const COPIES = [
+  { our_products: ['Sevelamer'], quantity: 10000, total: 140000, written: 'SEVELAMER CARBONATE 800mg TABLET 10,000 Tab 140,000.00', source: 'NGPA.pdf, page 48' },
+  { our_products: ['Sevelamer'], quantity: 10000, written: 'SEVELAMER CARBONATE 800mg TABLET 10,000 Tab', source: 'NGPA.pdf, page 74' },
+  { our_products: ['Sevelamer'], quantity: 10000, written: 'Item No. 55 SEVELAMER CARBONATE 800mg TABLET Qty/Unit: 10,000 Tab', source: 'NGPA.pdf, page 133' },
+];
+keepBestReading(COPIES);
+assert.equal(COPIES.length, 1, 'copies without amounts dropped');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 9} rows).`);
