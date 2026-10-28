@@ -376,6 +376,9 @@ expect(parseItemRow(['64,000.00', '20 Cefazolin 1g (IM,IV) (as', 'Sodium salt)',
 assert.equal(rowAhead(['tablet/capsule Ferrous Salt 60mg elemental iron + Folic Acid 400 mcg 55,000 55,000', 'tablet Ferrous Salt (equiv to 60mg elemental iron) 5,000 5,000', 'tablet/capsule Folic Acid 5mg 1,000 1,000'], 0), '', 'unit-first next row');
 // PS 106895: one amount after "<qty> ampule" is the unit price, whatever other tables in the file do
 expect(parseItemLine('10 Propofol 10mg/ml,20ml Emulsion for injection CPR & COD 500 ampule 200.00'), { quantity: 500, unit_price: 200 }, 'unit price kept');
+const ABCLINE = ['Item', 'No. Description Requirements Qty Unit ABC Per Line', 'Item Unit Cost Total Cost', '10 Propofol 10mg/ml,20ml Emulsion for injection CPR & COD 500 ampule 200.00'];
+carryHeader(ABCLINE, null);
+expect(parseItemRow(ABCLINE, 3), { quantity: 500, unit_price: 200 }, 'ABC per line item is the unit price; the bidder columns stay empty');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -388,4 +391,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 25} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 26} rows).`);

@@ -19,7 +19,7 @@ import { PACKAGE_ROW } from './packageTender.js';
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
 // rules-39: a chewable line only for a product our list states as chewable (Loratadine is a plain tablet). rules-38: our Bupivacaine is 0.5% as the Product List gives it, a line adding another percent strength (8% dextrose) is not ours, isobaric is. rules-37: concentration and our pack volume (bracket total ignored), whole row checked again (unit column form), rejected rows' copies dropped, a row's next lines read up to 8. rules-36: a volume-only product never against another strength, a product "in dextrose" needs dextrose. rules-35: our concentration x volume must give our amount, hospitals' shorthand (250MG/2ML), dosage form strict, a scan's "10 mg ml". rules-34: exact dosages (no concentration read as an amount, no concentration x volume), the same row kept once by its own number. rules-33: a quantity and amount alone on a row's last line end the row above. rules-32: a Price Schedule's bidder fields end a row, a dosage only from the row's own lines, delivery plan copies dropped. rules-31: big single amount is the total, unit price from total when they disagree, garbled amounts set aside, next row on a line cut, heading after the amounts, rows read once (best file first), package Schedule of Requirements. rules-30: only a table's rows are fetched (isTableRow; others kept as outside_table), a header starts at its own first line. rules-29: a row's price on its wrapped next line (with or without a header). rules-28: "Unit PR Price" and the bidder's empty bid columns, an empty Brand column keeps the description, Item | Qty | Unit | Description | amount, quantity on a scan's second line, dots in amounts, quantity written twice; worked-out amounts marked computed. rules-27: numbers lines below a row with no header, "... 100's box 50" rows, "Within twenty (20)" delivery; missing ABC/Unit or Total worked out. rules-26: a description going on with a strength ("100 mg tablet") is not the next row. rules-25: an ABC/unit of 100,000 or more is the ABC total. rules-24: one amount after the quantity (unit price for injectables, total for cheap tablets), delivery text and -do- set aside, only real unit words as units. rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
-const RULES_VERSION = 'rules-44';
+const RULES_VERSION = 'rules-45';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
@@ -301,7 +301,8 @@ const HEADER_WORDS = [
   ['description', /^(?:item\s+description|description(?:\s+of\s+(?:items?|goods))?|particulars|articles?|item\s+name|generic\s+name)\b/i],
   // The bidder's own columns, left empty in the bid documents ("Unit Bid Price", "Total Bid Price", PhilGEPS 13309750)
   ['bid', /^(?:(?:unit|total)\s+bid\s+(?:price|amount)|bid\s+(?:price|amount)|offered\s+(?:unit\s+)?price)\b/i],
-  ['price', /^(?:unit\s+(?:pr\.?\s+)?(?:cost|price|value)|abc\s*(?:\/|per)\s*unit|price\s+per\s+unit|estimated\s+unit\s+cost|cost\s+per\s+(?:unit|item)|unit\s+abc)\b/i],
+  // ("ABC Per Line Item": ₱200 an ampule of Propofol, PS 106895)
+  ['price', /^(?:unit\s+(?:pr\.?\s+)?(?:cost|price|value)|abc\s*(?:\/|per)\s*(?:unit|(?:line\s+)?item)|price\s+per\s+unit|estimated\s+unit\s+cost|cost\s+per\s+(?:unit|item)|unit\s+abc)\b/i],
   ['total', /^(?:total\s+(?:cost|price|amount|abc|value)|total|amount|abc|estimated\s+(?:cost|budget)|approved\s+budget)\b/i],
   ['quantity', /^(?:quantity|qty)\b\.?/i],
   ['unit', /^(?:unit\s+of\s+(?:issue|measure(?:ment)?)|uom|u\/m|unit)\b/i],
@@ -318,12 +319,18 @@ const REPEATING = new Set(['delivery']);
 function headerColumns(line) {
   const columns = [];
   const text = line.replace(/\s+/g, ' ').trim();
+  // After the ABC's own column, a "Unit Cost" / "Total Cost" is the bidder's, left empty ("Qty Unit ABC Per Line Item
+  // Unit Cost Total Cost", PS 106895)
+  let abcSeen = false;
   for (let at = 0; at < text.length; ) {
     const rest = text.slice(at);
     const hit = HEADER_WORDS.find(([, re]) => re.test(rest));
     if (hit) {
-      if (columns.at(-1) !== hit[0] || REPEATING.has(hit[0])) columns.push(hit[0]);
-      at += hit[1].exec(rest)[0].length;
+      const words = hit[1].exec(rest)[0];
+      const key = abcSeen && (hit[0] === 'price' || hit[0] === 'total') && !/abc|budget/i.test(words) ? 'bid' : hit[0];
+      if ((hit[0] === 'price' || hit[0] === 'total') && /abc|budget/i.test(words)) abcSeen = true;
+      if (columns.at(-1) !== key || REPEATING.has(key)) columns.push(key);
+      at += words.length;
     } else {
       const space = rest.indexOf(' ');
       at += space < 0 ? rest.length : space + 1;
