@@ -377,7 +377,8 @@ export function buildMatcher(products) {
     // (a strength in capitals too: "57 Heparin (Unfractionated)" / "1000 IU/mL, 5 mL Solution", PhilGEPS 13299385)
     const nextRow = String.raw`\n(?=\s*\d+[.)]?\s+(?!(?:${['mcg', 'µg', 'ug', 'mg', 'grams?', 'gm', 'g', 'iu', 'units?', 'u', 'mcl', 'µl', 'ml', 'cc', 'l'].map((w) => w.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`)).join('|')}|%)\b)[A-Za-z])`;
     const label = `(?:${['injection', 'inj', 'oral', 'iv', 'im', 'sc', 'route', 'form', 'dosage', 'tablet', 'tab', 'capsule', 'cap', 'syrup', 'solution', 'suspension', 'for'].map(anyCase).join('|')})\\b`;
-    const ingredient = String.raw`[,;]\s*(?!${label})[A-Z][A-Za-z .]{1,30}:`;
+    // ("Folic Acid 20-65mcg, Niacin 1-5mg": Niacin's dose is not Folic Acid's, PS 102904)
+    const ingredient = String.raw`[,;]\s*(?!${label})(?:[A-Z][A-Za-z .]{1,30}:|[A-Z][a-z]{2,}\s+\d)`;
     const boundary = new RegExp(entry.name.includes('+') ? `${ingredient}|${nextRow}` : String.raw`\s\+\s*([A-Za-z]+)|${ingredient}|${nextRow}`, 'g');
     const after = rest.slice(entry.name.length);
     for (const m of after.matchAll(boundary)) {

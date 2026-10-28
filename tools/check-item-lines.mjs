@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, rowAhead, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, rowAhead, sameAmountColumn, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -363,6 +363,26 @@ expect(parseItemRow(['for delivery.', '18 Filgrastim (G-CSF) 300', 'mcg/0.5 mL, 
 // PhilGEPS 13282441 / 13282466: a third amount column, the unit broken around "/"
 expect(parseItemRow(['22 Fluorouracil 50mg/ml, 10ml', 'ampule/vial (IV, IV infusion) 400 ampule /', 'vial 72.00 28,800.00 14,400.00', '23 Gefitinib 250mg'], 0), { quantity: 400, unit_price: 72, total: 28800 }, 'third amount, split unit');
 expect(parseItemRow(['x 100 vial 50.49 5,049.00 2,524.50', '5 Propofol 10mg/ml, 20ml vial/ampule (IV) 4,000', 'vial /', 'ampule 250.00 1,000,000.00 500,000.00'], 1), { quantity: 4000, unit_price: 250, total: 1000000 }, 'quantity, then the unit on the next lines');
+// PS 101007: "Packaging: ..." continues the description; the quantity and unit split over lines ("3,100 pre-filled" / "syringe ...")
+expect(parseItemRow(['12', 'Propofol 10 mg/mL solution', 'for (IV) injection', 'Packaging: 20 mL x glass', 'ampule or vial', '1,050 ampule 62.89 66,034.50', '13'], 1), { quantity: 1050, unit_price: 62.89, total: 66034.5 }, 'packaging line inside the row');
+expect(parseItemRow(['65', 'Epoetin Alfa (Recombinant', 'Human Erythropoietin) 4,000', 'IU/mL solution for (IV,SC)', 'injection', 'Packaging: 1 mL pre-filled', 'syringe', '3,100 pre-filled', 'syringe 264.71 820,601.00', '66'], 1), { quantity: 3100, unit_price: 264.71, total: 820601 }, 'pre-filled / syringe split');
+// PS 101007: a concentration is never a quantity and unit ("Rocuronium 10 mg/mL")
+const CONC = ['Item No. Description Quantity Unit Unit Price Total', '146', 'Rocuronium 10 mg/mL', 'solution for (IV) injection (as', 'bromide)', 'Packaging: 5 mL glass vial', '730 vial 330.00 240,900.00'];
+carryHeader(CONC, null);
+expect(parseItemRow(CONC, 2), { quantity: 730, unit_price: 330, total: 240900 }, 'concentration is not a quantity');
+// PS 106363: each cell on a line of its own
+expect(parseItemRow(['64,000.00', '20 Cefazolin 1g (IM,IV) (as', 'Sodium salt)', 'vial', '40,000', '132.00', '5,280,000.00', '21 Cefepime 1g'], 1), { quantity: 40000, unit_price: 132, total: 5280000 }, 'one cell per line');
+// PhilGEPS 13286049: rows starting with their unit end the lines ahead
+assert.equal(rowAhead(['tablet/capsule Ferrous Salt 60mg elemental iron + Folic Acid 400 mcg 55,000 55,000', 'tablet Ferrous Salt (equiv to 60mg elemental iron) 5,000 5,000', 'tablet/capsule Folic Acid 5mg 1,000 1,000'], 0), '', 'unit-first next row');
+// PS 107827: one amount column read the same way for every row of the file
+const ONECOL = [
+  { our_products: ['A'], quantity: 9014, unit_price: 32, total: 288448, computed: 'unit_price', source: 'PR.pdf, page 123' },
+  { our_products: ['B'], quantity: 900, unit_price: 104, total: 93600, computed: 'unit_price', source: 'PR.pdf, page 126' },
+  { our_products: ['C'], quantity: 80, unit_price: 650, total: 52000, computed: 'unit_price', source: 'PR.pdf, page 137' },
+  { our_products: ['Amiodarone'], quantity: 104, unit_price: 34008, total: 3536832, computed: 'total', source: 'PR.pdf, page 119' },
+];
+sameAmountColumn(ONECOL);
+expect(ONECOL[3], { unit_price: 327, total: 34008 }, 'same amount column');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -375,4 +395,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 18} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 25} rows).`);
