@@ -155,6 +155,13 @@ for (const [line, why] of MUST_NOT_MATCH) {
   const got = match(line.replace(/^.*no: /, ''));
   check(`rejects (${why}): ${line}`, got.length === 0, `expected nothing, got [${got.join(', ')}]`);
 }
+// A combination written with "/" is not our single product (PS 107827); a salt after "/" still is (PhilGEPS 13296270)
+check('combination with /', match("Cetirizine / Phenylephrine HCL, 5mg/10mg tablet x 10's 267 5,874.00").length === 0, 'combination matched');
+check('salt after /', match('47 20,000 tablet 6,800.00 Cetirizine as Dihydrochloride/ Hydrochloride 10mg').includes('Cetirizine'), 'salt read as a combination');
+check('single after combination list', match("101 Cetirizine, 10mg tablet 9014 288,448.00").includes('Cetirizine'), 'single not matched');
+// The row's own form wins over the next row's (PhilGEPS 13284382: our Folic Acid is a tablet)
+check("own form over the next row's", match('Capsule Folic Acid 5 mg capsule 5,000 5.00 25,000.00\nTablet Ferrous Salt tablet, (equiv. to 60 mg').length === 0, 'capsule matched by the next row');
+check('form on the next line still counts', match('Folic Acid 5 mg\ntablet 1,000 2.00 2,000.00').includes('Folic Acid'), 'wrapped tablet not matched');
 // A dosage on the next line of a wrapped table row
 check('dosage on the following line', match('3 Paclitaxel\n300 mg/50 ml vial\n').includes('Paclitaxel'), 'wrapped row not matched');
 // Another ingredient's dose is not ours (PS 102904: Niacin 1-5mg in a vitamin B complex)

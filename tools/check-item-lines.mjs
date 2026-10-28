@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, rowAhead, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, rowAhead, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -388,6 +388,20 @@ expect(parseItemRow(ABCITEM, 4), { quantity: 90, total: 62100 }, 'ABC per item h
 const ABCUNIT = ['TECHNICAL SPECIFICATION', 'Item', 'No. Quantity unit Item Description ABC Unit Price', '1. 360 bot D5 IMB 500ml 120.00', '24. 150 vials Cefoxitin 1g 680.00'];
 carryHeader(ABCUNIT, null);
 expect(parseItemRow(ABCUNIT, 4), { quantity: 150, unit_price: 680 }, 'ABC Unit Price is the unit price');
+// Item | Qty | Unit | ABC | Description: the amount before the description is the line's total unless only a unit
+// price makes sense (PhilGEPS 13296270, 13295470, 13298283)
+expect(parseItemLine('42 30,000 tablet 555,000.00 Capecitabine 500 mg Tablet'), { quantity: 30000, total: 555000 }, 'amount before the description (total)');
+expect(parseItemLine('17 400 vial 23,400.00 Cefepime Hydrochloride 1g injection (IM, IV)'), { quantity: 400, total: 23400 }, 'amount before the description (vial total)');
+expect(parseItemLine('1 12,000 pfs 4,560,000.00 Epoetin Alfa 4000 IU/ 0.4ml pre filled syringe (IM, SC)'), { quantity: 12000, total: 4560000 }, 'amount before the description (pfs)');
+// A tender bought as one lot: its Schedule of Requirements' Quantity says so (PhilGEPS 13307875, 13270736, 13274749),
+// or its price list is headed by the whole as one lot (PhilGEPS 13299815); a Bid Data Sheet's "1 lot" alone never
+// (PS 97220), nor the schedule's entry in a table of contents
+assert.equal(lotSchedule(['Section VI. Schedule of Requirements', 'Item', 'No. Description Quantity Total Delivery', 'Schedule', '1 Supply and Delivery of Drugs', 'and Medicines 1 lot', '(160', 'items', 'only)']), true, 'SoR quantity 1 lot');
+assert.equal(lotSchedule(['Section VI. Schedule of Requirements', 'Item', 'Number Description Quantity Total Delivery Schedule', '1.', 'SUPPLY AND DELIVERY', 'OF 258 PACK CESAREAN', 'PACK', '1 LOT', 'Delivery of items']), true, 'SoR quantity 1 LOT on its own line');
+assert.equal(lotSchedule(['ITEM CEILING UNIT TOTAL', 'NO. PRICE PRICE PRICE', '1 LOT VARIOUS DRUG AND MEDICINES 6,282,909.00', '1 Vial 0.9% Sodium Chloride 100ml Plastic Vial for IV Infusion Bag 75.00']), true, 'price list headed by one lot');
+assert.equal(lotSchedule(['1.1 The Procuring Entity is the MUNICIPALITY OF TANGALAN.', '1.2 The number of lot(s): 1 lot', 'Section VI. Schedule of Requirements', '1 Cetirizine 10mg tablet 40 box']), false, 'Bid Data Sheet 1 lot is not a lot');
+assert.equal(lotSchedule(['Section VI. Schedule of Requirements ........................ 67', 'Section VII. Technical Specifications ..... 68', '1 lot']), false, 'table of contents');
+assert.equal(lotSchedule(['Section VI. Schedule of Requirements', '5 Oxygen refill 20 tank 1,200.00 24,000.00', '6 Cetirizine 10mg 1,000 tablet 0.80 800.00']), false, 'itemised schedule');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -400,4 +414,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 29} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 38} rows).`);

@@ -19,6 +19,8 @@ const SALT = String.raw`(?:hydrochloride|hcl|sodium|potassium|carbonate|monohydr
 // "(as X)" starting with a salt ("as sodium", "as hydrochloride with arginine"): dropped. Otherwise X is the
 // molecule itself ("Iodine (as Iohexol)")
 const AS_SALT = new RegExp(`^${SALT}\\b`, 'i');
+// A salt, form or pack word after a "/" (never a combination partner: "Cetirizine/ Dihydrochloride", "Ampule/Vial")
+const SALT_OR_FORM = new RegExp(`^(?:${SALT}|dihydrochloride|sulfate|sulphate|bromide|chloride|tablets?|capsules?|vials?|ampoules?|ampules?|bottles?|syringes?|solution|suspension|syrup|injection|infusion|blister|boxes)$`, "i");
 
 // Spelling fixes of names as written in the lists
 const NAME_FIXES = { cisatractcurium: 'Cisatracurium' };
@@ -381,6 +383,10 @@ export function buildMatcher(products) {
     const ingredient = String.raw`[,;]\s*(?!${label})(?:[A-Z][A-Za-z .]{1,30}:|[A-Z][a-z]{2,}\s+\d)`;
     const boundary = new RegExp(entry.name.includes('+') ? `${ingredient}|${nextRow}` : String.raw`\s\+\s*([A-Za-z]+)|${ingredient}|${nextRow}`, 'g');
     const after = rest.slice(entry.name.length);
+    // A combination written with "/" right after our name ("Cetirizine / Phenylephrine HCL, 5mg/10mg tablet", PS 107827):
+    // its strengths are the pair's, none of them ours alone. Not a salt or form ("Cetirizine/ Dihydrochloride")
+    const partner = /^\s*\/\s*([A-Z][A-Za-z]{4,})/.exec(after);
+    if (partner && !SALT_OR_FORM.test(partner[1]) && !entry.generics.some((g) => g.includes(partner[1].toLowerCase()))) return rest.slice(0, entry.name.length);
     for (const m of after.matchAll(boundary)) {
       if (m[1] && entry.generics.some((g) => g.includes(m[1].toLowerCase()))) continue;
       return rest.slice(0, entry.name.length + m.index);
@@ -390,8 +396,11 @@ export function buildMatcher(products) {
   const line = (text, next = '') => {
     if (!text) return [];
     const window = `${text}\n${next}`;
+    // A form the row's own line names is the row's; the next lines' forms count only when it names none ("Capsule
+    // Folic Acid 5 mg capsule ..." / "Tablet Ferrous Salt tablet ...": not our tablet, PhilGEPS 13284382)
+    const formText = formsIn(text).size ? text : window;
     return names(text)
-      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, window) && !d.otherStrength?.(ownPart(p, window)) && specialKinds(ownPart(p, window)).every((kind) => d.kinds.has(kind))))
+      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, formText) && !d.otherStrength?.(ownPart(p, window)) && specialKinds(ownPart(p, window)).every((kind) => d.kinds.has(kind))))
       .map((p) => p.name);
   };
   const details = (text) => {
