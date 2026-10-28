@@ -43,6 +43,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | Sub-numbered rows ("8.3 PROPOFOL") | PhilGEPS 13309069 | `ROW_START` |
 | Row starting with its unit ("Tablet Ferrous Salt ...", any case) | PhilGEPS 13286049, 13284382 | `UNIT_FIRST_ROW` |
 | A row ends at its own numbers; the next line's numbers are another row's | PhilGEPS 13284382 | `rowText` (`ENDS_IN_NUMBERS`) |
+| Quantity-first rows: the next row starts with its number and quantity ("22 30 PCS MICROSET ... 1,050.00" / "23 4 sox ...") | PhilGEPS 13308352 | `withoutNextRow`, `numbersBelow`, `ENDS_IN_NUMBERS` |
 | Rows without numbers, one per line, each ending in its amounts | PS 106360 | `rowAhead` |
 | Lot heading and subtotal alone on a line ("LOT 2 2,395,500.00") | PhilGEPS 13292592 | `LOT_HEADING` |
 | Bidder fields under each row (brand, packaging, CPR, Amount In Words) | PhilGEPS 13300232 | `FORM_TEXT` |
@@ -84,6 +85,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | A lone ABC column ("ABC", "ABC per Item", "ABC Per Line Item") | PS 106895 (unit prices), PhilGEPS 13300773 (totals) | `abcColumn`: judged per table |
 | No header, one amount per row | PS 107827 | `pageAmountMeaning`: judged per page |
 | A carried header naming one amount column that the page's rows contradict | PhilGEPS 13286557 | `withPageMeaning` |
+| A page's meaning never applied to a row it makes no sense for: a box of 100 tablets at ₱1,125 stays a box price; ₱11 a tablet with a garbled total stays ₱11 | PhilGEPS 13309776, PS 108640 | `withPageMeaning`, `sensibleUnitPrice` (pack units) |
 | "ABC Unit Price", "ABC Total" are one column each | PhilGEPS 13298236 | `HEADER_WORDS` |
 | Bidder columns left empty: "Unit Bid Price", "Unit Offer", "Total Offer", "Amount in Words", the Price Schedule form's "Unit price CIF / EXW / DDP", "Total Price delivered" | PhilGEPS 13309750, 13282462, PS 107827 | `HEADER_WORDS` bid |
 | Unit Cost / Total Cost after an ABC column are the bidder's | PS 106895 | `headerColumns` (`abcSeen`) |

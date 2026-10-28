@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, rowAhead, withBothAmounts } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -417,6 +417,16 @@ const STARS = ['Item No. Description Quantity Total Delivery', '17 **Bupivacaine
 carryHeader(STARS, null);
 expect(parseItemRow(STARS, 1), { quantity: 570, total: 370500 }, 'next row after marks');
 assert.ok(!/Butamirate/.test(parseItemRow(STARS, 1).written), 'next row after marks is not part of the row');
+// One amount meaning per page never turns a row into a reading that makes no sense for it: a box of 100 tablets at
+// ₱1,125 stays ₱1,125 a box (PhilGEPS 13309776); ₱11 a tablet whose total the scan garbled stays ₱11 (PS 108640)
+const BOXES = ["48 450 Box Cetirizine Dihydrochloride 10 mg Tablet, Box of 100's 1,125.00", "87 2100 Box Etoricoxib 60mg Film-Coated Tablet, Box of 30's 2,700.00", "90 300 Box Loratadine 10mg Tablet, Box of 100's 600.00"];
+expect(withPageMeaning(BOXES, 0, parseItemRow(BOXES, 0)), { quantity: 450, unit_price: 1125 }, 'box price stays a box price');
+const TOTALS = ['1 Amlodipine 5mg tablet 30,000 15,000.00', '2 Losartan 50mg tablet 20,000 60,000.00', '3 Metformin 500mg tablet 40,000 80,000.00', 'Sevelamer 800 mg tablet'];
+expect(withPageMeaning(TOTALS, 3, { quantity: 35000, unit_price: 11, description: 'Sevelamer 800 mg tablet' }), { quantity: 35000, unit_price: 11 }, 'never a total that makes no sense');
+// A quantity-first next row ends the row ("23 4 sox ..."), PhilGEPS 13308352
+const QTYNEXT = ['ITEM NO. QTY UNIT DESCRIPTION UNIT COST TOTAL COST', '22 30 PCS MICROSET (PEDIA) 35.00 1,050.00', '23 4 sox Thypolleenic. paper Succ tape, (3M) 4 950.00 3.800.00'];
+carryHeader(QTYNEXT, null);
+expect(parseItemRow(QTYNEXT, 1), { quantity: 30, unit_price: 35, total: 1050 }, 'quantity-first next row ends the row');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -429,4 +439,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 45} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 48} rows).`);
