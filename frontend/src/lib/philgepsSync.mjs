@@ -530,6 +530,23 @@ export async function fetchTender(session, supabase, o, step) {
 
 // ---------- which tenders ----------
 
+// Every tender, page by page: one query returns at most 1,000 rows, and the table outgrew that (1,101 on
+// 2026-10-28: about 100 tenders, a different 100 each time, were never seen by any Sync)
+const PAGE_ROWS = 1000;
+async function allTenders(supabase) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_ROWS) {
+    const { data, error } = await supabase
+      .from('philgeps_opportunities')
+      .select('ref_no, title, publish_date, closing_date, abc_amount, matched_molecules, items_text, details')
+      .order('id')
+      .range(from, from + PAGE_ROWS - 1);
+    if (error) throw new PhilgepsSyncError('DB', error.message);
+    rows.push(...data);
+    if (data.length < PAGE_ROWS) return rows;
+  }
+}
+
 // Same rule as documents.js needsDocuments (with recheckEmpty, as Sync does)
 export function needsDocuments(o, now = Date.now()) {
   const d = o.details || {};
@@ -545,11 +562,15 @@ export { RECHECK_MS };
 // lines the documents have (user, 2026-10-26: order all). These go first: those asking for our products, those
 // naming one of our molecules without our dosage (the documents may give it), and those whose description has
 // no item list (our products can only be in the documents).
+// Also every drugs-and-medicines tender: its notice rarely lists the items (JBLMGH's ₱492.8M "Various Drugs and
+// Medicines" has a long description and no item list)
+const MEDICINES_TENDER = /\b(?:drugs?|medicines?|pharmaceuticals?|vaccines?|antibiotics?|anesthe\w*|oncolog\w*|chemotherap\w*)\b/i;
 export function wantsDocuments(o) {
   return (
     (o.matched_molecules || []).length > 0 ||
     (o.details?.named_without_dosage || []).length > 0 ||
-    (o.items_text || '').length < DESCRIPTION_ITEMS_MIN
+    (o.items_text || '').length < DESCRIPTION_ITEMS_MIN ||
+    MEDICINES_TENDER.test(o.title || '')
   );
 }
 
@@ -708,8 +729,7 @@ export async function runSyncRound() {
   let loggedOut = null;
   try {
     if (await cancelAsked()) return { more: false, cancelled: true };
-    const { data, error } = await supabase.from('philgeps_opportunities').select('ref_no, title, publish_date, closing_date, matched_molecules, items_text, details');
-    if (error) throw new PhilgepsSyncError('DB', error.message);
+    const data = await allTenders(supabase);
     // Without the product list the documents are still downloaded, just not read
     const matchProducts = await optional(job, 'Loading our product list', () => loadMatcher());
 
@@ -728,13 +748,15 @@ export async function runSyncRound() {
         }
       });
     }
-    // Every open tender; the likeliest to be ours first (wantsDocuments), then the dashboard's default order:
+    // Every open tender; the likeliest to be ours first (wantsDocuments), the biggest budget first among them (a
+    // ₱492.8M "Various Drugs and Medicines" tender was left for last and never reached, PhilGEPS 13276588), then
     // newest published first, then highest reference number
     let pending = data
       .filter((o) => needsDocuments(o))
       .sort(
         (a, b) =>
           Number(wantsDocuments(b)) - Number(wantsDocuments(a)) ||
+          (Number(b.abc_amount) || 0) - (Number(a.abc_amount) || 0) ||
           (b.publish_date || '').localeCompare(a.publish_date || '') ||
           (b.ref_no || '').localeCompare(a.ref_no || '')
       );
