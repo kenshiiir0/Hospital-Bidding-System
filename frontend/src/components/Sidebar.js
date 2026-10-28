@@ -32,10 +32,13 @@ const GROUPS = [
     label: 'Screening & Matching',
     links: [{ href: '/screened', label: 'Screened Tenders', icon: '✓' }],
   },
-  // The one product list both sites' tenders are screened against
+  // The one product list both sites' tenders are screened against, and who handles each hospital
   {
     label: 'Catalog Management',
-    links: [{ href: '/products', label: 'Product List', icon: '✚' }],
+    links: [
+      { href: '/products', label: 'Product List', icon: '✚' },
+      { href: '/assigned-persons', label: 'Assigned Persons', icon: '☺' },
+    ],
   },
   // Both sites' History and the system reports (the OCR warning and the OCR layers' last runs)
   {
