@@ -376,9 +376,18 @@ expect(parseItemRow(['64,000.00', '20 Cefazolin 1g (IM,IV) (as', 'Sodium salt)',
 assert.equal(rowAhead(['tablet/capsule Ferrous Salt 60mg elemental iron + Folic Acid 400 mcg 55,000 55,000', 'tablet Ferrous Salt (equiv to 60mg elemental iron) 5,000 5,000', 'tablet/capsule Folic Acid 5mg 1,000 1,000'], 0), '', 'unit-first next row');
 // PS 106895: one amount after "<qty> ampule" is the unit price, whatever other tables in the file do
 expect(parseItemLine('10 Propofol 10mg/ml,20ml Emulsion for injection CPR & COD 500 ampule 200.00'), { quantity: 500, unit_price: 200 }, 'unit price kept');
-const ABCLINE = ['Item', 'No. Description Requirements Qty Unit ABC Per Line', 'Item Unit Cost Total Cost', '10 Propofol 10mg/ml,20ml Emulsion for injection CPR & COD 500 ampule 200.00'];
+const ABCLINE = ['Item', 'No. Description Requirements Qty Unit ABC Per Line', 'Item Unit Cost Total Cost', '1 Divalproex Sodium 500mg CPR & COD 8,000 tablet 23.00', '10 Propofol 10mg/ml,20ml Emulsion for injection CPR & COD 500 ampule 200.00'];
 carryHeader(ABCLINE, null);
-expect(parseItemRow(ABCLINE, 3), { quantity: 500, unit_price: 200 }, 'ABC per line item is the unit price; the bidder columns stay empty');
+expect(parseItemRow(ABCLINE, 4), { quantity: 500, unit_price: 200 }, 'ABC per line item holding unit prices; the bidder columns stay empty');
+// PhilGEPS 13300773: the same kind of column holding the lines' totals; one meaning for the whole table
+const ABCITEM = ['Item', 'No Qty. Unit of', 'Measurement Description ABC per Item', '2 20 Liter (L) Nitrous Oxide 70% ₱207,000.00', '3 90 Vial (vial) Rocorunium 10mg/mL,5mL ₱62,100.00', '19 80 ampules Pyridoxine 1mg ₱4,600.00', '21 8 vial Suggammadex, 100mg/mL,2mL ₱55,200.00'];
+carryHeader(ABCITEM, null);
+expect(parseItemRow(ABCITEM, 6), { quantity: 8, total: 55200 }, 'ABC per item holding totals');
+expect(parseItemRow(ABCITEM, 4), { quantity: 90, total: 62100 }, 'ABC per item holding totals (2)');
+// PhilGEPS 13298236: "ABC Unit Price" is one column, the unit price
+const ABCUNIT = ['TECHNICAL SPECIFICATION', 'Item', 'No. Quantity unit Item Description ABC Unit Price', '1. 360 bot D5 IMB 500ml 120.00', '24. 150 vials Cefoxitin 1g 680.00'];
+carryHeader(ABCUNIT, null);
+expect(parseItemRow(ABCUNIT, 4), { quantity: 150, unit_price: 680 }, 'ABC Unit Price is the unit price');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -391,4 +400,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 26} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 29} rows).`);
