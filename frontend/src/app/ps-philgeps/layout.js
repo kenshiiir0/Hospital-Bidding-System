@@ -7,7 +7,7 @@ import WorkingDots from '@/components/WorkingDots';
 import PageHeader, { blueAction, plainAction } from '@/components/PageHeader';
 import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
-import PsLiveLogin from '@/components/PsLiveLogin';
+import PsConnectModal from '@/components/PsConnectModal';
 import ScrapeProgress from '@/components/ScrapeProgress';
 import OcrHealthNotice from '@/components/OcrHealthNotice';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
@@ -285,6 +285,14 @@ export default function PsPhilgepsLayout({ children }) {
 }
 
 // Closes the Chrome log-in window and shows the log-in page inside the dashboard instead
+// Cancel button of the log-in dialog (stops the cloud log-in, lib/psCloudConnect.mjs)
+const cancelConnect = () =>
+  authFetch('/api/ps-philgeps/live', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cancel: true }),
+  }).catch(() => {});
+
 const switchToLive = () =>
   authFetch('/api/ps-philgeps/live', {
     method: 'POST',
@@ -294,23 +302,20 @@ const switchToLive = () =>
 
 // known: the Sync status has loaded (until then "not connected" isn't known yet)
 function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
-  if (connect?.status === 'starting') {
+  // The log-in shown in a dialog (PsConnectModal): while it starts, then its live picture. hidden: the log-in the
+  // person closed the dialog of (it keeps waiting; the notice reopens it)
+  const [hidden, setHidden] = useState(null);
+  const inDialog = connect?.status === 'starting' || (connect?.status === 'connecting' && connect.view === 'live');
+  if (inDialog) {
+    const key = connect.id || connect.startedAt || 'live';
+    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} />;
     return (
       <Notice>
-        Opening the PS-PhilGEPS log-in page for you (it runs on a secure computer in the cloud, so this works on any
-        device). It appears here in about 1 to 2 minutes; then tick &ldquo;I&rsquo;m not a robot&rdquo; on it.
+        The PS-PhilGEPS log-in is waiting for you to confirm you are not a robot.{' '}
+        <button onClick={() => setHidden(null)} className="font-semibold underline underline-offset-2 hover:text-[#0E5C7C]">
+          Open it
+        </button>
       </Notice>
-    );
-  }
-  if (connect?.status === 'connecting' && connect.view === 'live') {
-    return (
-      <div className="space-y-3">
-        <Notice>
-          Below is the PS-PhilGEPS log-in page with everything filled in. Click &ldquo;I&rsquo;m not a robot&rdquo; on it
-          (and the pictures, if Google asks). The log-in then finishes by itself and the Sync starts.
-        </Notice>
-        <PsLiveLogin />
-      </div>
     );
   }
   if (connect?.status === 'connecting') {
