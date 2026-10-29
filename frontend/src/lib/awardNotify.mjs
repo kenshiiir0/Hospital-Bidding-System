@@ -39,7 +39,7 @@ export function readAwardPage(html) {
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The deployed dashboard's Award Notices page (asks to sign in first when needed)
 // The deployed dashboard (DASHBOARD_URL when the address changes, e.g. after renaming the Vercel project)
-const DASHBOARD = process.env.DASHBOARD_URL || 'https://hospital-bidding-automation.vercel.app';
+const DASHBOARD = process.env.DASHBOARD_URL || 'https://government-bidding-automation.vercel.app';
 const dashboardUrl = () => {
   const host = process.env.DASHBOARD_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`) || DASHBOARD;
   return `${host.replace(/\/$/, '')}/ps-philgeps/awards`;

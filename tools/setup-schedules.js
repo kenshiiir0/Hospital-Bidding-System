@@ -7,7 +7,7 @@ const { Client } = require('pg');
 // - a quarter past: <site>/api/ps-sync (the PS-PhilGEPS Sync, with the saved session).
 // Replaces cron.js on the office PC. Re-run after changing the site address or CRON_SECRET; --remove
 // unschedules. The PS-PhilGEPS keep-alive has its own tool (setup-keepalive.js).
-//   node tools/setup-schedules.js https://hospital-bidding-automation.vercel.app
+//   node tools/setup-schedules.js https://government-bidding-automation.vercel.app
 // (Kept out of schema.sql because the job contains the secret.)
 // 6 AM–5 PM in Manila (UTC+8) = 22:00–09:00 UTC
 const JOBS = [
