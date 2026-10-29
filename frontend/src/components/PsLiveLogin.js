@@ -2,29 +2,68 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
+import { supabase } from '@/lib/supabase';
 
 // Live picture of the PS-PhilGEPS log-in page while connecting. The log-in runs out of sight with
 // everything filled in; the person clicks "I'm not a robot" (and any image challenge) on this picture
-// and each click is passed to the real page. Refreshed every 0.7 s.
+// and each click is passed to the real page.
+// streamId (the cloud log-in, tools/ps-connect-cloud.js): pictures and clicks travel on the private Realtime
+// channel "ps-connect:<id>" (team accounts only), a fraction of a second each way. Without it, or while the
+// channel isn't delivering, the picture is fetched every POLL_MS through the server and clicks are posted.
 // Until the first click only the log-in box shows (FOCUS, in page pixels of the 1000 x 760 picture), so it reads
 // as a step of the dashboard rather than a whole website; after it, the whole page, so Google's picture puzzle
 // (which opens beside the box) is never cut off.
 const FOCUS = { x: 500, y: 330, w: 360, h: 430 };
+const POLL_MS = 700;
+// The channel counts as live while a picture came on it this recently
+const STREAM_FRESH_MS = 3000;
 
-export default function PsLiveLogin() {
+export default function PsLiveLogin({ streamId = null }) {
   const [src, setSrc] = useState(null);
   const [clicked, setClicked] = useState(null);
   const [whole, setWhole] = useState(false);
   const imgRef = useRef(null);
+  const channelRef = useRef(null);
+  const streamedAt = useRef(0);
 
+  // The live channel (cloud log-in)
+  useEffect(() => {
+    if (!streamId) return;
+    let channel;
+    let stopped = false;
+    (async () => {
+      await supabase.realtime.setAuth().catch(() => {});
+      if (stopped) return;
+      channel = supabase.channel(`ps-connect:${streamId}`, { config: { private: true, broadcast: { self: false } } });
+      channel
+        .on('broadcast', { event: 'frame' }, ({ payload }) => {
+          if (!payload?.f) return;
+          streamedAt.current = Date.now();
+          setSrc(`data:image/jpeg;base64,${payload.f}`);
+        })
+        .subscribe((status) => {
+          if (status !== 'SUBSCRIBED') return;
+          channelRef.current = channel;
+          channel.send({ type: 'broadcast', event: 'hello', payload: {} });
+        });
+    })();
+    return () => {
+      stopped = true;
+      channelRef.current = null;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [streamId]);
+
+  // The fallback: the picture through the server, while the channel isn't delivering
   useEffect(() => {
     let stopped = false;
     let current = null;
     const load = async () => {
+      if (Date.now() - streamedAt.current < STREAM_FRESH_MS) return;
       try {
         // (signed in: on the deployed dashboard the picture comes from the cloud log-in, lib/psCloudConnect.mjs)
         const res = await authFetch('/api/ps-philgeps/live', { cache: 'no-store' });
-        if (res.status === 200) {
+        if (res.status === 200 && Date.now() - streamedAt.current >= STREAM_FRESH_MS) {
           const url = URL.createObjectURL(await res.blob());
           if (stopped) return URL.revokeObjectURL(url);
           setSrc(url);
@@ -34,7 +73,7 @@ export default function PsLiveLogin() {
       } catch {}
     };
     load();
-    const timer = setInterval(load, 700);
+    const timer = setInterval(load, POLL_MS);
     return () => {
       stopped = true;
       clearInterval(timer);
@@ -52,6 +91,11 @@ export default function PsLiveLogin() {
     const y = view.y + (e.clientY - frame.top) * scale;
     setClicked({ left: e.clientX - frame.left, top: e.clientY - frame.top, at: Date.now() });
     setTimeout(() => setWhole(true), 600);
+    // Every click on its own, straight to the log-in page on the live channel; else through the server
+    if (channelRef.current && Date.now() - streamedAt.current < STREAM_FRESH_MS) {
+      const sent = await channelRef.current.send({ type: 'broadcast', event: 'click', payload: { x, y } }).catch(() => null);
+      if (sent === 'ok') return;
+    }
     await authFetch('/api/ps-philgeps/live', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -76,7 +120,7 @@ export default function PsLiveLogin() {
         className="relative w-full cursor-pointer select-none overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-[#0B2545] shadow-sm"
         style={whole ? undefined : { aspectRatio: `${FOCUS.w} / ${FOCUS.h}` }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- live JPEG frames from a blob URL */}
+        {/* eslint-disable-next-line @next/next/no-img-element -- live JPEG frames (data or blob URL) */}
         <img
           ref={imgRef}
           src={src}

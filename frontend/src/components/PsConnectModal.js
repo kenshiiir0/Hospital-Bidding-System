@@ -61,7 +61,7 @@ export default function PsConnectModal({ connect, onHide, onCancel }) {
         )}
       </p>
       {opened ? (
-        <PsLiveLogin />
+        <PsLiveLogin streamId={connect?.id || null} />
       ) : (
         <div className="flex flex-col items-center justify-center gap-3 rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-14 text-center">
           <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-[#1EA0DA]/25 border-t-[#1EA0DA]" aria-hidden />

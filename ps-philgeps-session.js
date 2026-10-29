@@ -150,7 +150,8 @@ async function launchLoginWindow() {
 // "CLICK <x> <y>" (page pixels) are the person's clicks on that picture, passed to the page. Used because
 // on some PCs a visible automated Chrome window stays blank white.
 const LIVE_VIEWPORT = { width: 1000, height: 760 };
-const LIVE_FRAME_MS = 500;
+// (the cloud log-in streams faster: PS_LIVE_FRAME_MS, tools/ps-connect-cloud.js)
+const LIVE_FRAME_MS = Number(process.env.PS_LIVE_FRAME_MS) || 500;
 
 async function launchLive() {
     const puppeteer = require('puppeteer');
@@ -179,7 +180,7 @@ function startLiveView(page) {
         if (busy) return;
         busy = true;
         try {
-            const frame = await page.screenshot({ type: 'jpeg', quality: 70, encoding: 'base64' });
+            const frame = await page.screenshot({ type: 'jpeg', quality: Number(process.env.PS_LIVE_QUALITY) || 70, encoding: 'base64' });
             process.stdout.write(`FRAME ${frame}\n`);
         } catch {} // page is navigating
         busy = false;

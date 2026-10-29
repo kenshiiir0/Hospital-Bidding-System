@@ -398,3 +398,13 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+
+-- PS-PhilGEPS reconnect from any device (lib/psCloudConnect.mjs, tools/ps-connect-cloud.js): the cloud log-in's
+-- picture and the person's clicks travel on a private Realtime channel "ps-connect:<id>". Only signed-in team
+-- accounts (app_metadata.team) may watch it or send clicks; the cloud job uses the secret key.
+DROP POLICY IF EXISTS "team watches ps-connect" ON realtime.messages;
+CREATE POLICY "team watches ps-connect" ON realtime.messages FOR SELECT TO authenticated
+    USING (realtime.topic() LIKE 'ps-connect:%' AND COALESCE((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "team clicks ps-connect" ON realtime.messages;
+CREATE POLICY "team clicks ps-connect" ON realtime.messages FOR INSERT TO authenticated
+    WITH CHECK (realtime.topic() LIKE 'ps-connect:%' AND COALESCE((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
