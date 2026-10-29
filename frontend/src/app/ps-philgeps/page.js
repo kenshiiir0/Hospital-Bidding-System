@@ -8,7 +8,7 @@ import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import { stillReading } from '@/lib/documentsReading';
 import { usePsFilters, PS_SORTS } from '@/components/PsFilters';
-import { MultiSelectDropdown, NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { LotPill, MultiSelectDropdown, NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
 import { useExcludedProducts } from '@/lib/excludedProducts';
 import { useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
@@ -152,6 +152,7 @@ export default function BidMatchPage() {
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5 font-semibold">
                     <RefLink row={row} />
+                    {notices[psRefOf(row)]?.lot && <LotPill />}
                     {isNew(row) && <NewPill />}
                   </div>
                   <div className="flex flex-wrap gap-1">

@@ -961,6 +961,18 @@ export function PublishedTag({ text }) {
   );
 }
 
+/** "LOT" on a tender bought as one package or lot: the whole tender goes to one bidder (lib/packageTender.js). */
+export function LotPill() {
+  return (
+    <span
+      className="inline-flex items-center rounded-md bg-black/8 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide text-black/80"
+      title="Bought as one lot: the Schedule of Requirements awards the whole tender to one bidder"
+    >
+      Lot
+    </span>
+  );
+}
+
 /** "NEW" on a tender fetched since it was last read (lib/newTenders.js). */
 export function NewPill() {
   return (

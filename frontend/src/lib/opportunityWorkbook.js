@@ -260,13 +260,15 @@ export function philgepsTender(bid) {
   const d = bid.details || {};
   const bds = d.documents_bid_data_sheet || {};
   const contact = splitContact(d.contact_info);
+  // A tender bought as one lot: its Type reads e.g. "ITB LOT" (lib/packageTender.js)
+  const lot = isPackageTender(bid.items_text, d.package);
   return {
-    type: philgepsType(d.notice_type).code,
+    type: `${philgepsType(d.notice_type).code}${lot ? ' LOT' : ''}`,
     solicitationNo: d.solicitation_no || '',
     published: bid.publish_date || '',
     hospital: bid.procuring_entity || '',
     ref: bid.ref_no || '',
-    molecules: isPackageTender(bid.items_text, d.package) ? [] : moleculeRows(d.matched_items, d.documents_items, bid.matched_molecules || []),
+    molecules: moleculeRows(d.matched_items, d.documents_items, bid.matched_molecules || []),
     // What the bid documents say, else the notice's description (as in View details)
     preBid: bidDateText(bds.prebid_conference) || d.pre_bid || '',
     bidOpening: bidDateText(bds.bid_opening) || d.bid_opening || '',
@@ -310,8 +312,9 @@ export function psTender(row, headers, notice, reading) {
   const products = [...new Set([...(notice?.matched || []), ...(done?.items || []).flatMap((i) => i.our_products)])];
   // The notice's "closing" text sometimes runs on into "Date Last updated: 14-Oct-2026 09:11 AM ..."
   const lastUpdated = psDate(schedule.lastUpdated) || psDate(/Last updated:\s*([^\n]+)/i.exec(schedule.closing || '')?.[1]);
+  const lot = notice?.lot || isPackageTender('', reading?.result?.package);
   return {
-    type: psType(cell('Mode of Procurement')).code,
+    type: `${psType(cell('Mode of Procurement')).code}${lot ? ' LOT' : ''}`,
     solicitationNo: PS_SR_NO,
     published: psDate(cell('Publish Date'))?.iso || '',
     hospital: cell('Agency name'),

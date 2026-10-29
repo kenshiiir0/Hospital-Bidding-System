@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { CustomSelect, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { CustomSelect, LotPill, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
 import PageHeader, { KpiRow, blueAction, pesoTotal, plainAction } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
 import { reportUnread, useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
@@ -736,6 +736,7 @@ export default function Home() {
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5 font-semibold">
                         <RefLink bid={bid} />
+                        {bid.lot && <LotPill />}
                         {isNew(bid) && <NewPill />}
                       </div>
                       {/* Type and PhilGEPS status side by side, as on the PS-PhilGEPS list */}
