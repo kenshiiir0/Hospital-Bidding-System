@@ -154,7 +154,15 @@ const LIVE_FRAME_MS = 500;
 
 async function launchLive() {
     const puppeteer = require('puppeteer');
-    const options = { headless: true, userDataDir: path.join(STATE_DIR, 'chrome-profile'), defaultViewport: LIVE_VIEWPORT };
+    // PS_LIVE_HEADFUL=1: a normal Chrome on a virtual screen (the cloud log-in, tools/ps-connect-cloud.mjs under
+    // xvfb), which Google's captcha trusts more than a hidden browser
+    const headful = process.env.PS_LIVE_HEADFUL === '1';
+    const options = {
+        headless: !headful,
+        userDataDir: path.join(STATE_DIR, 'chrome-profile'),
+        defaultViewport: LIVE_VIEWPORT,
+        ...(headful && { args: ['--no-sandbox', `--window-size=${LIVE_VIEWPORT.width},${LIVE_VIEWPORT.height + 140}`] })
+    };
     try {
         return await puppeteer.launch({ ...options, channel: 'chrome' });
     } catch {

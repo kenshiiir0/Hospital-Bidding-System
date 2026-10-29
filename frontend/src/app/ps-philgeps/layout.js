@@ -68,7 +68,7 @@ export default function PsPhilgepsLayout({ children }) {
 
   const loadConnect = useCallback(async () => {
     try {
-      const res = await fetch('/api/ps-philgeps');
+      const res = await authFetch('/api/ps-philgeps');
       setConnect(res.ok ? (await res.json()).job : false);
     } catch {
       setConnect(false);
@@ -76,7 +76,8 @@ export default function PsPhilgepsLayout({ children }) {
   }, []);
 
   const syncing = sync?.status === 'running';
-  const connecting = connect?.status === 'connecting';
+  // starting: the cloud log-in browser is being started (any device, lib/psCloudConnect.mjs)
+  const connecting = connect?.status === 'connecting' || connect?.status === 'starting';
 
   // Bottom-left progress ring, as on the PhilGEPS Dashboard: shown while a Sync runs (anyone's), then its
   // result for the run this page watched; a success hides itself after 6 s, a failure stays until closed
@@ -293,6 +294,14 @@ const switchToLive = () =>
 
 // known: the Sync status has loaded (until then "not connected" isn't known yet)
 function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
+  if (connect?.status === 'starting') {
+    return (
+      <Notice>
+        Opening the PS-PhilGEPS log-in page for you (it runs on a secure computer in the cloud, so this works on any
+        device). It appears here in about 1 to 2 minutes; then tick &ldquo;I&rsquo;m not a robot&rdquo; on it.
+      </Notice>
+    );
+  }
   if (connect?.status === 'connecting' && connect.view === 'live') {
     return (
       <div className="space-y-3">

@@ -1,0 +1,38 @@
+# PS-PhilGEPS Connect from any device: started by the deployed dashboard (lib/psCloudConnect.mjs) when someone
+# presses Sync PS-PhilGEPS and the log-in has ended. Runs the log-in page in Chrome on GitHub's computer and shows
+# its picture in the dashboard, where the person ticks "I'm not a robot" (tools/ps-connect-cloud.js).
+# Needs the repository secrets SUPABASE_URL, SUPABASE_KEY, PS_PHILGEPS_USERNAME and PS_PHILGEPS_PASSWORD
+# (Settings > Secrets and variables > Actions).
+name: Connect PS-PhilGEPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      id:
+        description: Connect id from the dashboard
+        required: true
+
+# One log-in at a time
+concurrency:
+  group: ps-connect
+  cancel-in-progress: true
+
+jobs:
+  connect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # The project root's packages (puppeteer brings its own Chrome)
+      - run: npm ci --no-audit --no-fund
+      - name: Log in (a person ticks the captcha on the dashboard)
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" node tools/ps-connect-cloud.js "${{ inputs.id }}"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PS_PHILGEPS_USERNAME: ${{ secrets.PS_PHILGEPS_USERNAME }}
+          PS_PHILGEPS_PASSWORD: ${{ secrets.PS_PHILGEPS_PASSWORD }}

@@ -5,7 +5,7 @@ import { authFetch } from '@/lib/authFetch';
 
 // Live picture of the PS-PhilGEPS log-in page while connecting. The log-in runs out of sight with
 // everything filled in; the person clicks "I'm not a robot" (and any image challenge) on this picture
-// and each click is passed to the real page. Refreshed twice a second.
+// and each click is passed to the real page. Refreshed every 0.7 s.
 export default function PsLiveLogin() {
   const [src, setSrc] = useState(null);
   const [clicked, setClicked] = useState(null);
@@ -16,7 +16,8 @@ export default function PsLiveLogin() {
     let current = null;
     const load = async () => {
       try {
-        const res = await fetch('/api/ps-philgeps/live', { cache: 'no-store' });
+        // (signed in: on the deployed dashboard the picture comes from the cloud log-in, lib/psCloudConnect.mjs)
+        const res = await authFetch('/api/ps-philgeps/live', { cache: 'no-store' });
         if (res.status === 200) {
           const url = URL.createObjectURL(await res.blob());
           if (stopped) return URL.revokeObjectURL(url);
@@ -27,7 +28,7 @@ export default function PsLiveLogin() {
       } catch {}
     };
     load();
-    const timer = setInterval(load, 500);
+    const timer = setInterval(load, 700);
     return () => {
       stopped = true;
       clearInterval(timer);
