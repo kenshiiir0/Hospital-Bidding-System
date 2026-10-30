@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -455,4 +455,27 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58} rows).`);
+// PhilGEPS 13316606: the peso sign scanned as the letter P, a loose "P" before the total, stray marks between cells
+expect(parseItemRow(['241 Heparin (unfractionated) 5000 IU/ml, 5ml vial vial 5,100 P185.79 P 947,529.00'], 0), { quantity: 5100, unit_price: 185.79, total: 947529 }, 'peso sign read as P');
+expect(parseItemRow(['98 Capecitabine 500mg tablet tablet ~~ 60,000 P17.00 P 1,020,000.00'], 0), { quantity: 60000, unit_price: 17, total: 1020000 }, 'stray marks between cells');
+// ... and pages scanned column by column: descriptions, then quantities, unit prices, totals (or numbered rows with
+// their quantity, then the two amount columns); put back together only when the columns add up
+const NAMES = ['361', '362', '363', '364', '365', '', 'Ondansetron 2mg/ml, 4 ml ampule ampule', 'Ondansetron 8 mg {ablet tablet', 'Oftoxacin 0.3% , Sm bottle {ear drops solution) bottle', 'Methotrexate 100mg/ml , 10ml vial (iM, [V,', 'Intrathecal)', 'Paliperidone 100mg/ml prolonged-release', 'suspension for injection prs', ''];
+const QUANTITIES = ['2,000', '500', '150', 'a0', '45'];
+const COLUMN_PAGE = [...NAMES, ...QUANTITIES, '$41.34', 'P58.00', '$120.00', 'P 102.00', '$6,066.07', 'P 82,680.00', 'P 29,000.00', 'P 18,000.00', 'P 3,060.00', 'P 272,973.15'];
+const columns = columnRows(COLUMN_PAGE);
+assert.deepEqual(columns?.rows.get(6), { text: 'Ondansetron 2mg/ml, 4 ml ampule ampule', quantity: 2000, unit_price: 41.34, total: 82680 }, 'column page: first row');
+assert.equal(columns.rows.get(7).total, 29000, 'column page: second row');
+assert.equal(columns.rows.has(9), false, 'column page: a garbled quantity gives no row');
+assert.ok(columns.inside.has(10), 'column page: "Intrathecal)" goes on the row above');
+assert.equal(columns.rows.get(11).total, 272973.15, 'column page: a row over two lines');
+const NUMBERED_PAGE = ['490 Vancomycin 500mg vial vial 6,500', '491 Vasopressin 201U/ml ampule ampule 1,800', '495 Vincristine (as sulfate) 1mg/ml, 2ml vial vial 100', 'J 480 Tranexamic 100mg/mL, 5ml ampule 30,500', '501 Zinc solution (equiv to 20mg elemental zinc /5ml) bottle', 'syrup , 60 ml (as sulfate monohydrate) 690', 'Chairperson, Bids and Awards Committee', '$54.89', 'P243.84', '$850.00', 'P16.44', 'P31.50', 'P 356,785.00', 'P 438,912.00', 'P 85,000.00', 'P 501,420.00', 'P 21,735.00', 'Php 143,911,099.22'];
+assert.deepEqual(columnRows(NUMBERED_PAGE)?.rows.get(0), { text: '490 Vancomycin 500mg vial vial 6,500', quantity: 6500, unit_price: 54.89, total: 356785 }, 'numbered rows with amount columns');
+assert.equal(columnRows(NUMBERED_PAGE).rows.get(4).quantity, 690, 'numbered row with its quantity on its second line');
+assert.equal(columnRows(['1 Amlodipine 5 mg tablet 100 2.00 200.00', '2 Losartan 50 mg tablet 100 3.00 300.00']), null, 'an ordinary table is not a column page');
+assert.equal(columnRows([...NAMES, ...QUANTITIES, '$1.00', 'P58.00', '$120.00', 'P 102.00', '$6,066.07', 'P 82,680.00', 'P 9.00', 'P 18.00', 'P 3,060.00', 'P 2.15']), null, 'columns that do not add up are not put together');
+
+expect(parseItemRow(['212 Filgrastim (G-CSF) 300mcg/0.5mi solution for', '', 'injection in prefilled syringe pfs 100 P514.56 P 51,456.00', '213 Finasteride 5mg tablet tablet 3,500 P11.67 P 40,845.00'], 0), { quantity: 100, unit_price: 514.56, total: 51456 }, 'a row cut mid-phrase goes on past a blank line');
+expect(parseItemRow(['212 Filgrastim (G-CSF) 300mcg/0.5mi vial', '', '100 514.56 51,456.00'], 0), { quantity: undefined }, 'a finished row does not take the numbers after a blank line');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 14} rows).`);

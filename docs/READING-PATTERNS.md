@@ -122,6 +122,14 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | Misspelled names ("Rocorunium", "Epoeitin", "Suggammadex") | several | `misspelledNames` |
 | A product named only in a "with ..." after another of ours is an accessory, not the item ("Paclitaxel 6 mg/ml, 25 ml ... with IV infusion set in every delivery": not our infusion set) | PhilGEPS 13316656 | `accessory` |
 
+### Scans read column by column (rules-55, PhilGEPS 13316606)
+
+| Document does | Example | Rule |
+|---|---|---|
+| Peso sign scanned as the letter P, loose or glued ("5,100 P185.79 P 947,529.00"); stray "~~" between cells | 13316606 pages 2-9 | `withoutRules` (a single "~" stays: it is a cell break, PhilGEPS 13295969) |
+| OCR gives whole columns one after another: all names, then all quantities, unit prices, totals (or numbered rows with their quantity, then the two amount columns) | 13316606 pages 10, 11, 13, 14 | `columnRows`: rebuilt only when the counts match and 70%+ of rows add up; a row that does not add up keeps quantity + total |
+| A row cut mid-phrase ("... solution for") goes on after a blank line | 13316606 Filgrastim | `rowBelow` (`UNFINISHED`) |
+
 ## Not reader problems
 
 - **No prices in the document:** a request for quotation with blank price columns (PS 114030), or a lot price list with ceiling prices only (PhilGEPS 13299815). Shown empty and said so.
