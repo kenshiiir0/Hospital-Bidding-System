@@ -478,4 +478,9 @@ assert.equal(columnRows([...NAMES, ...QUANTITIES, '$1.00', 'P58.00', '$120.00', 
 expect(parseItemRow(['212 Filgrastim (G-CSF) 300mcg/0.5mi solution for', '', 'injection in prefilled syringe pfs 100 P514.56 P 51,456.00', '213 Finasteride 5mg tablet tablet 3,500 P11.67 P 40,845.00'], 0), { quantity: 100, unit_price: 514.56, total: 51456 }, 'a row cut mid-phrase goes on past a blank line');
 expect(parseItemRow(['212 Filgrastim (G-CSF) 300mcg/0.5mi vial', '', '100 514.56 51,456.00'], 0), { quantity: undefined }, 'a finished row does not take the numbers after a blank line');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 14} rows).`);
+// PS 119066-119074: an Excel list's amounts without centavos, by its header and without one; only when they multiply out
+expect(parseItemRow(['Item No. General Description Maximum Quantity Cost per Item Total Cost per Item', '5 Propofol 10 mg/ml, 20ml (IV) MCT/LCT Ampule ampule 3900 220 858000'], 1), { quantity: 3900, unit_price: 220, total: 858000 }, 'plain amounts under a header');
+expect(parseItemRow(['8 Iohexol 350mg iodine/ml, 50ml vial 800 1100 880000'], 0), { quantity: 800, unit_price: 1100, total: 880000 }, 'plain amounts without a header');
+expect(parseItemRow(['8 Iohexol 350mg iodine/ml, 50ml vial 800 1100 880'], 0), { unit_price: undefined, total: undefined }, 'three numbers that do not multiply out are not amounts');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17} rows).`);

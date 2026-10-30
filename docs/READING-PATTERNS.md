@@ -130,6 +130,12 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | OCR gives whole columns one after another: all names, then all quantities, unit prices, totals (or numbered rows with their quantity, then the two amount columns) | 13316606 pages 10, 11, 13, 14 | `columnRows`: rebuilt only when the counts match and 70%+ of rows add up; a row that does not add up keeps quantity + total |
 | A row cut mid-phrase ("... solution for") goes on after a blank line | 13316606 Filgrastim | `rowBelow` (`UNFINISHED`) |
 
+### Amounts without centavos (rules-56, PS 119066, 119071, 119072, 119074)
+
+| Document does | Example | Rule |
+|---|---|---|
+| An Excel list writes "vial 800 1100 880000": no decimals, so no amount was seen and the row went aside as "no ABC" | Region II Trauma and Medical Center | `withCentavos` in `cleanLines` and `parseItemLine`, only when quantity x price = total exactly |
+
 ## Not reader problems
 
 - **No prices in the document:** a request for quotation with blank price columns (PS 114030), or a lot price list with ceiling prices only (PhilGEPS 13299815). Shown empty and said so.
