@@ -394,12 +394,16 @@ expect(parseItemLine('42 30,000 tablet 555,000.00 Capecitabine 500 mg Tablet'), 
 expect(parseItemLine('17 400 vial 23,400.00 Cefepime Hydrochloride 1g injection (IM, IV)'), { quantity: 400, total: 23400 }, 'amount before the description (vial total)');
 expect(parseItemLine('1 12,000 pfs 4,560,000.00 Epoetin Alfa 4000 IU/ 0.4ml pre filled syringe (IM, SC)'), { quantity: 12000, total: 4560000 }, 'amount before the description (pfs)');
 // A tender bought as one lot: its Schedule of Requirements' Quantity says so (PhilGEPS 13307875, 13270736, 13274749),
-// or its price list is headed by the whole as one lot (PhilGEPS 13299815); a Bid Data Sheet's "1 lot" alone never
-// (PS 97220), nor the schedule's entry in a table of contents
+// or its price list is headed by the whole as one lot (PhilGEPS 13299815), or its Bid Data Sheet says one lot even with
+// priced items (user, 2026-10-30, PS 107468); never the schedule's entry in a table of contents, nor two or more lots
 assert.equal(lotSchedule(['Section VI. Schedule of Requirements', 'Item', 'No. Description Quantity Total Delivery', 'Schedule', '1 Supply and Delivery of Drugs', 'and Medicines 1 lot', '(160', 'items', 'only)']), true, 'SoR quantity 1 lot');
 assert.equal(lotSchedule(['Section VI. Schedule of Requirements', 'Item', 'Number Description Quantity Total Delivery Schedule', '1.', 'SUPPLY AND DELIVERY', 'OF 258 PACK CESAREAN', 'PACK', '1 LOT', 'Delivery of items']), true, 'SoR quantity 1 LOT on its own line');
 assert.equal(lotSchedule(['ITEM CEILING UNIT TOTAL', 'NO. PRICE PRICE PRICE', '1 LOT VARIOUS DRUG AND MEDICINES 6,282,909.00', '1 Vial 0.9% Sodium Chloride 100ml Plastic Vial for IV Infusion Bag 75.00']), true, 'price list headed by one lot');
-assert.equal(lotSchedule(['1.1 The Procuring Entity is the MUNICIPALITY OF TANGALAN.', '1.2 The number of lot(s): 1 lot', 'Section VI. Schedule of Requirements', '1 Cetirizine 10mg tablet 40 box']), false, 'Bid Data Sheet 1 lot is not a lot');
+assert.equal(lotSchedule(['1.1 The Procuring Entity is the MUNICIPALITY OF TANGALAN.', '1.2 The number of lot(s): 1 lot', 'Section VI. Schedule of Requirements', '1 Cetirizine 10mg tablet 40 box']), true, 'Bid Data Sheet 1 lot');
+assert.equal(lotSchedule(['The identification number of the Contract is PhilGEPS IB No. 107468.', '1.2 The number of lot(s): One (1)', '2 The Funding Source is:']), true, 'Bid Data Sheet One (1), PS 107468');
+assert.equal(lotSchedule(['1.2 The number of lot(s):', 'One (1)']), true, 'Bid Data Sheet One (1) on the next line');
+assert.equal(lotSchedule(['1.2 The number of lot(s): Two (2)', '2 The Funding Source is:']), false, 'two lots is not one lot');
+assert.equal(lotSchedule(['1.2 The Project is composed of number of lots or items as provided in the BDS, the']), false, 'template sentence is not a lot');
 assert.equal(lotSchedule(['Section VI. Schedule of Requirements ........................ 67', 'Section VII. Technical Specifications ..... 68', '1 lot']), false, 'table of contents');
 assert.equal(lotSchedule(['Section VI. Schedule of Requirements', '5 Oxygen refill 20 tank 1,200.00 24,000.00', '6 Cetirizine 10mg 1,000 tablet 0.80 800.00']), false, 'itemised schedule');
 // A cut-off name's row ends at the next row's number alone on its line (PhilGEPS 13305194: row 11's 10 mg is not row 10's)
@@ -439,4 +443,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 48} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 52} rows).`);

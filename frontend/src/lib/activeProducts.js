@@ -19,27 +19,28 @@ export function loadActiveNames() {
   return cached;
 }
 
-/** A PhilGEPS tender with only active molecules in matched_molecules (no list known: unchanged); lot: bought as one
- * package or lot, shown flagged LOT (lib/packageTender.js) */
+/** A PhilGEPS tender with only active molecules in matched_molecules (no list known: unchanged); none for a tender
+ * bought as one package or lot (lib/packageTender.js) */
 export function activeTender(bid, active) {
-  const lot = isPackageTender(bid.items_text, bid.details?.package);
-  if (!active) return lot ? { ...bid, lot } : bid;
-  return { ...bid, ...(lot && { lot }), matched_molecules: (bid.matched_molecules || []).filter((name) => active.has(name)) };
+  // (lot: a screened lot still shows, with the LOT pill)
+  if (isPackageTender(bid.items_text, bid.details?.package)) return { ...bid, lot: true, matched_molecules: [] };
+  if (!active) return bid;
+  return { ...bid, matched_molecules: (bid.matched_molecules || []).filter((name) => active.has(name)) };
 }
 
-/** PhilGEPS tenders that still ask for one of our active products (lots too, flagged). A screened tender
+/** PhilGEPS tenders that still ask for one of our active products (not package or lot tenders). A screened tender
  * (screened: has('philgeps', ref)) always stays, so the team can still find and search it (user, 2026-10-27). */
 export function activeTenders(bids, active, screened) {
   return bids.map((bid) => activeTender(bid, active)).filter((bid) => bid.matched_molecules?.length || screened?.has('philgeps', bid.ref_no));
 }
 
-/** PS data ({ notices, analysis }) with archived molecules taken out of notice matches and document items; a
- * tender bought as one package or lot is marked lot (shown flagged LOT, lib/packageTender.js). */
+/** PS data ({ notices, analysis }) with archived molecules taken out of notice matches and document items, and
+ * package or lot tenders left with none. */
 export function activePsData(data, active) {
   if (!data) return data;
-  // Tenders bought as one package or lot, by their documents (lib/packageTender.js)
+  // Tenders bought as one package or lot, by their documents (lib/packageTender.js); no products
   const packaged = new Set(Object.entries(data.analysis || {}).filter(([, r]) => isPackageTender('', r?.result?.package)).map(([ref]) => ref));
-  const keep = (ref, name) => !active || active.has(name);
+  const keep = (ref, name) => !packaged.has(ref) && (!active || active.has(name));
   const notices = Object.fromEntries(
     Object.entries(data.notices || {}).map(([ref, n]) => [ref, n ? { ...n, ...(n.matched && { matched: n.matched.filter((name) => keep(ref, name)) }), ...(packaged.has(ref) && { lot: true }) } : n])
   );

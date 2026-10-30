@@ -18,19 +18,20 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 - **One table can never be half filled.** Some lines with prices and others without, in one table, is a reader bug until the document proves otherwise.
 - **Column labels are not reliable.** "ABC per line item" holds unit prices in PS 106895 and line totals in PhilGEPS 13300773. A lone amount column is judged by its whole table's rows (which reading gives sensible unit prices), never by its label for one tender.
 - **A fix for one tender broke others three times.** "Same amount column per file" broke 106895, 13286557 and 13297582. Moving the bidder-field check before the numbers check broke 106895's infusion sets. Splitting "ABC Unit Price" in two broke 13298236. Only the before/after comparison of every tender caught them.
-- **The Bid Data Sheet's "one lot" / "single lot" is not a lot.** 23 itemised tenders say it. Only the Schedule of Requirements quantity decides.
+- **The Bid Data Sheet decides a lot first.** "The number of lot(s): One (1)" makes the tender a lot even when its items are priced one by one (user, 2026-10-30, PS 107468). Lots are hidden. Two or more lots is not a lot.
 - **A row's strength must be its own.** Looking ahead into the next row borrowed strengths and made false matches (Amiodarone 200 mg tablet, Ondansetron 2 mL, Imatinib 400 mg, Ferrous + Folic Acid).
 
 ## Patterns
 
-### Lots and packages (not fetched)
+### Lots and packages (hidden: user, 2026-10-27 and 2026-10-30)
 
 | Document says | Example | Rule |
 |---|---|---|
 | Schedule of Requirements row "1 Package Drugs and Medicines 1" | PhilGEPS 13306420 | `PACKAGE_ROW` |
 | Schedule of Requirements Quantity "1 lot" / "1 package" / "lump sum" (also on its own line) | PhilGEPS 13307875, 13270736, 13274749 | `lotSchedule` |
 | Price list headed "1 LOT VARIOUS DRUG AND MEDICINES 6,282,909.00" | PhilGEPS 13299815 | `LOT_TOTAL_ROW` |
-| Bid Data Sheet "number of lot(s): 1 lot", table of contents entry, tender name "Lot F" / "PACKAGE 1" | PS 97220, Taguig, Adela Serra Ty | never a lot |
+| Bid Data Sheet "The number of lot(s): One (1)" (checked first), even with priced items | PS 107468 | `BDS_ONE_LOT`, `lotSchedule` |
+| Table of contents entry, tender name "Lot F" / "PACKAGE 1", "number of lot(s): Two (2)" | Taguig, Adela Serra Ty | never a lot |
 
 ### Where a row starts and ends
 
