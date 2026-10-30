@@ -24,14 +24,17 @@ const match = await loadMatcher(sb);
 const lines = [];
 const { data: snap } = await sb.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').single();
 const { data: readings } = await sb.from('ps_tender_analysis').select('ref, result');
-for (const r of readings || []) if (snap?.notices?.[r.ref]) for (const i of r.result?.items || []) lines.push({ side: 'PS-PhilGEPS', ref: r.ref, i });
+// (Lines without a quantity or ABC are set aside by the reader, psDocs.mjs: outside_table with a why. They count here
+// as empty lines, so a half-filled table still shows up)
+const aside = (list) => (list || []).filter((x) => x.why).map((x) => ({ our_products: x.our_products, written: x.line, source: x.source }));
+for (const r of readings || []) if (snap?.notices?.[r.ref]) for (const i of [...(r.result?.items || []), ...aside(r.result?.outside_table)]) lines.push({ side: 'PS-PhilGEPS', ref: r.ref, i });
 const bids = [];
 for (let from = 0; ; from += 1000) {
-  const { data } = await sb.from('philgeps_opportunities').select('ref_no, closing_date, details->documents_items').not('matched_molecules', 'eq', '{}').range(from, from + 999);
+  const { data } = await sb.from('philgeps_opportunities').select('ref_no, closing_date, details->documents_items, details->documents_outside_table').not('matched_molecules', 'eq', '{}').range(from, from + 999);
   bids.push(...(data || []));
   if (!data || data.length < 1000) break;
 }
-for (const o of bids) if (!o.closing_date || new Date(o.closing_date) > new Date()) for (const i of o.documents_items || []) lines.push({ side: 'PhilGEPS', ref: o.ref_no, i });
+for (const o of bids) if (!o.closing_date || new Date(o.closing_date) > new Date()) for (const i of [...(o.documents_items || []), ...aside(o.documents_outside_table)]) lines.push({ side: 'PhilGEPS', ref: o.ref_no, i });
 const { data: screenedRows } = await sb.from('screened_tenders').select('source, ref');
 const screened = new Set((screenedRows || []).map((s) => `${s.source === 'ps' ? 'PS-PhilGEPS' : 'PhilGEPS'} ${s.ref}`));
 const isScreened = (x) => screened.has(`${x.side} ${x.ref}`);

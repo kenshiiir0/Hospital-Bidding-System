@@ -15,6 +15,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 
 ## Lessons (mistakes that were made once)
 
+- **Only priced table rows count.** A molecule is ours only from a table row with its quantity and its ABC (ABC/unit or ABC total; the other is worked out). Lists, specifications and Terms of Reference lines without numbers never count (user, 2026-10-30, PhilGEPS 13314508); they are set aside (`outside_table` with `why`) and the audit still reports them.
 - **One table can never be half filled.** Some lines with prices and others without, in one table, is a reader bug until the document proves otherwise.
 - **Column labels are not reliable.** "ABC per line item" holds unit prices in PS 106895 and line totals in PhilGEPS 13300773. A lone amount column is judged by its whole table's rows (which reading gives sensible unit prices), never by its label for one tender.
 - **A fix for one tender broke others three times.** "Same amount column per file" broke 106895, 13286557 and 13297582. Moving the bidder-field check before the numbers check broke 106895's infusion sets. Splitting "ABC Unit Price" in two broke 13298236. Only the before/after comparison of every tender caught them.
