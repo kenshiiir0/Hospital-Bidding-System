@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -431,6 +431,10 @@ expect(withPageMeaning(TOTALS, 3, { quantity: 35000, unit_price: 11, description
 const QTYNEXT = ['ITEM NO. QTY UNIT DESCRIPTION UNIT COST TOTAL COST', '22 30 PCS MICROSET (PEDIA) 35.00 1,050.00', '23 4 sox Thypolleenic. paper Succ tape, (3M) 4 950.00 3.800.00'];
 carryHeader(QTYNEXT, null);
 expect(parseItemRow(QTYNEXT, 1), { quantity: 30, unit_price: 35, total: 1050 }, 'quantity-first next row ends the row');
+// Bid dates: never a form's revision date, nor a date from the next sentence, nor "1-lot/792" (PhilGEPS 13316995, 13296270)
+const VSMMC = 'Note: May be submitted during the opening of bids or during the post-qualification evaluation) FINANCIAL DOCUMENTS HOPSS-PROC-F-23 Rev.2 July 8, 2024 Page 6 of 7 at least five (5) days before the bid opening. 2) The VSMMC now invites bids for Supply and Delivery of DRUGS AND MEDICINES 5. Delivery of the Goods is required until December 31, 2027. 9) Bid opening shall be on November 19, 2026; 9:00 am at Room 9, Training Center.';
+assert.match(readBidDataSheet(VSMMC).bid_opening || '', /November 19, 2026/, 'bid opening from its own sentence, not a revision or delivery date');
+assert.equal(readBidDataSheet('PRE-BID CONFERENCE (Virtual) ELIGIBILITY CHECK and BID OPENING Non- Refundable Fee (in pesos) 11 Collection of General Waste (1-lot/792,000 kg)').prebid_conference, null, '1-lot/792 is no date');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -443,4 +447,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 52} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 54} rows).`);
