@@ -435,6 +435,14 @@ expect(parseItemRow(QTYNEXT, 1), { quantity: 30, unit_price: 35, total: 1050 }, 
 const VSMMC = 'Note: May be submitted during the opening of bids or during the post-qualification evaluation) FINANCIAL DOCUMENTS HOPSS-PROC-F-23 Rev.2 July 8, 2024 Page 6 of 7 at least five (5) days before the bid opening. 2) The VSMMC now invites bids for Supply and Delivery of DRUGS AND MEDICINES 5. Delivery of the Goods is required until December 31, 2027. 9) Bid opening shall be on November 19, 2026; 9:00 am at Room 9, Training Center.';
 assert.match(readBidDataSheet(VSMMC).bid_opening || '', /November 19, 2026/, 'bid opening from its own sentence, not a revision or delivery date');
 assert.equal(readBidDataSheet('PRE-BID CONFERENCE (Virtual) ELIGIBILITY CHECK and BID OPENING Non- Refundable Fee (in pesos) 11 Collection of General Waste (1-lot/792,000 kg)').prebid_conference, null, '1-lot/792 is no date');
+// The team's screened list of 2026-10-29: rows the reader missed
+// Bicol 13300127: description over lines, then "ABC/unit qty total" alone
+expect(parseItemRow(['80.00 3220 257,600.00', '170. Epoetin Alfa (recombinant human', 'erythropoietin) 4000 IU/0.4 mL, pre‐filled', 'syringe (IV, SC), piece', '552.68 201 111,088.68', '171. Ertapenem (as sodium salt) 1 g powder,'], 1), { quantity: 201, unit_price: 552.68, total: 111088.68 }, 'price-first numbers line ends the row');
+// Valenzuela PS 115220: the row's number and unit two lines above the molecule
+expect(parseItemRow(['12 Prefilled', 'Syringe', 'Filgrastim (G-CSF)', '300mcg/0.5ml,', '0.5mL Solution for', 'Injection', '1,300 598.00 777,400.00', '13 vial'], 2), { item_no: '12', quantity: 1300, unit_price: 598, total: 777400 }, 'row number and unit above the molecule');
+// JFMH 13316949: the peso sign scanned as £ and $, stray marks at the end
+expect(parseItemRow(['1. Cefazolin 1g as sodium salt vial (IM,1V) 2,000 bottles £275.00 $550,000.00 ~ |'], 0), { quantity: 2000, unit_price: 275, total: 550000 }, 'scanned peso signs and stray marks');
+expect(parseItemRow(['1. Cefazolin 1g as sodium salt vial (IM,1V) 2,000 bottles £275.00 $550'], 0), { quantity: 2000, unit_price: 275 }, 'total cut short by the scan');
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
@@ -447,4 +455,4 @@ const COPIES = [
 keepBestReading(COPIES);
 assert.equal(COPIES.length, 1, 'copies without amounts dropped');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 54} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58} rows).`);

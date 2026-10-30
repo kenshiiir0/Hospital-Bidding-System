@@ -24,7 +24,11 @@ const SALT_OR_FORM = new RegExp(`^(?:${SALT}|dihydrochloride|sulfate|sulphate|br
 
 // "mg" as scans misread it, right after a number ("Cetirizine 10 rna tab", "droDs 10ma", "Celecoxib 200mc]",
 // PhilGEPS 13279404): read as mg
-export const withOcrUnits = (text) => String(text).replace(/(\d)\s?(?:rna|rng|mq|m9|ma|mc\])(?![A-Za-z])/g, '$1 mg');
+// (and "mi" for mL: "Ondansetron 2mg/ml, 2mi" is 2 mL, not our 4 mL, PhilGEPS 13314992)
+export const withOcrUnits = (text) =>
+  String(text)
+    .replace(/(\d)\s?(?:rna|rng|mq|m9|ma|mc\])(?![A-Za-z])/g, '$1 mg')
+    .replace(/(\d)\s?mi(?![A-Za-z])/gi, '$1 ml');
 
 // Spelling fixes of names as written in the lists
 const NAME_FIXES = { cisatractcurium: 'Cisatracurium' };

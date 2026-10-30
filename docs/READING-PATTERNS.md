@@ -61,6 +61,8 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | Item No. alone on the line above | PS 114450 | `byHeader`, `parseItemRow` |
 | Quantity on the next line, or a row's numbers some lines below | PhilGEPS 13301146, PS 107172 | `rowBelow`, `numbersBelow` |
 | Each cell on a line of its own | PS 106363 | `rowBelow` |
+| Description over lines, then "ABC/unit qty total" alone ("552.68 201 111,088.68") | PhilGEPS 13300127 | `rowBelow` (`PRICE_QTY_TOTAL_LINE`) |
+| Row number and unit two lines above the molecule ("12 Prefilled" / "Syringe" / "Filgrastim ...") | PS 115220 | `rowBelow` (`numberAbove`) |
 | Strength split over lines ("1" / "g Vial", "4000" / "IU/Ml") | PS 102904, PS 105627 | `STRENGTH_UNIT_START` |
 | A concentration is never a quantity ("10 mg/mL") | PS 101007 | `STRENGTH_TOKEN` |
 | "800 vial" in one Quantity cell; unit split around "/" or "pre-filled" | PhilGEPS 13292520, 13282441, PS 101007 | `byHeader`, `SPLIT_UNIT_END` |
@@ -95,6 +97,8 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | Third amount column; delivery text or a capital heading after the amounts | PhilGEPS 13282441, 13299243, PS 106978 | `parseItemLine`, `HEADING_TAIL` |
 | Amount broken over two lines ("309,50" / "1.50") | PhilGEPS 13280005 | `joinSplitAmounts` |
 | Dots between thousands ("18.300.00", "333.520.00") | PhilGEPS 13279404, PS 107166 | `withCommaThousands`, `MONEY_TOKEN` |
+| Peso sign scanned as "£"/"$", stray marks ending the line, a total cut short ("275.00 550", accepted only when qty × price starts with it) | PhilGEPS 13316949 | `withoutRules`, `parseItemLine` |
+| Bid dates: only in the words' own sentence, never a form's revision date ("Rev.2 July 8, 2024") or a long-past date | PhilGEPS 13316995 | `passage`, `scheduleDateOk` |
 | Scan dropped the decimal point ("75000" for 750.00), accepted only when qty × price = total | PS 114413 | `parseItemLine` |
 | Garbled amount ("3IRS.000.00") set aside, worked out from the others | PS 108640 | `GARBLED_MONEY` |
 
@@ -114,7 +118,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | Another ingredient's dose ("+ Folic Acid", ", Niacin 1-5mg") | PS 102904 | `ownPart` |
 | Combination written with "/" ("Cetirizine / Phenylephrine 5mg/10mg") | PS 107827 | `ownPart` (salt words after "/" excepted) |
 | The row's own form wins over the next row's ("Capsule Folic Acid" / "Tablet Ferrous ...") | PhilGEPS 13284382 | `line` (`formText`) |
-| Scan misreads: "10 rna" = 10 mg, "droDs" = drops | PhilGEPS 13279404 | `withOcrUnits`, `FORMS` |
+| Scan misreads: "10 rna" = 10 mg, "droDs" = drops, "2mi" = 2 mL | PhilGEPS 13279404, 13314992 | `withOcrUnits`, `FORMS` |
 | Misspelled names ("Rocorunium", "Epoeitin", "Suggammadex") | several | `misspelledNames` |
 
 ## Not reader problems

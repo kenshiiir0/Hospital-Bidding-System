@@ -165,6 +165,8 @@ check('form on the next line still counts', match('Folic Acid 5 mg\ntablet 1,000
 // A scan's "rna" for mg, and its "droDs" for drops (PhilGEPS 13279404)
 check('scan mg', match('18 box Cetirizine 10 rna tabrl00tab/box) 300 61.00 18.300.00').includes('Cetirizine'), 'rna not read as mg');
 check('scan drops', match('19 bot Folic Acid droDs 5ma 50 41.75 2.087.50').length === 0, 'drops matched as our tablet');
+// A scan's "2mi" is 2 mL (PhilGEPS 13314992): Ondansetron 2 mg/mL x 2 mL is not our 4 mL ampule
+check('scan mL', match('5. Ondansetron 2mg/ml, 2mi as hydrochloride dihydrate, - ampule 4,000 vials').length === 0, 'a 2 mL ampule matched');
 // A dosage on the next line of a wrapped table row
 check('dosage on the following line', match('3 Paclitaxel\n300 mg/50 ml vial\n').includes('Paclitaxel'), 'wrapped row not matched');
 // Another ingredient's dose is not ours (PS 102904: Niacin 1-5mg in a vitamin B complex)
