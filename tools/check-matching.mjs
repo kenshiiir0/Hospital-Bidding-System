@@ -175,6 +175,10 @@ check("another ingredient's dose", match('10 mcg), Vi E 3-4mg, Folic Acid\n20-65
 check('capital IU on the following line', match('57 Heparin (Unfractionated)\n1000 IU/mL, 5 mL Solution\n').includes('Heparin'), 'wrapped row not matched');
 check('named without any dosage is reported (documents get checked)', match.details('Supply of Paclitaxel').undosed.includes('Paclitaxel'), 'not reported');
 check('a wrong dosage is not "without dosage" (no documents ordered for it)', !match.details('Amlodipine 2.5 mg tablet').undosed.includes('Amlodipine'), 'reported as undosed');
+// A product only in a "with ..." after another of ours is an accessory, not the item (PhilGEPS 13316656)
+check('accessory after "with"', match('60 Paclitaxel 6 mg/ml., 25 ml., IV, IV infusion with IV infusion set in every delivery 1,660 Vial 2,750.00').length === 0, 'the 25 mL row kept as our infusion set');
+check('our row keeps its accessory out', match('59 Paclitaxel 6 mg/ml., 16.7 ml., IV, IV infusion with IV infusion set in every delivery 2,160 Vial 537.05').join() === 'Paclitaxel', 'infusion set added to the Paclitaxel row');
+check('infusion set alone still ours', match('3 IV infusion set, adult 500 sets 25.00 12,500.00').includes('Intravenous Infusion Set'), 'infusion set row lost');
 check('names: Iodine (as Iohexol) -> Iohexol', matchName('Iodine (as Iohexol)') === 'Iohexol', matchName('Iodine (as Iohexol)'));
 
 try {

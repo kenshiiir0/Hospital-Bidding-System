@@ -120,6 +120,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | The row's own form wins over the next row's ("Capsule Folic Acid" / "Tablet Ferrous ...") | PhilGEPS 13284382 | `line` (`formText`) |
 | Scan misreads: "10 rna" = 10 mg, "droDs" = drops, "2mi" = 2 mL | PhilGEPS 13279404, 13314992 | `withOcrUnits`, `FORMS` |
 | Misspelled names ("Rocorunium", "Epoeitin", "Suggammadex") | several | `misspelledNames` |
+| A product named only in a "with ..." after another of ours is an accessory, not the item ("Paclitaxel 6 mg/ml, 25 ml ... with IV infusion set in every delivery": not our infusion set) | PhilGEPS 13316656 | `accessory` |
 
 ## Not reader problems
 

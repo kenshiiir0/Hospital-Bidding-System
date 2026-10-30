@@ -402,6 +402,25 @@ export function buildMatcher(products) {
     }
     return rest;
   };
+  // Where a product's name first appears in a text (-1: only a misspelling of it)
+  const firstAt = (entry, text) => {
+    let at = -1;
+    for (const parts of entry.alternatives) {
+      const m = parts[0].exec(text);
+      if (m && (at < 0 || m.index < at)) at = m.index;
+    }
+    return at;
+  };
+  // A product named only in a "with ..." after another of our products is that row's accessory, not the item bought
+  // ("Paclitaxel 6 mg/ml., 25 ml., IV infusion with IV infusion set in every delivery": a Paclitaxel row, not our
+  // infusion set; PhilGEPS 13316656)
+  const accessory = (p, found, text) => {
+    const at = firstAt(p, text);
+    if (at < 0) return false;
+    const withAt = text.slice(0, at).search(/\bwith\b(?![\s\S]*\bwith\b)/i);
+    if (withAt < 0) return false;
+    return found.some((o) => o !== p && firstAt(o, text) >= 0 && firstAt(o, text) < withAt);
+  };
   const line = (rawText, rawNext = '') => {
     if (!rawText) return [];
     const text = withOcrUnits(rawText);
@@ -410,8 +429,10 @@ export function buildMatcher(products) {
     // A form the row's own line names is the row's; the next lines' forms count only when it names none ("Capsule
     // Folic Acid 5 mg capsule ..." / "Tablet Ferrous Salt tablet ...": not our tablet, PhilGEPS 13284382)
     const formText = formsIn(text).size ? text : window;
-    return names(text)
-      .filter((p) => p.nameOnly || p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, formText) && !d.otherStrength?.(ownPart(p, window)) && specialKinds(ownPart(p, window)).every((kind) => d.kinds.has(kind))))
+    const found = names(text);
+    return found
+      .filter((p) => !accessory(p, found, text))
+      .filter((p) => p.nameOnly ||p.dosages.some((d) => dosageMatches(d, ownPart(p, window)) && formMatches(d.forms, formText) && !d.otherStrength?.(ownPart(p, window)) && specialKinds(ownPart(p, window)).every((kind) => d.kinds.has(kind))))
       .map((p) => p.name);
   };
   const details = (text) => {
