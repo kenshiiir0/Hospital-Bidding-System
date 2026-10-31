@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import { formatDate, formatDateTime, formatInstant, formatPeso } from '@/lib/format';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import ResponsiveTable from '@/components/ResponsiveTable';
@@ -83,6 +84,12 @@ function highlight(text, names) {
 // Documents, and the sections only PhilGEPS has (full description, supplements, contact person)
 export default function TenderDetails({ bid, onClose }) {
   const d = bid.details || {};
+  // Full description: a line's Source "Description" opens it and scrolls to it
+  const descriptionBox = useRef(null);
+  const showDescription = () => {
+    descriptionBox.current.open = true;
+    descriptionBox.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
   // Bid data sheet read from the downloaded documents (philgepsSync.mjs)
   const bds = d.documents_bid_data_sheet || {};
   const matched = bid.matched_molecules || [];
@@ -223,7 +230,7 @@ export default function TenderDetails({ bid, onClose }) {
               // The line exactly as the document or description gives it, to check against
               { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{asWritten(item.written || (item.where === 'Description' ? item.description || item.line : item.line))}</span> },
               // The file (and page) to open to check this line
-              { label: 'Source', wide: true, render: (item) => (item.where === 'Description' ? <span className="text-black/62">Notice description</span> : <SourceLinks item={item} documents={documents} bucket="philgeps-documents" tenderRef={bid.ref_no} />) },
+              { label: 'Source', wide: true, render: (item) => (item.where === 'Description' ? <DescriptionLink onOpen={bid.items_text ? showDescription : null} /> : <SourceLinks item={item} documents={documents} bucket="philgeps-documents" tenderRef={bid.ref_no} />) },
             ]}
           />
         )}
@@ -233,7 +240,7 @@ export default function TenderDetails({ bid, onClose }) {
       {/* Full notice text, collapsed unless there are no requested items to show */}
       <PanelSection title="Full description">
         {bid.items_text ? (
-          <details open={!items?.length} className="group rounded-[14px] border border-[#E2E8F0]">
+          <details ref={descriptionBox} open={!items?.length} className="group rounded-[14px] border border-[#E2E8F0]">
             <summary className="cursor-pointer select-none list-none px-4 py-2.5 text-sm text-[#12769F] hover:text-[#0E5C7C] flex items-center justify-between">
               <span className="group-open:hidden">Show the notice text</span>
               <span className="hidden group-open:inline">Hide the notice text</span>
@@ -286,6 +293,16 @@ export default function TenderDetails({ bid, onClose }) {
         footer={`${remark.text}${d.documents_checked_at ? ` Last checked ${formatInstant(d.documents_checked_at)}.` : ''}`}
       />
     </PsDetailsPanel>
+  );
+}
+
+// A molecule tracker line read from the notice's description (same look as the file links in SourceLinks)
+function DescriptionLink({ onOpen }) {
+  if (!onOpen) return <span className="text-black/62">Description</span>;
+  return (
+    <button type="button" onClick={onOpen} title="Open the full description" className="text-left text-[#12769F] underline underline-offset-2 hover:text-[#0E5C7C]">
+      Description
+    </button>
   );
 }
 
