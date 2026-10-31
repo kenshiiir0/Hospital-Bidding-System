@@ -41,10 +41,18 @@ const products = [
   P('Methotrexate', '10ml'),
   P('Heparin Sodium', '1000 IU / ml (25000 IU / 5ml)'),
   P('Enoxaparin sodium*', '6000 IU/0.6 mL (60 mg/0.6 ml)'),
+  P('Cisplatin', '1 mg/ml (50 mg/50 ml)', "Conc. Sol'n for IV Infusion"),
+  P('Dacarbazine [COLD CHAIN]', '200 mg', 'Lyo. Powder for Inj. (IV)'),
 ];
 const match = buildMatcher(products);
 
 const MUST_MATCH = [
+  // CisplaGet DRP-17984, DacarGet DRP-17976 (the CPRs, user 2026-10-31)
+  ['Cisplatin 1 mg/mL, 50 mL vial', 'Cisplatin'],
+  ['12 Cisplatin 50 mg/50 mL Solution for Injection 100 vial 1,500.00 150,000.00', 'Cisplatin'],
+  ['CISPLATIN 50MG VIAL', 'Cisplatin'],
+  ['Dacarbazine 200 mg Lyophilized Powder for Injection vial', 'Dacarbazine'],
+  ['DACARBAZINE 200MG/VIAL', 'Dacarbazine'],
   ['Paclitaxel 300mg/50mL vial', 'Paclitaxel'],
   ['15 vials Paclitaxel 6mg/ml, 50 ml vial', 'Paclitaxel'],
   ['PACLITAXEL 100 MG', 'Paclitaxel'],
@@ -103,6 +111,12 @@ const MUST_MATCH = [
   ['PROPOFOL 10 mg ml. - 3.500 amp vial 2 mt 61.64 333.520.00', 'Propofol'],
 ];
 const MUST_NOT_MATCH = [
+  // Our 50 mL pack and our 200 mg only (the CPRs, user 2026-10-31)
+  ['Cisplatin 1 mg/mL, 10 mL vial', 'Cisplatin'],
+  ['Cisplatin 10 mg/10 mL vial', 'Cisplatin'],
+  ['Cisplatin 50 mg tablet', 'Cisplatin'],
+  ['Dacarbazine 100 mg vial', 'Dacarbazine'],
+  ['Dacarbazine 500 mg vial', 'Dacarbazine'],
   // Chewable only when our row says so (user, 2026-10-27): our Loratadine is a plain tablet
   ['Loratadine 10 mg Chewable Tablet', 'Loratadine'],
   // Our form only (user, 2026-10-27): our Folic Acid is a tablet
