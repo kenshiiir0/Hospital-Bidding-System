@@ -527,6 +527,8 @@ assert.equal(lotHeading('Lot 2 of the contract'), null, 'a sentence again');
 // A list of lots with amounts opens no lot (PhilGEPS 13314851); a few numbered rows don't speak for a lot (PS 114065)
 assert.equal(inLotList(['LOT 1 PhP50,000.00', 'LOT 2 PhP25,000.00'], 1), true, 'the bid security table');
 assert.equal(inLotList(['LOT 1 ANTIBIOTICS 1,000,000.00', '1 Cefazolin 1g vial 100 20.00 2,000.00'], 0), false, 'a heading with its budget above its rows');
-assert.equal(completeLots([{ lot: 'Lot 1', line: "2 Cetirizine 10mg tab 1000", item_no: '2', our_products: ['Cetirizine'] }], new Map([['Lot 1', new Set(['#2', 'a', 'b', 'c', 'd'])]])).left.length, 1, 'mostly unnumbered rows are all counted');
+assert.equal(completeLots([{ lot: 'Lot 1', line: "2 Cetirizine 10mg tab 1000", item_no: '2', our_products: ['Cetirizine'] }], new Map([['Lot 1', new Set(['#2', 'a', 'b', 'c', 'd', 'e'])]])).left.length, 1, 'mostly unnumbered rows are all counted');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3} rows).`);
+assert.equal(completeLots([1, 2].map((no) => ({ lot: 'Lot 1', item_no: String(no), line: `${no} X`, our_products: ['X'] })), new Map([['Lot 1', new Set(['#1', '#2', 'a', 'b', 'c'])]])).left.length, 0, 'a wrapped row or a second copy adds no rows to a numbered lot');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1} rows).`);
