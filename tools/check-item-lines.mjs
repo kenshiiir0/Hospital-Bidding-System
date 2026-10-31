@@ -515,4 +515,7 @@ assert.deepEqual(lots.left, [{ lot: 'Lot 5', ours: 2, of: 3, molecules: ['X'] }]
 assert.equal(completeLots([{ lot: 'Lot 1', line: "Box of 100's Cetirizine 10mg tab 1000", our_products: ['Cetirizine'] }], new Map([['Lot 1', new Set([lotRowKey(null, "Box of 100's Cetirizine 10mg tab 1000"), lotRowKey(null, "Box of 100's Celecoxib 200mg Cap 300")])]])).kept.length, 0, 'rows without an Item No. are counted by their text');
 assert.deepEqual(lotHeading('FIRST QUARTER 2027 – LOT 1: DRUGS AND MEDICINES FOR JANUARY 2027 (EPA)'), { lot: 'Lot 1' }, 'a lot in a title');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4} rows).`);
+// A lot's rows are counted by Item No. when it has them, whatever a wrapped row's other lines look like (PhilGEPS 13321539)
+assert.equal(completeLots([{ item_no: '111', lot: 'Lot 9', line: '111 Epoietin alpha 4000IU/0.4ml,', our_products: ['Epoetin Alfa'] }, { lot: 'Lot 9', line: 'Heparin Sodium 1000iu/ml,', our_products: ['Heparin'] }], new Map([['Lot 9', new Set(['#111', '#112', 'syringes317275'])]])).left.length, 0, 'a complete lot of two rows');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1} rows).`);

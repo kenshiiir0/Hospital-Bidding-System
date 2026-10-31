@@ -147,6 +147,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | "LOT 1 - (Item Nos. 6 & 7) ...", "LOT 4 - (Item Nos. 22 to 23)" | PS 119068 | `lotHeading`: those rows only; the rows between stay line items |
 | "Lot 3: ORAL MEDICINES" above rows | | `lotHeading`: the rows below, up to the next lot heading |
 | "FIRST QUARTER 2027 – LOT 1: DRUGS AND MEDICINES FOR JANUARY 2027 (EPA)" above a list of rows | PS 114065 | `lotHeading` (`LOT_IN_TITLE`) |
+| A lot ends at "SUBTOTAL", or at "LINE ITEMS" (over two lines too) | PhilGEPS 13311841 | loop in `readDocuments` |
 | A lot with some molecules not ours | PS 119068 Lot 2 (item 9 ours, item 10 not) | `completeLots`: the whole lot left out and listed |
 
 ## Not reader problems
