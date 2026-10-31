@@ -151,11 +151,6 @@ function collapseRepeats(text) {
 // A line as the document gives it, without the table rules a scan's OCR left in ("| 60 | vials | Cefoxitin ... |")
 export const asWritten = (text) => String(text || '').replace(/\s*[|[\]]+\s*/g, ' ').replace(/\s+/g, ' ').trim();
 
-// Where a molecule tracker line was read: "Bidding Documents.pdf, page 69", or the two files when its quantity
-// and its price came from different ones (psDocs.mjs: source, paired_with)
-export const sourceText = (item) =>
-  [item.source, item.paired_with].filter(Boolean).map((s) => s.replace(/, Word\/Excel file$/, '')).join(' + ');
-
 // Unit words a table puts in front of the product ("vials", "boxes", "prefilled syringe")
 const UNIT_WORDS = /\b(?:pre-?\s?filled|syringes?|bottles?|btls?|boxes|box|bxs?|vials?|tabs?|tablets?|caps?|capsules?|amps?|ampules?|ampoules?|pcs|pieces|sachets?|tubes?|packs?|units?|each)\b/gi;
 

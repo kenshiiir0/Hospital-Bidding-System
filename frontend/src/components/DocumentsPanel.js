@@ -111,16 +111,53 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
   );
 }
 
+/**
+ * Molecule tracker: where a line was read ("Bidding Documents.pdf, page 69"; two files when its quantity and
+ * price came from different ones) as links that open the file directly, a PDF at that page. A file no longer
+ * among the tender's documents stays plain text.
+ * @param {object} props.item  A line with source ("<file>, page 3" or "<file>, Word/Excel file") and paired_with
+ * Other props as DocumentsPanel.
+ */
+export function SourceLinks({ item, documents = [], bucket, tenderRef, source }) {
+  const places = [item.source, item.paired_with].filter(Boolean).map((text) => {
+    const [, name = text, page] = /^(.*), (?:page (\d+)|Word\/Excel file)$/.exec(text) || [];
+    return { name, page, doc: documents.find((d) => d.name === name) };
+  });
+  if (!places.length) return <span className="text-black/62">—</span>;
+  return places.map(({ name, page, doc }, i) => {
+    const label = page ? `${name}, page ${page}` : name;
+    return (
+      <span key={label} className="[overflow-wrap:anywhere]">
+        {i > 0 && <span className="text-black/46"> + </span>}
+        {doc ? (
+          <button
+            type="button"
+            onClick={() => openDocument({ doc, bucket, tenderRef, source, page })}
+            title="Open this file"
+            className="text-left text-[#12769F] underline underline-offset-2 hover:text-[#0E5C7C] [overflow-wrap:anywhere]"
+          >
+            {label}
+          </button>
+        ) : (
+          <span className="text-black/62">{label}</span>
+        )}
+      </span>
+    );
+  });
+}
+
 // Word and Excel files, which a browser downloads instead of showing: View opens them in /documents/view
 const PREVIEWED = new Set(['docx', 'xlsx']);
 
-// View: a new tab (opened first so the browser doesn't block it as a pop-up). Save: the file is downloaded.
-async function openDocument({ doc, bucket, tenderRef, source, save = false }) {
+// View: a new tab (opened first so the browser doesn't block it as a pop-up), a PDF at `page` when given.
+// Save: the file is downloaded.
+async function openDocument({ doc, bucket, tenderRef, source, page, save = false }) {
+  const atPage = page ? `#page=${page}` : '';
   const previewed = !save && PREVIEWED.has(extensionOf(doc.name));
   if (!doc.path) {
     const url = `/api/documents?${source ? `source=${source}&` : ''}ref=${tenderRef}&name=${encodeURIComponent(doc.name)}`;
     if (save) download(url, doc.name);
-    else window.open(previewed ? `/documents/view?src=${encodeURIComponent(url)}&name=${encodeURIComponent(doc.name)}` : url, '_blank', 'noopener');
+    else window.open(previewed ? `/documents/view?src=${encodeURIComponent(url)}&name=${encodeURIComponent(doc.name)}` : `${url}${atPage}`, '_blank', 'noopener');
     return;
   }
   if (previewed) {
@@ -134,9 +171,10 @@ async function openDocument({ doc, bucket, tenderRef, source, save = false }) {
     alert(`Could not open ${doc.name}: ${error?.message || 'no link'}`);
     return;
   }
+  const url = data.signedUrl + atPage;
   if (save) download(data.signedUrl, doc.name);
-  else if (tab) tab.location.href = data.signedUrl;
-  else window.location.href = data.signedUrl;
+  else if (tab) tab.location.href = url;
+  else window.location.href = url;
 }
 
 function download(url, name) {

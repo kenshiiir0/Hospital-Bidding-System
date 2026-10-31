@@ -4,9 +4,9 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import PsDetailsPanel, { AbcAmount, ChecklistList, ComputedNote, KeyValueList, MissingTag, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 import ScreenButton from '@/components/ScreenButton';
 import FetchedSection from '@/components/FetchedSection';
-import DocumentsPanel from '@/components/DocumentsPanel';
+import DocumentsPanel, { SourceLinks } from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
-import { abcOf, asWritten, moleculeText, psRefOf, psTender, sourceText } from '@/lib/opportunityWorkbook';
+import { abcOf, asWritten, moleculeText, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { formatInstant } from '@/lib/format';
 
@@ -59,7 +59,7 @@ export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose }) {
       <PanelSection title="Our products" count={products.length} plain>
         <ProductPills names={products} />
       </PanelSection>
-      <FromDocuments reading={reading} />
+      <FromDocuments reading={reading} tenderRef={ref} documents={notice?.documents} />
       <PsDocuments ref_={ref} notice={notice} syncedAt={data.syncedAt} />
     </PsDetailsPanel>
   );
@@ -109,7 +109,7 @@ const BDS_FIELDS = [
 ];
 const peso = (n) => (n == null ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 }));
 
-function FromDocuments({ reading }) {
+function FromDocuments({ reading, tenderRef, documents }) {
   return (
     <>
       <PanelSection title="Bid data sheet (from the documents)">
@@ -147,7 +147,7 @@ function FromDocuments({ reading }) {
               // The line exactly as the document gives it, to check against
               { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{asWritten(it.written || (it.quantity != null ? it.line : it.context))}</span> },
               // The file (and page) to open to check this line
-              { label: 'Source', wide: true, render: (it) => <span className="text-black/62 [overflow-wrap:anywhere]">{sourceText(it) || '—'}</span> },
+              { label: 'Source', wide: true, render: (it) => <SourceLinks item={it} documents={documents} bucket="ps-documents" tenderRef={tenderRef} source="ps" /> },
             ]}
           />
         )}
