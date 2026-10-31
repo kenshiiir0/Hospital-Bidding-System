@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -446,6 +446,18 @@ expect(parseItemRow(['1. Cefazolin 1g as sodium salt vial (IM,1V) 2,000 bottles 
 // PS 114413 (AFP scan): a unit price whose decimal point the scan dropped, only when it gives the total exactly
 expect(parseItemLine('99 Carboplatin 10mg/ ml 15 ml 5 vial 75000 3,750.00'), { quantity: 5, unit_price: 750, total: 3750 }, 'dropped decimal point');
 expect(parseItemLine('100 Carboplatin 10mg/ ml 45 ml 660 vial 171200 1,129,920.00'), { quantity: 660, unit_price: 1712, total: 1129920 }, 'dropped decimal point (2)');
+// PS 114413 (AFP scan): the total on its own line above the row and one digit of the price misread (883.50 as 283.50)
+const STRAY = ['88,350.00', '', 'i d', '163 Dacarbazine powder, 200mg (IV, 283.50 100 vial', 'IV Infusion)'];
+expect(withBothAmounts(strayTotal(STRAY, 3, { quantity: 100, unit_price: 283.5 })), { quantity: 100, unit_price: 883.5, total: 88350, computed: 'unit_price' }, 'stray total corrects one misread digit');
+// ... its margin stamps scanned after the last amount, and a misread quantity or a price cell cut to one digit
+expect(parseItemRow(['135 | Cisplatin 1mg/ml, 50mi 480.00 226 vial 108,480.00 BF'], 0), { quantity: 226, unit_price: 480, total: 108480 }, 'margin stamp after the total');
+expect(parseItemRow(['161 + Trimethoprim) 800 mg+160 mg 4.73 14,700 tablet 69,531.00 zo'], 0), { quantity: 14700, unit_price: 4.73, total: 69531 }, 'margin bits after the total');
+expect(withBothAmounts({ quantity: 1860, unit_price: 469.5, total: 685470 }), { quantity: 1460, unit_price: 469.5, total: 685470 }, 'misread quantity digit');
+expect(withBothAmounts(parseItemLine('110 Cefepime hydrochloride 1 g (1M,IV) 8800 vial 5 514,800.00')), { quantity: 8800, unit_price: 58.5, total: 514800 }, 'price cell cut to one digit');
+expect(parseItemRow(['Bleomycin (as sulfate), powder 15 IU [40 | Ampule/ vial 124,360.00', 'Brimonidine 0.15%, 5 m} ophthalmic solution | 10 | bottle | 1,875.50 18,755.00'], 0), { quantity: 40, total: 124360 }, 'unit written Ampule/ vial ends the row');
+// ... never another row's amount: the price it gives is not one digit away, the price read stands
+expect(withBothAmounts(strayTotal(['16,020.00', '164 Dactinomycin powder, 500 801.00 20'], 1, { quantity: 20, unit_price: 801 })), { unit_price: 801, total: 16020 }, 'a total that fits changes nothing');
+expect(withBothAmounts(strayTotal(['3,520.00', '165 Danazol 200mg 352.00 10 capsule'], 1, { quantity: 10, unit_price: 500 })), { unit_price: 500, total: 5000 }, 'an amount far from the price is left alone');
 // Copies of a row without amounts (delivery schedule, compliance form) go when a priced reading has it (PS 114538)
 const COPIES = [
   { our_products: ['Sevelamer'], quantity: 10000, total: 140000, written: 'SEVELAMER CARBONATE 800mg TABLET 10,000 Tab 140,000.00', source: 'NGPA.pdf, page 48' },

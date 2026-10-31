@@ -101,6 +101,10 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | Peso sign scanned as "£"/"$", stray marks ending the line, a total cut short ("275.00 550", accepted only when qty × price starts with it) | PhilGEPS 13316949 | `withoutRules`, `parseItemLine` |
 | Bid dates: only in the words' own sentence, never a form's revision date ("Rev.2 July 8, 2024") or a long-past date | PhilGEPS 13316995 | `passage`, `scheduleDateOk` |
 | Scan dropped the decimal point ("75000" for 750.00), accepted only when qty × price = total | PS 114413 | `parseItemLine` |
+| Total alone on a line beside the row and one digit of the price misread ("88,350.00" / "... 283.50 100 vial" for 883.50): the total sets the price, only when one digit apart and exact to the centavo | PS 114413 | `strayTotal` |
+| Margin stamps scanned after the last amount ("108,480.00 BF", "69,531.00 zo"): dropped, else the whole row is lost | PS 114413 Cisplatin | `MARGIN_MARKS` |
+| Quantity digit misread ("1,860 ... 469.50 685,470.00" for 1,460): price × a whole quantity one digit away = total exactly | PS 114413 Rocuronium | `withBothAmounts` |
+| Price cell cut to one digit ("8800 vial 5 514,800.00" for 58.50): number before the unit is the quantity | PS 114413 Cefepime | `parseItemLine` lostPrice |
 | Garbled amount ("3IRS.000.00") set aside, worked out from the others | PS 108640 | `GARBLED_MONEY` |
 
 ### Copies of the same row
