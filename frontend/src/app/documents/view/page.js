@@ -105,8 +105,8 @@ function Viewer() {
             Could not show {name}: {state.message}. Use Save to download it.
           </p>
         )}
-        {/* Word: the document as laid out in the file */}
-        <div ref={docRef} className="overflow-x-auto" />
+        {/* Word: the document as laid out in the file (safe center: a page wider than the window keeps its left edge) */}
+        <div ref={docRef} className="overflow-x-auto [&_.docx-wrapper]:[align-items:safe_center]" />
         {/* Excel: each sheet as a table */}
         {sheets?.map((sheet) => (
           <section key={sheet.name} className="mb-6 rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-sm">
