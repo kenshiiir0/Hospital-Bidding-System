@@ -7,7 +7,7 @@ import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
 import ScreenButton from '@/components/ScreenButton';
-import { abcOf, asWritten, moleculeText, philgepsTender, splitContact } from '@/lib/opportunityWorkbook';
+import { abcOf, asWritten, moleculeText, philgepsTender, sourceText, splitContact } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { AbcAmount, ChecklistList, ComputedNote, KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -222,6 +222,8 @@ export default function TenderDetails({ bid, onClose }) {
               { label: 'ABC Total', nowrap: true, render: (item) => <AbcAmount text={formatPeso(abcOf(item).total)} computed={abcOf(item).computed === 'total'} formula="Qty × ABC/Unit" /> },
               // The line exactly as the document or description gives it, to check against
               { label: 'As written', wide: true, render: (item) => <span className="text-black/62">{asWritten(item.written || (item.where === 'Description' ? item.description || item.line : item.line))}</span> },
+              // The file (and page) to open to check this line
+              { label: 'Source', wide: true, render: (item) => <span className="text-black/62 [overflow-wrap:anywhere]">{item.where === 'Description' ? 'Notice description' : sourceText(item) || '—'}</span> },
             ]}
           />
         )}

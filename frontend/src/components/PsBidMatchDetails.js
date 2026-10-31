@@ -6,7 +6,7 @@ import ScreenButton from '@/components/ScreenButton';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
-import { abcOf, asWritten, moleculeText, psRefOf, psTender } from '@/lib/opportunityWorkbook';
+import { abcOf, asWritten, moleculeText, psRefOf, psTender, sourceText } from '@/lib/opportunityWorkbook';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { formatInstant } from '@/lib/format';
 
@@ -146,6 +146,8 @@ function FromDocuments({ reading }) {
               { label: 'ABC Total', nowrap: true, render: (it) => <AbcAmount text={abcOf(it).total == null ? null : peso(abcOf(it).total)} computed={abcOf(it).computed === 'total'} formula="Qty × ABC/Unit" /> },
               // The line exactly as the document gives it, to check against
               { label: 'As written', wide: true, render: (it) => <span className="text-black/62">{asWritten(it.written || (it.quantity != null ? it.line : it.context))}</span> },
+              // The file (and page) to open to check this line
+              { label: 'Source', wide: true, render: (it) => <span className="text-black/62 [overflow-wrap:anywhere]">{sourceText(it) || '—'}</span> },
             ]}
           />
         )}
