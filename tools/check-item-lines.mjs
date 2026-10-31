@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -506,4 +506,13 @@ assert.equal(wholeLot(true, false, [{ quantity: null, line: 'Paclitaxel 6 mg/ml'
 assert.equal(wholeLot(true, false, [{ quantity: 1, unit: 'lot' }]), true, '1 lot is no line item');
 assert.equal(wholeLot(true, true, []), false, 'several lots');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6} rows).`);
+// Of several lots, only a lot with every molecule ours counts (user, 2026-10-31)
+const LOT_ROWS = new Map([['Lot 1', new Set(['#1', '#2', '#3'])], ['Lot 5', new Set(['#13', '#14', '#15'])], ['Lot 6', new Set(['#16'])]]);
+const row = (no, lot) => ({ item_no: String(no), lot, line: `${no} X`, our_products: ['X'] });
+const lots = completeLots([row(1, 'Lot 1'), row(2, 'Lot 1'), row(3, 'Lot 1'), row(13, 'Lot 5'), row(14, 'Lot 5'), row(20)], LOT_ROWS);
+assert.deepEqual(lots.kept.map((i) => i.item_no), ['1', '2', '3', '20'], 'complete lot and line item kept, incomplete lot left out');
+assert.deepEqual(lots.left, [{ lot: 'Lot 5', ours: 2, of: 3, molecules: ['X'] }], 'the lot left out is said');
+assert.equal(completeLots([{ lot: 'Lot 1', line: "Box of 100's Cetirizine 10mg tab 1000", our_products: ['Cetirizine'] }], new Map([['Lot 1', new Set([lotRowKey(null, "Box of 100's Cetirizine 10mg tab 1000"), lotRowKey(null, "Box of 100's Celecoxib 200mg Cap 300")])]])).kept.length, 0, 'rows without an Item No. are counted by their text');
+assert.deepEqual(lotHeading('FIRST QUARTER 2027 – LOT 1: DRUGS AND MEDICINES FOR JANUARY 2027 (EPA)'), { lot: 'Lot 1' }, 'a lot in a title');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4} rows).`);

@@ -136,7 +136,7 @@ function FromDocuments({ reading, tenderRef, documents }) {
         ) : reading.result.items.length === 0 ? (
           <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
         ) : (
-          <LotGroups items={reading.result.items}>{(rows) => <ResponsiveTable
+          <LotGroups items={reading.result.items} leftOut={reading.result.lots_left_out}>{(rows) => <ResponsiveTable
             size="xs"
             rows={rows}
             columns={[

@@ -219,7 +219,7 @@ export default function TenderDetails({ bid, onClose }) {
               : 'Our products are named in the title only; no single item line mentions them. See the full description below.'}
           </p>
         ) : (
-          <LotGroups items={items}>{(rows) => <ResponsiveTable
+          <LotGroups items={items} leftOut={d.documents_lots_left_out}>{(rows) => <ResponsiveTable
             size="xs"
             rows={rows}
             columns={[

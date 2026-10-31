@@ -1,7 +1,29 @@
 // A tender of several lots in the Molecule tracker: line items first, then Lot 1 and its molecules, Lot 2 and its
-// molecules (user, 2026-10-31; psDocs.mjs tags each row with its lot). children(rows) draws one group's table
-export default function LotGroups({ items, children }) {
-  if (!items.some((item) => item.lot)) return children(items);
+// molecules (user, 2026-10-31; psDocs.mjs tags each row with its lot). children(rows) draws one group's table.
+// leftOut: the lots not fetched because not all their molecules are ours (psDocs.mjs completeLots), said so they can
+// be checked against the document
+function LeftOut({ lots }) {
+  if (!lots?.length) return null;
+  return (
+    <ul className="mt-3 space-y-0.5 text-xs text-black/62">
+      {lots.map((l) => (
+        <li key={l.lot}>
+          {l.lot} left out: {l.ours} of {l.of} molecules are ours ({l.molecules.join(', ')})
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export default function LotGroups({ items, leftOut, children }) {
+  if (!items.some((item) => item.lot)) {
+    return (
+      <>
+        {children(items)}
+        <LeftOut lots={leftOut} />
+      </>
+    );
+  }
   const lots = [...new Set(items.map((item) => item.lot || ''))].sort((a, b) => Number(a.replace(/\D/g, '')) - Number(b.replace(/\D/g, '')));
   return (
     <div className="space-y-4">
@@ -16,6 +38,7 @@ export default function LotGroups({ items, children }) {
           </section>
         );
       })}
+      <LeftOut lots={leftOut} />
     </div>
   );
 }

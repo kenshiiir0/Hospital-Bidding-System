@@ -20,6 +20,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 - **Column labels are not reliable.** "ABC per line item" holds unit prices in PS 106895 and line totals in PhilGEPS 13300773. A lone amount column is judged by its whole table's rows (which reading gives sensible unit prices), never by its label for one tender.
 - **A fix for one tender broke others three times.** "Same amount column per file" broke 106895, 13286557 and 13297582. Moving the bidder-field check before the numbers check broke 106895's infusion sets. Splitting "ABC Unit Price" in two broke 13298236. Only the before/after comparison of every tender caught them.
 - **Hidden only when it is one lot with no line items (user, 2026-10-31, final; replaces 2026-10-30).** One lot with line items is shown (PS 107468 again), one lot with none is hidden, several lots are shown, each row under its lot. A row in a tender of lots shows even without its ABC, its Source to check by hand (PS 114065).
+- **Of several lots, only a complete lot counts (user, 2026-10-31).** A lot is fetched only when every molecule in it is ours: 5 of 5 yes, 4 of 5 no, the whole lot goes. Lots left out are listed in View details with their count, to check against the document. A tender with several lots and no lot headings to read has no lots to judge; its rows stay as line items.
 - **A row's strength must be its own.** Looking ahead into the next row borrowed strengths and made false matches (Amiodarone 200 mg tablet, Ondansetron 2 mL, Imatinib 400 mg, Ferrous + Folic Acid).
 
 ## Patterns
@@ -145,6 +146,8 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | "One (1) item only" under number of lots | PS 106930 | `BDS_ONE_LOT`: an item, not a lot |
 | "LOT 1 - (Item Nos. 6 & 7) ...", "LOT 4 - (Item Nos. 22 to 23)" | PS 119068 | `lotHeading`: those rows only; the rows between stay line items |
 | "Lot 3: ORAL MEDICINES" above rows | | `lotHeading`: the rows below, up to the next lot heading |
+| "FIRST QUARTER 2027 – LOT 1: DRUGS AND MEDICINES FOR JANUARY 2027 (EPA)" above a list of rows | PS 114065 | `lotHeading` (`LOT_IN_TITLE`) |
+| A lot with some molecules not ours | PS 119068 Lot 2 (item 9 ours, item 10 not) | `completeLots`: the whole lot left out and listed |
 
 ## Not reader problems
 
