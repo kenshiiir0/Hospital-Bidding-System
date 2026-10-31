@@ -148,6 +148,8 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | "Lot 3: ORAL MEDICINES" above rows | | `lotHeading`: the rows below, up to the next lot heading |
 | "FIRST QUARTER 2027 – LOT 1: DRUGS AND MEDICINES FOR JANUARY 2027 (EPA)" above a list of rows | PS 114065 | `lotHeading` (`LOT_IN_TITLE`) |
 | A lot ends at "SUBTOTAL", or at "LINE ITEMS" (over two lines too) | PhilGEPS 13311841 | loop in `readDocuments` |
+| "LOT 1 PhP50,000.00" / "LOT 2 PhP25,000.00" (bid security table) | PhilGEPS 13314851 | `inLotList`: names lots, opens none |
+| "LOT 10 ANTINEOPLASTIC", "LOT 8-A ..." | PhilGEPS 13316934 | `lotHeading`: title in capitals, letter kept |
 | A lot with some molecules not ours | PS 119068 Lot 2 (item 9 ours, item 10 not) | `completeLots`: the whole lot left out and listed |
 
 ## Not reader problems

@@ -56,7 +56,7 @@ const RECHECK_MS = 24 * 60 * 60 * 1000;
 const DESCRIPTION_ITEMS_MIN = 1500;
 // Version of the document reading stored per tender (documents_read_key); a change reads them again
 // read-37: psDocs.mjs rules-39. read-36: psDocs.mjs rules-38. read-35: psDocs.mjs rules-37. read-34: psDocs.mjs rules-36. read-33: psDocs.mjs rules-35. read-32: psDocs.mjs rules-34. read-31: psDocs.mjs rules-33. read-30: psDocs.mjs rules-32. read-29: psDocs.mjs rules-31, package or lot tenders get no molecules. read-28: psDocs.mjs rules-30. read-27: psDocs.mjs rules-29. read-26: psDocs.mjs rules-28. read-25: psDocs.mjs rules-27. read-24: psDocs.mjs rules-26. read-23: psDocs.mjs rules-25. read-22: psDocs.mjs rules-24. read-21: psDocs.mjs rules-23. read-20: psDocs.mjs rules-22. read-19: psDocs.mjs rules-21. read-18: psDocs.mjs rules-20. read-17: psDocs.mjs rules-19. read-16: psDocs.mjs rules-18. read-15: psDocs.mjs rules-17. read-14: psDocs.mjs rules-16. read-13: psDocs.mjs rules-15. read-12: psDocs.mjs rules-14. read-11: psDocs.mjs rules-13. read-10: psDocs.mjs rules-12. read-9: psDocs.mjs rules-11. read-8: psDocs.mjs rules-10. read-7: row numbers no longer read as quantities (psDocs.mjs rules-9). read-6: misspelled names (lib/products.mjs)
-const READ_RULES = 'read-60';
+const READ_RULES = 'read-61';
 // Loads of the log-in page (PhilGEPS flickers); the password itself is sent at most LOGIN_POSTS times
 const LOGIN_TRIES = 4;
 const LOGIN_POSTS = 2;

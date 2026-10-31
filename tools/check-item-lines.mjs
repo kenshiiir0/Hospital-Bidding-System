@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -524,4 +524,9 @@ assert.deepEqual(lotHeading('LOT 8-A ANTIBACTERIALS FOR SYSTEMIC USE'), { lot: '
 assert.deepEqual(lotHeading('LOT2'), { lot: 'Lot 2' }, 'no space');
 assert.equal(lotHeading('Lot 2 of the contract'), null, 'a sentence again');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4} rows).`);
+// A list of lots with amounts opens no lot (PhilGEPS 13314851); a few numbered rows don't speak for a lot (PS 114065)
+assert.equal(inLotList(['LOT 1 PhP50,000.00', 'LOT 2 PhP25,000.00'], 1), true, 'the bid security table');
+assert.equal(inLotList(['LOT 1 ANTIBIOTICS 1,000,000.00', '1 Cefazolin 1g vial 100 20.00 2,000.00'], 0), false, 'a heading with its budget above its rows');
+assert.equal(completeLots([{ lot: 'Lot 1', line: "2 Cetirizine 10mg tab 1000", item_no: '2', our_products: ['Cetirizine'] }], new Map([['Lot 1', new Set(['#2', 'a', 'b', 'c', 'd'])]])).left.length, 1, 'mostly unnumbered rows are all counted');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3} rows).`);
