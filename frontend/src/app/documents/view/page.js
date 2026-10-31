@@ -16,6 +16,9 @@ export default function DocumentView() {
   );
 }
 
+// (ExcelJS's .text throws on an empty merged cell, which stopped the whole preview: PS 115360, 119068-119074)
+const cellText = (cell) => (cell.value == null ? '' : (cell.text ?? ''));
+
 const extensionOf = (name) => (/\.([a-z0-9]+)$/i.exec(name || '')?.[1] || '').toLowerCase();
 
 function Viewer() {
@@ -55,7 +58,7 @@ function Viewer() {
             const rows = [];
             ws.eachRow({ includeEmpty: false }, (row) => {
               const cells = [];
-              for (let c = 1; c <= ws.columnCount; c++) cells.push(row.getCell(c).text ?? '');
+              for (let c = 1; c <= ws.columnCount; c++) cells.push(cellText(row.getCell(c)));
               rows.push(cells);
             });
             return { name: ws.name, rows };
