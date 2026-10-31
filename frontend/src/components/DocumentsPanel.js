@@ -113,8 +113,8 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
 
 /**
  * Molecule tracker: where a line was read ("Bidding Documents.pdf, page 69"; two files when its quantity and
- * price came from different ones) as links to the real file: a PDF opens at that page, a Word or Excel file is
- * downloaded to open in Word or Excel (not the preview; user, 2026-10-31). A file no longer among the tender's
+ * price came from different ones) as links to the real file: a PDF opens in a new tab at that page, a Word or
+ * Excel file opens in Word or Excel (not the preview; user, 2026-10-31). A file no longer among the tender's
  * documents stays plain text.
  * @param {object} props.item  A line with source ("<file>, page 3" or "<file>, Word/Excel file") and paired_with
  * Other props as DocumentsPanel.
@@ -133,8 +133,8 @@ export function SourceLinks({ item, documents = [], bucket, tenderRef, source })
         {doc ? (
           <button
             type="button"
-            onClick={() => openDocument({ doc, bucket, tenderRef, source, page, save: PREVIEWED.has(extensionOf(doc.name)) })}
-            title={PREVIEWED.has(extensionOf(doc.name)) ? 'Download this file' : 'Open this file'}
+            onClick={() => openSource({ doc, bucket, tenderRef, source, page })}
+            title="Open this file"
             className="text-left text-[#12769F] underline underline-offset-2 hover:text-[#0E5C7C] [overflow-wrap:anywhere]"
           >
             {label}
@@ -150,13 +150,39 @@ export function SourceLinks({ item, documents = [], bucket, tenderRef, source })
 // Word and Excel files, which a browser downloads instead of showing: View opens them in /documents/view
 const PREVIEWED = new Set(['docx', 'xlsx']);
 
+// A Source link: Word and Excel files open in the app itself by Office's own link type ("ms-word:ofv|u|<address>",
+// read-only), which needs Office on a computer; a phone downloads the file instead. Anything else opens as View does.
+const OFFICE_APP = { docx: 'ms-word', doc: 'ms-word', xlsx: 'ms-excel', xls: 'ms-excel' };
+async function openSource(place) {
+  const { doc, bucket } = place;
+  const app = OFFICE_APP[extensionOf(doc.name)];
+  if (!app) return openDocument(place);
+  if (!/Windows|Macintosh/.test(navigator.userAgent)) return openDocument({ ...place, save: true });
+  let link = new URL(localFileUrl(place), window.location.origin).href;
+  if (doc.path) {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(doc.path, 3600);
+    if (error || !data?.signedUrl) {
+      alert(`Could not open ${doc.name}: ${error?.message || 'no link'}`);
+      return;
+    }
+    link = data.signedUrl;
+  }
+  const officeLink = document.createElement('a');
+  officeLink.href = `${app}:ofv|u|${link}`;
+  officeLink.click();
+}
+
+// An older file without a Storage path, served by the computer that downloaded it
+const localFileUrl = ({ doc, tenderRef, source }) =>
+  `/api/documents?${source ? `source=${source}&` : ''}ref=${tenderRef}&name=${encodeURIComponent(doc.name)}`;
+
 // View: a new tab (opened first so the browser doesn't block it as a pop-up), a PDF at `page` when given.
 // Save: the file is downloaded.
 async function openDocument({ doc, bucket, tenderRef, source, page, save = false }) {
   const atPage = page ? `#page=${page}` : '';
   const previewed = !save && PREVIEWED.has(extensionOf(doc.name));
   if (!doc.path) {
-    const url = `/api/documents?${source ? `source=${source}&` : ''}ref=${tenderRef}&name=${encodeURIComponent(doc.name)}`;
+    const url = localFileUrl({ doc, tenderRef, source });
     if (save) download(url, doc.name);
     else window.open(previewed ? `/documents/view?src=${encodeURIComponent(url)}&name=${encodeURIComponent(doc.name)}` : `${url}${atPage}`, '_blank', 'noopener');
     return;
