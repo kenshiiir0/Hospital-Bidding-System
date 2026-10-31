@@ -19,7 +19,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 - **One table can never be half filled.** Some lines with prices and others without, in one table, is a reader bug until the document proves otherwise.
 - **Column labels are not reliable.** "ABC per line item" holds unit prices in PS 106895 and line totals in PhilGEPS 13300773. A lone amount column is judged by its whole table's rows (which reading gives sensible unit prices), never by its label for one tender.
 - **A fix for one tender broke others three times.** "Same amount column per file" broke 106895, 13286557 and 13297582. Moving the bidder-field check before the numbers check broke 106895's infusion sets. Splitting "ABC Unit Price" in two broke 13298236. Only the before/after comparison of every tender caught them.
-- **Only one whole lot is hidden (user, 2026-10-31, final; replaces the rule of 2026-10-30).** The Bid Data Sheet decides first: "The number of lot(s): One (1)" hides the tender even when its items are priced one by one (PS 107468). Two or more lots, or line items with lots ("76 line items, Six (6) lots", PS 119068), are read and shown, each row under its lot in View details.
+- **Hidden only when it is one lot with no line items (user, 2026-10-31, final; replaces 2026-10-30).** One lot with line items is shown (PS 107468 again), one lot with none is hidden, several lots are shown, each row under its lot. A row in a tender of lots shows even without its ABC, its Source to check by hand (PS 114065).
 - **A row's strength must be its own.** Looking ahead into the next row borrowed strengths and made false matches (Amiodarone 200 mg tablet, Ondansetron 2 mL, Imatinib 400 mg, Ferrous + Folic Acid).
 
 ## Patterns

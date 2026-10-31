@@ -1,7 +1,7 @@
-// Tenders bought as ONE whole package or lot, which the team doesn't bid on: hidden on both portals and in the Screened
-// export (user, 2026-10-27, 2026-10-30, and 2026-10-31: "Only skip the tender if it is a one whole Lot"). Two or more
-// lots, or line items with lots (PS 119068: "76 line items, Six (6) lots"), are fetched, grouped by lot in View
-// details (psDocs.mjs manyLots). A lot is found in the documents (psDocs.mjs lotSchedule): the Bid Data Sheet's "The number of lot(s): One (1)" (checked first, "that is
+// Tenders bought as ONE whole package or lot with no line items, which the team doesn't bid on: hidden on both portals
+// and in the Screened export (user, 2026-10-31: "If it has one lot but has line items then still show it. If it is only
+// indicated as 1 lot but no line items then hide it. But if it has multiple lots then show it"). Several lots are
+// grouped by lot in View details (PS 119068; psDocs.mjs wholeLot, manyLots). A lot is found in the documents (psDocs.mjs lotSchedule): the Bid Data Sheet's "The number of lot(s): One (1)" (checked first, "that is
 // mostly where the Lot is indicated"; PS 107468, itemised but one lot), a Schedule of Requirements quantity of 1 lot /
 // package, or a price list headed by the whole as one lot; or in the description (PACKAGE_ROW, BDS_ONE_LOT).
 
@@ -18,8 +18,8 @@ export const BDS_ONE_LOT = /\b(?:number|no\.?)\s+of\s+lots?\s*(?:\(s\)|\/s)?\s*[
 
 /** True when a tender is bought as one package or lot: its documents say so (psDocs.mjs result.package), or a line
  * of its description does ("1 Package Drugs and Medicines 1", "The number of lot(s): One (1)"; PhilGEPS items_text,
- * PS-PhilGEPS keeps none). documentsPackage false: the documents say several lots or line items, whatever the
- * description's first row looks like */
+ * PS-PhilGEPS keeps none). documentsPackage false: the documents give several lots or line items, whatever the
+ * description says */
 export function isPackageTender(description, documentsPackage) {
   if (documentsPackage === false) return false;
   return Boolean(documentsPackage) || String(description || '').split('\n').some((line) => PACKAGE_ROW.test(line.trim()) || BDS_ONE_LOT.test(line));

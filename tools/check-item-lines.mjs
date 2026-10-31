@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -498,4 +498,12 @@ assert.deepEqual(lotHeading('LOT 4 - (Item Nos. 22 to 25) the offered products m
 assert.deepEqual(lotHeading('Lot 3: ORAL MEDICINES'), { lot: 'Lot 3' }, 'a lot heading');
 assert.equal(lotHeading('Lot 1 shall be delivered within 30 days'), null, 'a sentence is no heading');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13} rows).`);
+// One lot with line items is shown; one lot with none is hidden; several lots are shown (user, 2026-10-31)
+assert.equal(wholeLot(true, false, [{ quantity: 2000, unit: 'tablet' }]), false, 'one lot with a line item');
+assert.equal(wholeLot(true, false, [{ quantity: 2000 }]), false, 'one lot with a line item, no ABC');
+assert.equal(wholeLot(true, false, []), true, 'one lot only');
+assert.equal(wholeLot(true, false, [{ quantity: null, line: 'Paclitaxel 6 mg/ml' }]), true, 'a name in a list is no line item');
+assert.equal(wholeLot(true, false, [{ quantity: 1, unit: 'lot' }]), true, '1 lot is no line item');
+assert.equal(wholeLot(true, true, []), false, 'several lots');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6} rows).`);
