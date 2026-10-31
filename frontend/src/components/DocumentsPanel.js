@@ -113,8 +113,9 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
 
 /**
  * Molecule tracker: where a line was read ("Bidding Documents.pdf, page 69"; two files when its quantity and
- * price came from different ones) as links that open the file directly, a PDF at that page. A file no longer
- * among the tender's documents stays plain text.
+ * price came from different ones) as links to the real file: a PDF opens at that page, a Word or Excel file is
+ * downloaded to open in Word or Excel (not the preview; user, 2026-10-31). A file no longer among the tender's
+ * documents stays plain text.
  * @param {object} props.item  A line with source ("<file>, page 3" or "<file>, Word/Excel file") and paired_with
  * Other props as DocumentsPanel.
  */
@@ -132,8 +133,8 @@ export function SourceLinks({ item, documents = [], bucket, tenderRef, source })
         {doc ? (
           <button
             type="button"
-            onClick={() => openDocument({ doc, bucket, tenderRef, source, page })}
-            title="Open this file"
+            onClick={() => openDocument({ doc, bucket, tenderRef, source, page, save: PREVIEWED.has(extensionOf(doc.name)) })}
+            title={PREVIEWED.has(extensionOf(doc.name)) ? 'Download this file' : 'Open this file'}
             className="text-left text-[#12769F] underline underline-offset-2 hover:text-[#0E5C7C] [overflow-wrap:anywhere]"
           >
             {label}
