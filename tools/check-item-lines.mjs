@@ -5,7 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -483,4 +483,19 @@ expect(parseItemRow(['Item No. General Description Maximum Quantity Cost per Ite
 expect(parseItemRow(['8 Iohexol 350mg iodine/ml, 50ml vial 800 1100 880000'], 0), { quantity: 800, unit_price: 1100, total: 880000 }, 'plain amounts without a header');
 expect(parseItemRow(['8 Iohexol 350mg iodine/ml, 50ml vial 800 1100 880'], 0), { unit_price: undefined, total: undefined }, 'three numbers that do not multiply out are not amounts');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17} rows).`);
+// Only one whole lot is hidden (user, 2026-10-31, PS 119068): several lots, or line items with lots, are read
+assert.equal(manyLots(['1.2 The number of items: Seventy-Six (76) line items', 'Six (6) lots']), true, 'line items and lots');
+assert.equal(manyLots(['1.2 The number of lot(s): 3 LOTS']), true, 'three lots');
+assert.equal(manyLots(['1.2 The number of lot(s): Three Lots']), true, 'three lots in words');
+assert.equal(manyLots(['1.2 The number of lot(s): One (1)']), false, 'one lot');
+assert.equal(manyLots(['1.2 The number of lot(s): 1 lot/ Eighty Six (86) items']), false, 'one lot of 86 items stays one lot');
+assert.equal(manyLots(['1.2 The Project is composed of number of lots or items as provided in the BDS']), false, 'the form sentence counts nothing');
+assert.equal(lotSchedule(['1.2 The number of lot(s): One (1) item only']), false, 'one item is not a lot');
+assert.equal(lotSchedule(['Schedule of Requirements', 'MEDICINES FOR JANUARY 2027 (EPA) 1 LOT', 'MEDICINES FOR FEBRUARY 2027 (EPA) 1 LOT']), false, 'several rows of 1 lot are several lots');
+assert.equal(isPackageTender('1 Package Drugs and Medicines 1', false), false, 'the documents saying several lots win over the description');
+assert.deepEqual(lotHeading('LOT 1 - (Item Nos. 6 & 7) the offered products must be of the same brand'), { lot: 'Lot 1', items: [6, 7] }, 'a lot naming its two rows');
+assert.deepEqual(lotHeading('LOT 4 - (Item Nos. 22 to 25) the offered products must be of the same brand'), { lot: 'Lot 4', items: [22, 23, 24, 25] }, 'a lot naming its range');
+assert.deepEqual(lotHeading('Lot 3: ORAL MEDICINES'), { lot: 'Lot 3' }, 'a lot heading');
+assert.equal(lotHeading('Lot 1 shall be delivered within 30 days'), null, 'a sentence is no heading');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13} rows).`);

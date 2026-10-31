@@ -19,7 +19,7 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 - **One table can never be half filled.** Some lines with prices and others without, in one table, is a reader bug until the document proves otherwise.
 - **Column labels are not reliable.** "ABC per line item" holds unit prices in PS 106895 and line totals in PhilGEPS 13300773. A lone amount column is judged by its whole table's rows (which reading gives sensible unit prices), never by its label for one tender.
 - **A fix for one tender broke others three times.** "Same amount column per file" broke 106895, 13286557 and 13297582. Moving the bidder-field check before the numbers check broke 106895's infusion sets. Splitting "ABC Unit Price" in two broke 13298236. Only the before/after comparison of every tender caught them.
-- **The Bid Data Sheet decides a lot first.** "The number of lot(s): One (1)" makes the tender a lot even when its items are priced one by one (user, 2026-10-30, PS 107468). Lots are hidden. Two or more lots is not a lot.
+- **Only one whole lot is hidden (user, 2026-10-31, final; replaces the rule of 2026-10-30).** The Bid Data Sheet decides first: "The number of lot(s): One (1)" hides the tender even when its items are priced one by one (PS 107468). Two or more lots, or line items with lots ("76 line items, Six (6) lots", PS 119068), are read and shown, each row under its lot in View details.
 - **A row's strength must be its own.** Looking ahead into the next row borrowed strengths and made false matches (Amiodarone 200 mg tablet, Ondansetron 2 mL, Imatinib 400 mg, Ferrous + Folic Acid).
 
 ## Patterns
@@ -135,6 +135,16 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | Document does | Example | Rule |
 |---|---|---|
 | An Excel list writes "vial 800 1100 880000": no decimals, so no amount was seen and the row went aside as "no ABC" | Region II Trauma and Medical Center | `withCentavos` in `cleanLines` and `parseItemLine`, only when quantity x price = total exactly |
+
+### Several lots (rules-57, PS 119068, 114065)
+
+| Document says | Example | Rule |
+|---|---|---|
+| "The number of items: Seventy-Six (76) line items" / "Six (6) lots", "The number of lot(s): 3 LOTS" | PS 119068, 114065 | `manyLots`: not one whole lot, beats a row's "1 LOT" and the description |
+| Several Schedule of Requirements rows of "1 LOT" | PS 114065 | `lotSchedule`: only one such row is a whole lot |
+| "One (1) item only" under number of lots | PS 106930 | `BDS_ONE_LOT`: an item, not a lot |
+| "LOT 1 - (Item Nos. 6 & 7) ...", "LOT 4 - (Item Nos. 22 to 23)" | PS 119068 | `lotHeading`: those rows only; the rows between stay line items |
+| "Lot 3: ORAL MEDICINES" above rows | | `lotHeading`: the rows below, up to the next lot heading |
 
 ## Not reader problems
 

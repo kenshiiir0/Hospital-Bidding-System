@@ -9,6 +9,7 @@ import { stillReading } from '@/lib/documentsReading';
 import { abcOf, asWritten, moleculeText, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { formatInstant } from '@/lib/format';
+import LotGroups from '@/components/LotGroups';
 
 // View details for one PS-PhilGEPS Bid Match tender, opened from Bid Match and from Screened Tenders:
 // bidding dates, when it was fetched, our products, what was read in its documents and the files, with
@@ -135,9 +136,9 @@ function FromDocuments({ reading, tenderRef, documents }) {
         ) : reading.result.items.length === 0 ? (
           <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
         ) : (
-          <ResponsiveTable
+          <LotGroups items={reading.result.items}>{(rows) => <ResponsiveTable
             size="xs"
-            rows={reading.result.items}
+            rows={rows}
             columns={[
               // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
               { label: 'Molecule', title: true, render: (it) => <span className="font-medium text-[#3F6F2C]">{moleculeText(it.description || it.line, it.our_products)}</span> },
@@ -149,7 +150,7 @@ function FromDocuments({ reading, tenderRef, documents }) {
               // The file (and page) to open to check this line
               { label: 'Source', wide: true, render: (it) => <SourceLinks item={it} documents={documents} bucket="ps-documents" tenderRef={tenderRef} source="ps" /> },
             ]}
-          />
+          />}</LotGroups>
         )}
         {reading?.status === 'done' && <ComputedNote items={reading.result.items} abcOf={abcOf} />}
       </PanelSection>

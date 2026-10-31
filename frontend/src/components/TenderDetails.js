@@ -10,6 +10,7 @@ import { stillReading } from '@/lib/documentsReading';
 import ScreenButton from '@/components/ScreenButton';
 import { abcOf, asWritten, moleculeText, philgepsTender, splitContact } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { AbcAmount, ChecklistList, ComputedNote, KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
+import LotGroups from '@/components/LotGroups';
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -218,9 +219,9 @@ export default function TenderDetails({ bid, onClose }) {
               : 'Our products are named in the title only; no single item line mentions them. See the full description below.'}
           </p>
         ) : (
-          <ResponsiveTable
+          <LotGroups items={items}>{(rows) => <ResponsiveTable
             size="xs"
-            rows={items}
+            rows={rows}
             columns={[
               // Same columns and wording as the Excel (lib/opportunityWorkbook.js): no item or page numbers
               { label: 'Molecule', title: true, render: (item) => <span className="font-medium text-[#3F6F2C]">{moleculeText(item.description || item.line, item.our_products || item.products)}</span> },
@@ -232,7 +233,7 @@ export default function TenderDetails({ bid, onClose }) {
               // The file (and page) to open to check this line
               { label: 'Source', wide: true, render: (item) => (item.where === 'Description' ? <DescriptionLink onOpen={bid.items_text ? showDescription : null} /> : <SourceLinks item={item} documents={documents} bucket="philgeps-documents" tenderRef={bid.ref_no} />) },
             ]}
-          />
+          />}</LotGroups>
         )}
         {items?.length > 0 && <ComputedNote items={items} abcOf={abcOf} />}
       </PanelSection>
