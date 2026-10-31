@@ -518,4 +518,10 @@ assert.deepEqual(lotHeading('FIRST QUARTER 2027 – LOT 1: DRUGS AND MEDICINES F
 // A lot's rows are counted by Item No. when it has them, whatever a wrapped row's other lines look like (PhilGEPS 13321539)
 assert.equal(completeLots([{ item_no: '111', lot: 'Lot 9', line: '111 Epoietin alpha 4000IU/0.4ml,', our_products: ['Epoetin Alfa'] }, { lot: 'Lot 9', line: 'Heparin Sodium 1000iu/ml,', our_products: ['Heparin'] }], new Map([['Lot 9', new Set(['#111', '#112', 'syringes317275'])]])).left.length, 0, 'a complete lot of two rows');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1} rows).`);
+// Lot headings with a title in capitals or a letter (PhilGEPS 13316934)
+assert.deepEqual(lotHeading('LOT 10 ANTINEOPLASTIC'), { lot: 'Lot 10' }, 'a lot with its title in capitals');
+assert.deepEqual(lotHeading('LOT 8-A ANTIBACTERIALS FOR SYSTEMIC USE'), { lot: 'Lot 8-A' }, 'a lot with a letter');
+assert.deepEqual(lotHeading('LOT2'), { lot: 'Lot 2' }, 'no space');
+assert.equal(lotHeading('Lot 2 of the contract'), null, 'a sentence again');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4} rows).`);
