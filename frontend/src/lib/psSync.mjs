@@ -527,9 +527,12 @@ export async function runSync() {
     // A notice that can't be read this time (incomplete page, error, out of time) keeps what the last Sync read,
     // marked, instead of being emptied
     const { data: previous } = await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle();
-    // Notices never read (or last read with an error) first, so new ones are read even when time runs out
+    // Notices never read (or last read with an error) first, so new ones are read even when time runs out; then the
+    // one read longest ago, so every notice gets its turn (in a fixed order the same ones at the end were never
+    // reached, and their files never came back after the move to the new project, PS 119068, 2026-11-03)
     const readBefore = (ref) => previous?.notices?.[ref] && !previous.notices[ref].error;
-    const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))].sort((a, b) => Number(readBefore(a)) - Number(readBefore(b)));
+    const readAt = (ref) => previous?.notices?.[ref]?.read_at || 0;
+    const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))].sort((a, b) => Number(readBefore(a)) - Number(readBefore(b)) || readAt(a) - readAt(b));
     const notices = {};
     const keepPrevious = (ref, why) => {
       const last = previous?.notices?.[ref];
@@ -540,7 +543,7 @@ export async function runSync() {
       if (Date.now() - syncStarted > NOTICES_UNTIL_MS) keepPrevious(ref, 'out of time; the next Sync reads it');
       else
         try {
-          notices[ref] = await withSession(() => readNotice(session, supabase, ref, matchMolecules));
+          notices[ref] = { ...(await withSession(() => readNotice(session, supabase, ref, matchMolecules))), read_at: Date.now() };
         } catch (e) {
           if (e.code === 'NOT_CONNECTED' || e.code === 'SITE_DOWN') throw e;
           keepPrevious(ref, e.message);
