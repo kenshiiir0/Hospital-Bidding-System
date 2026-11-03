@@ -8,7 +8,9 @@ import PsLiveLogin from '@/components/PsLiveLogin';
 // keeps waiting, ConnectNotice reopens it); Cancel stops the log-in.
 const STEPS = ['Secure log-in opens', 'Tick “I’m not a robot”', 'Sync starts by itself'];
 
-export default function PsConnectModal({ connect, onHide, onCancel }) {
+// onPopup: a team laptop with the "ps-philgeps-connect:" link opens the log-in in its own Chrome window instead (one
+// tick on the office internet; the cloud computer's address gets many picture puzzles, user 2026-11-03)
+export default function PsConnectModal({ connect, onHide, onCancel, onPopup }) {
   const opened = connect?.status === 'connecting';
   const step = opened ? 1 : 0;
   return (
@@ -26,6 +28,16 @@ export default function PsConnectModal({ connect, onHide, onCancel }) {
       footer={
         <>
           <p className="mr-auto text-xs text-black/46">Runs on a secure cloud computer; nothing is installed on this device.</p>
+          {onPopup && (
+            <button
+              type="button"
+              onClick={onPopup}
+              title="On a team laptop set up for it: the log-in opens in a Chrome window on this computer (fewer picture puzzles)"
+              className="rounded-full border border-[#E2E8F0] px-4 py-2 text-sm font-medium text-[#12769F] transition hover:border-[#1EA0DA]"
+            >
+              Use the pop-up on this computer
+            </button>
+          )}
           <button
             type="button"
             onClick={onCancel}

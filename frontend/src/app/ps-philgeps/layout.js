@@ -188,7 +188,7 @@ export default function PsPhilgepsLayout({ children }) {
   const pressSync = () => {
     if (connected) return runSync();
     setSyncAfterConnect(true);
-    if (connect) post('/api/ps-philgeps', loadConnect);
+    if (connect && !popupHere()) post('/api/ps-philgeps', loadConnect);
     else window.location.href = 'ps-philgeps-connect:start';
   };
 
@@ -286,6 +286,25 @@ export default function PsPhilgepsLayout({ children }) {
 
 // Closes the Chrome log-in window and shows the log-in page inside the dashboard instead
 // Cancel button of the log-in dialog (stops the cloud log-in, lib/psCloudConnect.mjs)
+// A team laptop that chose the pop-up (PsConnectModal "Use the pop-up on this computer"): its log-ins open in a
+// Chrome window here (tools/register-connect-link.js), the cloud log-in elsewhere. Kept in this browser only
+const POPUP_KEY = 'ps-connect-popup';
+const popupHere = () => {
+  try {
+    return localStorage.getItem(POPUP_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const switchToPopup = () => {
+  try {
+    localStorage.setItem(POPUP_KEY, '1');
+  } catch {}
+  cancelConnect().finally(() => {
+    window.location.href = 'ps-philgeps-connect:start';
+  });
+};
+
 const cancelConnect = () =>
   authFetch('/api/ps-philgeps/live', {
     method: 'POST',
@@ -308,7 +327,7 @@ function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
   const inDialog = connect?.status === 'starting' || (connect?.status === 'connecting' && connect.view === 'live');
   if (inDialog) {
     const key = connect.id || connect.startedAt || 'live';
-    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} />;
+    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={() => { setHidden(key); switchToPopup(); }} />;
     return (
       <Notice>
         The PS-PhilGEPS log-in is waiting for you to confirm you are not a robot.{' '}
