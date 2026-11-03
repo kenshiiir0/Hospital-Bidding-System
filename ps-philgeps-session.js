@@ -118,31 +118,42 @@ const CHROME_PATHS = [
     path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
 ];
 
+// The installed Google Chrome on a Linux computer (the cloud log-in on GitHub's)
+const LINUX_CHROME = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/chrome'];
+
 async function launchLoginWindow() {
     const puppeteer = require('puppeteer');
     const chrome = CHROME_PATHS.find((p) => fs.existsSync(p)) || puppeteer.executablePath();
+    return startChromeAndAttach(chrome, ['--window-size=1100,860', '--window-position=80,40', `--app=${LOGIN_URL}`], null);
+}
+
+// Chrome started like a normal program with its own profile in .ps-philgeps, then attached to over its
+// debugging port (only to fill the form and read the cookies)
+async function startChromeAndAttach(chrome, extraArgs, viewport) {
+    const puppeteer = require('puppeteer');
     const port = 9300 + Math.floor(Math.random() * 600);
     const { spawn } = require('node:child_process');
-    spawn(chrome, [
+    const child = spawn(chrome, [
         `--user-data-dir=${path.join(STATE_DIR, 'chrome-profile')}`,
         `--remote-debugging-port=${port}`,
         '--no-first-run',
         '--no-default-browser-check',
-        '--window-size=1100,860',
-        '--window-position=80,40',
-        `--app=${LOGIN_URL}`
+        ...extraArgs
     ], { stdio: 'ignore' });
+    let exited = null;
+    child.on('exit', (code) => (exited = code));
+    child.on('error', (e) => (exited = e.message));
 
     // Wait for Chrome's debugging port, then attach
     const deadline = Date.now() + 30000;
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline && exited === null) {
         try {
             const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-            if (res.ok) return puppeteer.connect({ browserURL: `http://127.0.0.1:${port}`, defaultViewport: null });
+            if (res.ok) return puppeteer.connect({ browserURL: `http://127.0.0.1:${port}`, defaultViewport: viewport });
         } catch {}
         await new Promise((r) => setTimeout(r, 300));
     }
-    throw new PsPhilgepsSessionError('CONNECT_FAILED', 'The PS-PhilGEPS log-in window did not open.');
+    throw new PsPhilgepsSessionError('CONNECT_FAILED', exited !== null ? `Chrome stopped at start (${exited}).` : 'The PS-PhilGEPS log-in window did not open.');
 }
 
 // Live view (`--connect --live`, used by the dashboard): Chrome runs out of sight and the dashboard shows
@@ -158,6 +169,19 @@ async function launchLive() {
     // PS_LIVE_HEADFUL=1: a normal Chrome on a virtual screen (the cloud log-in, tools/ps-connect-cloud.mjs under
     // xvfb), which Google's captcha trusts more than a hidden browser
     const headful = process.env.PS_LIVE_HEADFUL === '1';
+    // Started like a normal program and attached to, as the log-in window here is (launchLoginWindow): Chrome
+    // launched by Puppeteer is marked as automated, and the captcha then asked for picture after picture (about 20
+    // on the cloud log-in, user 2026-11-03)
+    if (headful) {
+        try {
+            return await startChromeAndAttach(LINUX_CHROME.find((p) => fs.existsSync(p)) || puppeteer.executablePath(), [
+                `--window-size=${LIVE_VIEWPORT.width},${LIVE_VIEWPORT.height + 140}`,
+                'about:blank'
+            ], LIVE_VIEWPORT);
+        } catch (e) {
+            sessionLog(`Connect: Chrome could not be started on its own (${e.message}); starting it through Puppeteer`);
+        }
+    }
     const options = {
         headless: !headful,
         userDataDir: path.join(STATE_DIR, 'chrome-profile'),

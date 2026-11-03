@@ -29,6 +29,14 @@ jobs:
           cache: npm
       # The project root's packages (puppeteer brings its own Chrome)
       - run: npm ci --no-audit --no-fund
+      # The log-in Chrome's profile kept from the last log-in (a returning browser, not a new one each time, so
+      # the captcha asks for fewer pictures; user 2026-11-03)
+      - name: Restore the log-in browser profile
+        uses: actions/cache/restore@v4
+        with:
+          path: .ps-philgeps/chrome-profile
+          key: ps-chrome-profile-${{ github.run_id }}
+          restore-keys: ps-chrome-profile-
       - name: Log in (a person ticks the captcha on the dashboard)
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" node tools/ps-connect-cloud.js "${{ inputs.id }}"
         env:
@@ -36,3 +44,13 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           PS_PHILGEPS_USERNAME: ${{ secrets.PS_PHILGEPS_USERNAME }}
           PS_PHILGEPS_PASSWORD: ${{ secrets.PS_PHILGEPS_PASSWORD }}
+      # Kept for the next log-in, without Chrome's caches
+      - name: Keep the log-in browser profile
+        if: always()
+        run: rm -rf .ps-philgeps/chrome-profile/Default/{Cache,"Code Cache",GPUCache,"Service Worker"} .ps-philgeps/chrome-profile/{ShaderCache,GrShaderCache,component_crx_cache} 2>/dev/null; du -sh .ps-philgeps/chrome-profile || true
+      - name: Save the log-in browser profile
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ps-philgeps/chrome-profile
+          key: ps-chrome-profile-${{ github.run_id }}
