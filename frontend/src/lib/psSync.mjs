@@ -351,7 +351,9 @@ function scheduleFrom(activity, page) {
 // Document Preview. A busy PhilGEPS sometimes sends the page frame without the notice.
 const noticeIsComplete = (root, ref) => root.structuredText.includes(ref) && (/closing date/i.test(root.structuredText) || Boolean(root.querySelector('a[href_path*="tender_doc_view"]')));
 
-async function readNotice(session, supabase, ref, matchMolecules) {
+// notKept: the files of this notice deleted after reading as not ours, by name (psDocs.mjs analyzePending): listed,
+// not downloaded again
+async function readNotice(session, supabase, ref, matchMolecules, notKept = new Map()) {
   let root;
   for (let attempt = 1; ; attempt++) {
     root = parse(await getPage(session, `${HOST}/tenders/viewBidNotice/${ref}`));
@@ -390,6 +392,10 @@ async function readNotice(session, supabase, ref, matchMolecules) {
     const key = storageName(name);
     if (have.has(key)) {
       documents.push({ name, size: have.get(key), url, path: `${ref}/${key}` });
+      continue;
+    }
+    if (notKept.has(name)) {
+      documents.push({ ...notKept.get(name), url, removed: 'not ours' });
       continue;
     }
     try {
@@ -533,6 +539,9 @@ export async function runSync() {
     const readBefore = (ref) => previous?.notices?.[ref] && !previous.notices[ref].error;
     const readAt = (ref) => previous?.notices?.[ref]?.read_at || 0;
     const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))].sort((a, b) => Number(readBefore(a)) - Number(readBefore(b)) || readAt(a) - readAt(b));
+    // Files deleted after reading as not ours (lib/documentKeep.mjs): not downloaded again
+    const { data: analyses } = await supabase.from('ps_tender_analysis').select('ref, result->files_removed');
+    const notKept = new Map((analyses || []).filter((a) => a.files_removed?.length).map((a) => [a.ref, new Map(a.files_removed.map((f) => [f.name, f]))]));
     const notices = {};
     const keepPrevious = (ref, why) => {
       const last = previous?.notices?.[ref];
@@ -543,7 +552,7 @@ export async function runSync() {
       if (Date.now() - syncStarted > NOTICES_UNTIL_MS) keepPrevious(ref, 'out of time; the next Sync reads it');
       else
         try {
-          notices[ref] = { ...(await withSession(() => readNotice(session, supabase, ref, matchMolecules))), read_at: Date.now() };
+          notices[ref] = { ...(await withSession(() => readNotice(session, supabase, ref, matchMolecules, notKept.get(ref)))), read_at: Date.now() };
         } catch (e) {
           if (e.code === 'NOT_CONNECTED' || e.code === 'SITE_DOWN') throw e;
           keepPrevious(ref, e.message);

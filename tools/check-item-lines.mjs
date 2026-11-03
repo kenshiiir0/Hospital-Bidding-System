@@ -4,6 +4,7 @@
 // row number the molecule tracker must show. The row number must never be read as the quantity (user,
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
+import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
 import { strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
@@ -543,4 +544,10 @@ assert.equal(completeLots([{ lot: 'Lot 1', line: "2 Cetirizine 10mg tab 1000", i
 
 assert.equal(completeLots([1, 2].map((no) => ({ lot: 'Lot 1', item_no: String(no), line: `${no} X`, our_products: ['X'] })), new Map([['Lot 1', new Set(['#1', '#2', 'a', 'b', 'c'])]])).left.length, 0, 'a wrapped row or a second copy adds no rows to a numbered lot');
 
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1} rows).`);
+// Files are dropped only once read to the end (user, 2026-11-03: not ours, not stored); scans waiting for OCR stay
+assert.equal(fullyRead('done', [{ kind: 'text' }]), true, 'read to the end');
+assert.equal(fullyRead('done', [{ kind: 'scanned' }]), false, 'a scan waiting for OCR is kept');
+assert.equal(fullyRead('done', [{ kind: 'text', ocr_waiting: true }]), false, 'scanned pages waiting for OCR are kept');
+assert.equal(fullyRead('failed', [{ kind: 'text' }]), false, 'a failed reading keeps its files');
+
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4} rows).`);

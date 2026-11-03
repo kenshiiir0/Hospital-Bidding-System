@@ -5,6 +5,7 @@ import { logActivity } from './activityLog.mjs';
 import { loadMatcher, ocrPending, readDocuments } from './psDocs.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
 import { isPackageTender } from './packageTender.js';
+import { dropFiles, fullyRead, screenedRefs } from './documentKeep.mjs';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
 // server. Same steps the team does by hand (and documents.js does with Chrome on a team computer), sent as the
@@ -596,10 +597,17 @@ export async function readTenderDocuments(supabase, matchProducts, o, details) {
   const products = [...new Set(items.flatMap((i) => i.our_products))];
   // A tender bought as one package or lot isn't ours to bid on: no molecules (lib/packageTender.js)
   const packaged = isPackageTender(o.items_text, outcome.result?.package);
+  const matched = packaged ? [] : [...new Set([...matchProducts(`${o.title || ''}\n${o.items_text || ''}`), ...products])];
+  // Read to the end and none of ours (not Screened either): its files aren't kept (lib/documentKeep.mjs)
+  let documents = details.documents;
+  if (!matched.length && fullyRead(outcome.status, outcome.read) && !(await screenedRefs(supabase, 'philgeps')).has(String(o.ref_no))) {
+    documents = await dropFiles(supabase, BUCKET, documents);
+  }
   return {
-    matched_molecules: packaged ? [] : [...new Set([...matchProducts(`${o.title || ''}\n${o.items_text || ''}`), ...products])],
+    matched_molecules: matched,
     details: {
       ...details,
+      documents,
       package: outcome.result?.package,
       documents_products: packaged ? [] : products,
       documents_items: items.slice(0, 300),

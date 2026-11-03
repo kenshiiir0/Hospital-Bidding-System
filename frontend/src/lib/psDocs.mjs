@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
 import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from './ocr.mjs';
 import { BDS_ONE_LOT, PACKAGE_ROW } from './packageTender.js';
+import { dropFiles, fullyRead } from './documentKeep.mjs';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -1410,8 +1411,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
   const read = [];
   const texts = [];
   for (const doc of documents || []) {
-    if (!doc.path || !READABLE.test(doc.name)) {
-      if (doc.path) read.push({ name: doc.name, kind: 'unsupported' });
+    // (a file not kept, the tender not being ours: lib/documentKeep.mjs)
+    if (!doc.path || doc.removed || !READABLE.test(doc.name)) {
+      if (doc.path && !doc.removed) read.push({ name: doc.name, kind: 'unsupported' });
       continue;
     }
     const { data: blob, error } = await downloadWithRetry(supabase, bucket, doc.path);
@@ -1443,7 +1445,8 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       continue;
     }
     // ocr: which OCR read its scanned pages (an older one's are read again where OCR runs, ocrPending)
-    read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }) });
+    // ocr_waiting: scanned pages left for OCR where it runs (the file must be kept until then, lib/documentKeep.mjs)
+    read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }), ...(ocrError && { ocr_waiting: true }) });
     const marked = pages.map(quantityColumnOf);
     texts.push(marked.map((m) => m.text).join('\n'));
     // A long table's header carried on to the pages it goes on to (carryHeader)
@@ -1773,10 +1776,17 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
       }
       if (outcome.status === 'failed') failed++;
       else readCount++;
+      // Read to the end and none of ours (not Screened either): its files aren't kept. The names go with the
+      // reading, so the Sync doesn't download them again (psSync.mjs readNotice; lib/documentKeep.mjs)
+      let removed = [];
+      if (outcome.result && !outcome.result.items?.length && !notice.matched?.length && !isScreened.has(ref) && fullyRead(outcome.status, outcome.read)) {
+        const kept = await dropFiles(supabase, 'ps-documents', notice.documents);
+        removed = kept.filter((d) => d.removed).map(({ name, size, url, path }) => ({ name, size, url, path }));
+      }
       await supabase.from('ps_tender_analysis').upsert({
         ref,
         status: outcome.status,
-        result: outcome.result || null,
+        result: outcome.result ? { ...outcome.result, ...(removed.length && { files_removed: removed }) } : null,
         documents_read: outcome.read || null,
         // A failed reading keeps no key, so the next run tries again
         documents_key: outcome.status === 'failed' ? null : documentsKey(notice, matchProducts.key),

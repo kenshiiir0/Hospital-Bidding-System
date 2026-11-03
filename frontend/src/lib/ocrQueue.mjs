@@ -35,7 +35,7 @@ export async function scannedWaiting(supabase, { includeTried = false } = {}) {
     const docs = snap?.notices?.[r.ref]?.documents || [];
     for (const { name, tried } of scannedIn(r.documents_read)) {
       if (tried && !includeTried) continue;
-      const doc = docs.find((d) => d.name === name && d.path);
+      const doc = docs.find((d) => d.name === name && d.path && !d.removed);
       if (doc) out.push({ side: 'ps', ref: r.ref, bucket: 'ps-documents', doc, since: r.analyzed_at, tried });
     }
   }
@@ -48,7 +48,7 @@ export async function scannedWaiting(supabase, { includeTried = false } = {}) {
   for (const o of rows || []) {
     for (const { name, tried } of scannedIn(o.documents_read)) {
       if (tried && !includeTried) continue;
-      const doc = (o.documents || []).find((d) => d.name === name && d.path);
+      const doc = (o.documents || []).find((d) => d.name === name && d.path && !d.removed);
       if (doc) out.push({ side: 'philgeps', ref: o.ref_no, bucket: 'philgeps-documents', doc, since: o.documents_checked_at || null, tried });
     }
   }

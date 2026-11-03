@@ -66,6 +66,8 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
     `${KINDS[ext] || ext.toUpperCase() || 'File'} document`,
     sizeText(doc.size),
     doc.downloaded_at && `Downloaded ${formatInstant(doc.downloaded_at)}`,
+    // Read, then not kept: none of our products (lib/documentKeep.mjs)
+    doc.removed && 'Not kept: none of our products',
   ].filter(Boolean);
   return (
     <li className="group flex flex-wrap items-center gap-3 rounded-xl border border-[#E2E8F0] bg-white p-3 transition-all hover:border-[#1EA0DA] sm:flex-nowrap">
@@ -82,7 +84,17 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
           <div className="mt-0.5 text-[11px] text-black/46">{meta.join(' • ')}</div>
         </div>
       </div>
-      {canOpen && (
+      {doc.removed && doc.url && (
+        <a
+          href={doc.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex w-full shrink-0 items-center justify-center rounded-lg bg-[#1EA0DA]/10 px-3 py-1.5 text-xs font-semibold text-[#12769F] transition-all hover:bg-[#1EA0DA]/20 sm:w-auto"
+        >
+          Open original
+        </a>
+      )}
+      {canOpen && !doc.removed && (
         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
           <button
             type="button"
@@ -122,7 +134,7 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
 export function SourceLinks({ item, documents = [], bucket, tenderRef, source }) {
   const places = [item.source, item.paired_with].filter(Boolean).map((text) => {
     const [, name = text, page] = /^(.*), (?:page (\d+)|Word\/Excel file)$/.exec(text) || [];
-    return { name, page, doc: documents.find((d) => d.name === name) };
+    return { name, page, doc: documents.find((d) => d.name === name && !d.removed) };
   });
   if (!places.length) return <span className="text-black/62">—</span>;
   return places.map(({ name, page, doc }, i) => {
