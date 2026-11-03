@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
-import { formatInstant } from '@/lib/format';
+import { formatInstant, instantDay } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
 import PageHeader, { blueAction, plainAction } from '@/components/PageHeader';
 import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsConnectModal from '@/components/PsConnectModal';
 import ScrapeProgress from '@/components/ScrapeProgress';
+import AutoFetchBar from '@/components/AutoFetchBar';
 import OcrHealthNotice from '@/components/OcrHealthNotice';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 import { registerList, reportUnread, useTenderNews } from '@/lib/newTenders';
@@ -93,7 +94,7 @@ export default function PsPhilgepsLayout({ children }) {
   // The ring's Cancel button (DELETE /api/ps-sync): the Sync stops before its next page and saves nothing;
   // PS-PhilGEPS stays connected. cancelFor: the Sync it was pressed for, shown as cancelling until it ends.
   const [cancelFor, setCancelFor] = useState(null);
-  const ringJob = syncing
+  const syncJob = syncing
     ? { status: 'running', percent: sync.percent, stage: sync.stage || 'Starting', cancelling: cancelFor === startedAt || /^Cancelling/.test(sync.stage || '') }
     : finishedWatched
       ? sync.status === 'success'
@@ -102,7 +103,12 @@ export default function PsPhilgepsLayout({ children }) {
           ? { status: 'cancelled', percent: sync.percent, stage: sync.stage }
           : { status: 'failed', percent: sync.percent, stage: sync.stage, error: sync.error }
       : null;
-  const ringDone = ringJob?.status === 'success';
+  // The hourly Sync (started by the Supabase schedule) shows as the thin bar along the bottom, as the PhilGEPS
+  // hourly update does; a Sync someone pressed keeps the ring
+  const scheduled = sync?.started_by === 'schedule';
+  const ringJob = scheduled ? null : syncJob;
+  const barJob = scheduled ? syncJob : null;
+  const ringDone = syncJob?.status === 'success';
   useEffect(() => {
     if (!ringDone) return;
     const t = setTimeout(() => setDismissed(watched), 6000);
@@ -223,6 +229,18 @@ export default function PsPhilgepsLayout({ children }) {
     const ref = psRefOf(row);
     return Boolean(data?.notices?.[ref]?.matched?.length || data?.analysis?.[ref]?.result?.items?.length);
   };
+  // Today's Philippine date, read in the browser after mount and every minute (rolls over at midnight; reading
+  // the clock while rendering would differ between the server and the browser), as on the PhilGEPS page
+  const [today, setToday] = useState('');
+  useEffect(() => {
+    const update = () => setToday(instantDay(new Date().toISOString()));
+    Promise.resolve().then(update);
+    const timer = setInterval(update, 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+  // Bid Match tenders for our products published today (Philippine date), as the PhilGEPS header counts them
+  const bidMatch = data?.lists?.bidMatch;
+  const newToday = bidMatch && today ? bidMatch.rows.filter((row) => ours(row) && psDay(row.cells[bidMatch.headers.indexOf('Publish Date')]) === today).length : 0;
   const unreadBid = news.ready && data?.lists?.bidMatch ? data.lists.bidMatch.rows.filter((row) => ours(row) && news.isNewPs(`ps:${psRefOf(row) || row.cells[0]}`)).length : null;
   const unreadOpp = news.ready && data?.lists?.opportunities ? data.lists.opportunities.rows.filter((row) => news.isNewPs(`psopp:${row.cells[0]}`)).length : null;
   const unreadAward = news.ready && data?.lists?.awards ? data.lists.awards.rows.filter((row) => news.isNewPs(`psaward:${row.cells[0]}`)).length : null;
@@ -238,7 +256,7 @@ export default function PsPhilgepsLayout({ children }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
           <PageHeader
             title="PS-PhilGEPS Procurement Radar"
-            subtitle="philgeps.gov.ph"
+            subtitle={<>philgeps.gov.ph{newToday > 0 && ` · ${newToday} new today`}</>}
             status={
               !sync
                 ? { tone: 'busy', text: 'Checking…' }
@@ -274,12 +292,13 @@ export default function PsPhilgepsLayout({ children }) {
 
           {requestError && <Notice tone="error">{requestError}</Notice>}
           <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
-          <SyncNotice sync={sync} ringShowing={Boolean(ringJob)} />
+          <SyncNotice sync={sync} ringShowing={Boolean(syncJob)} />
           <OcrHealthNotice />
           {children}
         </div>
       </div>
       <ScrapeProgress job={ringJob} onCancel={cancelSync} onDismiss={() => setDismissed(watched)} />
+      <AutoFetchBar job={barJob} running="Hourly PS-PhilGEPS Sync" done="PS-PhilGEPS updated" onDismiss={() => setDismissed(watched)} />
     </PsContext.Provider>
   );
 }
@@ -396,4 +415,12 @@ function Notice({ tone = 'info', children }) {
       {children}
     </div>
   );
+}
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+// "3-Nov-2026 12:01 AM" -> "2026-11-03" (PS-PhilGEPS writes Philippine times)
+function psDay(text) {
+  const m = /^(d{1,2})-([A-Za-z]{3})-(d{4})/.exec(String(text || '').trim());
+  const month = m ? MONTHS.indexOf(m[2].toLowerCase()) + 1 : 0;
+  return month ? `${m[3]}-${String(month).padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
 }

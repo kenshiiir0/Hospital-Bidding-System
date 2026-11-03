@@ -4,22 +4,25 @@ import WorkingDots from '@/components/WorkingDots';
 
 // Thin loading bar along the bottom of the screen for the hourly automatic update (public data;
 // job from GET /api/scrape with kind 'auto'). Quiet while it runs; a failure or a skipped step
-// stays as a one-line note until closed.
-export default function AutoFetchBar({ job, onDismiss }) {
+// stays as a one-line note until closed. Also the PS-PhilGEPS hourly Sync (running / done name it; its
+// job: status, percent, stage, error from ps_sync_status).
+export default function AutoFetchBar({ job, onDismiss, running: runningText = 'Updating public data from PhilGEPS', done = 'Public data updated' }) {
   if (!job) return null;
   const running = job.status === 'running';
   const failed = job.status === 'failed' || job.status === 'unavailable';
   const percent = Math.min(100, Math.max(0, job.percent || 0));
 
   const message = running
-    ? `Updating public data from PhilGEPS · ${percent}%${job.stage ? ` · ${job.stage}` : ''}`
+    ? `${runningText} · ${percent}%${job.stage ? ` · ${job.stage}` : ''}`
     : job.status === 'unavailable'
       ? `Automatic update skipped: ${job.error} It tries again later this hour.`
       : failed
         ? `Automatic update failed: ${job.error || 'Unknown error'}`
-        : job.warning
-          ? `Public data updated. ${job.warning}`
-          : 'Public data updated';
+        : job.status === 'cancelled'
+          ? 'Automatic update cancelled'
+          : job.warning
+            ? `${done}. ${job.warning}`
+            : done;
 
   return (
     <div role="status" aria-live="polite" className="fixed inset-x-0 bottom-0 z-30 bg-white/95 border-t border-[#E2E8F0]">
