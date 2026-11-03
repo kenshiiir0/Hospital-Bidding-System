@@ -7,6 +7,7 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
 import { SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
+import PageHeader, { KpiRow, blueAction } from '@/components/PageHeader';
 
 // Our product list (table products): the B2B price list and the team's PRODUCT LIST, plus molecules added here. The
 // only list tenders on PhilGEPS and PS-PhilGEPS are screened against: a tender counts when it asks for the molecule
@@ -130,24 +131,28 @@ export default function ProductsPage() {
   return (
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-black">Product List</h1>
-            <p className="text-xs text-black/62 mt-1">
-              PhilGEPS and PS-PhilGEPS tenders count when they ask for one of these molecules in one of these dosages
-              {products ? ` · ${molecules} molecules, ${active.length} products` : ''}
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              setAdding(true);
-              setAdded('');
-            }}
-            className="inline-flex items-center justify-center gap-2 bg-[#4A8033] hover:bg-[#3F6F2C] text-white px-4 py-2 rounded-full text-sm font-medium transition"
-          >
-            + Add Molecule
-          </button>
-        </header>
+        <PageHeader
+          title="Product List"
+          subtitle="PhilGEPS and PS-PhilGEPS tenders count when they ask for one of these molecules in one of these dosages"
+          actions={
+            <button
+              onClick={() => {
+                setAdding(true);
+                setAdded('');
+              }}
+              className={blueAction}
+            >
+              + Add Molecule
+            </button>
+          }
+        />
+        <KpiRow
+          items={[
+            { label: 'Molecules', value: products ? molecules : '—', tone: 'green', note: 'tenders are screened for these' },
+            { label: 'Active products', value: products ? active.length : '—', note: 'molecule and dosage pairs' },
+            { label: 'Archived', value: products ? archived.length : '—', tone: 'docs', note: 'kept, not screened for' },
+          ]}
+        />
 
         {error && <p className="rounded-[14px] border border-[#B3312C]/25 bg-[#B3312C]/6 px-4 py-3 text-sm text-[#B3312C]">{error}</p>}
         {added && <p className="rounded-[14px] border border-[#61A644]/30 bg-[#61A644]/8 px-4 py-3 text-sm text-[#2F5321]">{added}</p>}

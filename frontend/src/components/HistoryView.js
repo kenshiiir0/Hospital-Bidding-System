@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import TenderDetails from '@/components/TenderDetails';
+import PageHeader, { KpiRow, plainAction } from '@/components/PageHeader';
 import { formatDate, formatInstant, instantDay } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { displayName } from '@/lib/username';
@@ -45,16 +46,6 @@ function formatDuration(ms) {
 
 // activity_log does not exist until its part of schema.sql is run in Supabase
 const isMissingTable = (error) => error?.code === 'PGRST205' || error?.code === '42P01' || /activity_log/.test(error?.message || '');
-
-function MetricCard({ label, value, note, tone = 'text-black' }) {
-  return (
-    <div className="bg-white border border-[#E2E8F0] p-5 rounded-[14px] ">
-      <span className="text-black/62 text-xs font-semibold uppercase tracking-wider">{label}</span>
-      <div className={`text-2xl font-bold mt-2 ${tone}`}>{value}</div>
-      {note && <div className="text-xs text-black/46 mt-1.5">{note}</div>}
-    </div>
-  );
-}
 
 function ProductChips({ names }) {
   return (
@@ -298,63 +289,61 @@ export default function HistoryView({ site = 'philgeps' }) {
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-black flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-[#61A644]" aria-hidden />
-              {config.label} History
-            </h1>
-            <p className="text-xs text-black/62 mt-1">{config.about}</p>
-          </div>
-          <div className="flex rounded-full border border-[#CBD5E1] bg-white p-1 text-sm sm:ml-auto">
-            {Object.entries(SITES).map(([key, s]) => (
-              <Link
-                key={key}
-                href={s.href}
-                aria-current={key === site ? 'page' : undefined}
-                className={`px-3 py-1.5 rounded-full transition ${key === site ? 'bg-[#1EA0DA] text-black' : 'text-black/62 hover:bg-[#1EA0DA]/6'}`}
-              >
-                {s.label}
-              </Link>
-            ))}
-          </div>
-          <button
-            onClick={reload}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-2 bg-white hover:bg-[#1EA0DA]/6 text-[#12769F] border border-[#1EA0DA]/25 disabled:text-black/46 disabled:border-[#E2E8F0] disabled:cursor-wait px-4 py-2 rounded-full text-sm font-medium transition"
-          >
-            {loading ? '⏳ Loading...' : '↻ Reload'}
-          </button>
-        </header>
+        <PageHeader
+          title={`${config.label} History`}
+          subtitle={config.about}
+          status={
+            lastRun
+              ? {
+                  tone: lastRun.status === 'failed' ? 'error' : lastRun.status === 'cancelled' ? 'off' : 'ok',
+                  text: `Last run ${lastRun.status === 'failed' ? 'failed' : lastRun.status === 'cancelled' ? 'cancelled' : 'OK'} · ${formatInstant(lastRun.created_at)}`,
+                }
+              : undefined
+          }
+          actions={
+            <>
+              <div className="flex rounded-lg border border-[#CBD5E1] bg-white p-1 text-xs">
+                {Object.entries(SITES).map(([key, s]) => (
+                  <Link
+                    key={key}
+                    href={s.href}
+                    aria-current={key === site ? 'page' : undefined}
+                    className={`flex-1 whitespace-nowrap rounded-md px-3 py-1 text-center font-medium transition ${key === site ? 'bg-[#1EA0DA] text-white' : 'text-black/62 hover:bg-[#1EA0DA]/6'}`}
+                  >
+                    {s.label}
+                  </Link>
+                ))}
+              </div>
+              <button onClick={reload} disabled={loading} className={plainAction}>
+                {loading ? 'Loading…' : '↻ Reload'}
+              </button>
+            </>
+          }
+        />
 
         {error && (
           <div className="bg-[#B3312C]/8 border border-[#B3312C]/25 text-[#B3312C] text-sm rounded-[14px] px-4 py-3">{error}</div>
         )}
 
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {isPhilgeps ? (
-            <>
-              <MetricCard label="Tenders Screened" value={screened.length} note="All Drugs & Medicines tenders read" />
-              <MetricCard label="Mention Our Products" value={matchedCount} tone="text-[#3F6F2C]" note={`${screened.length - matchedCount} screened out`} />
-            </>
-          ) : (
-            <>
-              <MetricCard label="Bid Matches" value={lastSuccess?.details?.bid_matches ?? '—'} note="In the last successful Sync" />
-              <MetricCard label="With Our Products" value={lastSuccess?.details?.matching ?? '—'} tone="text-[#3F6F2C]" note={lastSuccess ? `${lastSuccess.details?.files ?? 0} documents` : null} />
-            </>
-          )}
-          <MetricCard
-            label="Last Run"
-            value={lastRun ? (lastRun.status === 'failed' ? 'Failed' : lastRun.status === 'cancelled' ? 'Cancelled' : 'OK') : '—'}
-            tone={lastRun?.status === 'failed' ? 'text-[#B3312C]' : 'text-[#12769F]'}
-            note={lastRun ? formatInstant(lastRun.created_at) : 'No runs logged yet'}
-          />
-          <MetricCard
-            label="Runs Logged"
-            value={activity.length}
-            note={lastSuccess ? `Last success ${formatInstant(lastSuccess.created_at)}` : null}
-          />
-        </section>
+        <KpiRow
+          items={[
+            ...(isPhilgeps
+              ? [
+                  { label: 'Tenders read', value: screened.length, note: 'all Drugs & Medicines tenders' },
+                  { label: 'Mention our products', value: matchedCount, tone: 'green', note: `${screened.length - matchedCount} screened out` },
+                ]
+              : [
+                  { label: 'Bid matches', value: lastSuccess?.details?.bid_matches ?? '—', note: 'in the last successful Sync' },
+                  { label: 'With our products', value: lastSuccess?.details?.matching ?? '—', tone: 'green', note: lastSuccess ? `${lastSuccess.details?.files ?? 0} documents` : 'no successful Sync yet' },
+                ]),
+            {
+              label: 'Last run',
+              value: lastRun ? (lastRun.status === 'failed' ? 'Failed' : lastRun.status === 'cancelled' ? 'Cancelled' : 'OK') : '—',
+              note: lastRun ? formatInstant(lastRun.created_at) : 'No runs logged yet',
+            },
+            { label: 'Runs logged', value: activity.length, tone: 'docs', note: lastSuccess ? `last success ${formatInstant(lastSuccess.created_at)}` : 'no success yet' },
+          ]}
+        />
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-[#E2E8F0]" role="tablist">

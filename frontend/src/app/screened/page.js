@@ -11,6 +11,7 @@ import PsBidMatchDetails from '@/components/PsBidMatchDetails';
 import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/components/PsDetailsPanel';
 import ScreenButton from '@/components/ScreenButton';
 import WorkingDots from '@/components/WorkingDots';
+import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, pesoValue } from '@/components/PageHeader';
 import { downloadScreenedDocuments, exportScreened, loadScreenedDetails, removeScreened, useScreened } from '@/lib/screened';
 import { formatDate, formatDateTime, formatInstant, instantDay } from '@/lib/format';
 import { displayName } from '@/lib/username';
@@ -182,36 +183,51 @@ export default function ScreenedPage() {
   return (
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-[#E2E8F0]">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-black flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-[#61A644]" aria-hidden />
-              Screened Tenders
-            </h1>
-            <p className="text-xs text-black/62 mt-1">
-              Tenders added with &ldquo;Add to Screened&rdquo; in View details on PhilGEPS and PS-PhilGEPS
-              {rows ? ` · ${all.length} screened` : ''}
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <button
-            onClick={runDownload}
-            disabled={Boolean(downloading) || !shown.length}
-            title="The attached documents of the tenders listed below in one ZIP, a folder per tender named reference-hospital"
-            className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#1EA0DA] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#1790C5] disabled:cursor-not-allowed disabled:bg-[#1EA0DA]/50"
-          >
-            {downloading ? <>{downloading.replace(/…$/, '')} <WorkingDots /></> : `⬇ Download documents${rows ? ` (${shown.length})` : ''}`}
-          </button>
-          <button
-            onClick={runExport}
-            disabled={exporting || !shown.length}
-            title="The tenders listed below in the team's Opportunity sheet, first screened at the top, latest at the bottom"
-            className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[#4A8033] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#3F6F2C] disabled:cursor-not-allowed disabled:bg-[#4A8033]/50"
-          >
-            {exporting ? <>Exporting <WorkingDots /></> : `⬇ Export Excel${rows ? ` (${shown.length})` : ''}`}
-          </button>
-          </div>
-        </header>
+        <PageHeader
+          title="Screened Tenders"
+          subtitle={<>Tenders added with &ldquo;Add to Screened&rdquo; in View details on PhilGEPS and PS-PhilGEPS</>}
+          actions={
+            <>
+              <button
+                onClick={runExport}
+                disabled={exporting || !shown.length}
+                title="The tenders listed below in the team's Opportunity sheet, first screened at the top, latest at the bottom"
+                className={greenAction}
+              >
+                {exporting ? <>Exporting <WorkingDots /></> : `⬇ Export Excel${rows ? ` (${shown.length})` : ''}`}
+              </button>
+              <button
+                onClick={runDownload}
+                disabled={Boolean(downloading) || !shown.length}
+                title="The attached documents of the tenders listed below in one ZIP, a folder per tender named reference-hospital"
+                className={blueAction}
+              >
+                {downloading ? <>{downloading.replace(/…$/, '')} <WorkingDots /></> : `⬇ Download documents${rows ? ` (${shown.length})` : ''}`}
+              </button>
+            </>
+          }
+        />
+        <KpiRow
+          items={[
+            {
+              label: 'Screened tenders',
+              value: rows ? shown.length : '—',
+              note: rows ? `${shown.filter((r) => r.source === 'philgeps').length} PhilGEPS · ${shown.filter((r) => r.source === 'ps').length} PS-PhilGEPS` : 'Loading',
+            },
+            {
+              label: 'With our molecules',
+              value: rows ? shown.filter((r) => r.tender?.molecules?.length).length : '—',
+              tone: 'green',
+              note: 'molecule lines for the Excel export',
+            },
+            {
+              label: 'Total ABC value',
+              value: pesoTotal(shown.reduce((sum, r) => sum + (r.tender?.molecules || []).reduce((s, m) => s + pesoValue(m[3]), 0), 0)),
+              tone: 'blue',
+              note: 'ABC totals of our molecule lines',
+            },
+          ]}
+        />
 
         {error && <Notice tone="error">{error}</Notice>}
         {message.text && <Notice tone={message.tone}>{message.text}</Notice>}
