@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { loadMatcher } from './products.mjs';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
-import { analyzePending } from './psDocs.mjs';
+import { analyzePending, rememberDownload } from './psDocs.mjs';
 import { notifyPendingAwards } from './awardNotify.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
 
@@ -407,6 +407,8 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
         upsert: false,
       });
       if (error && !/exists/i.test(error.message)) throw new Error(error.message);
+      // Read from memory by this Sync's reading, not downloaded back out of Storage (psDocs.mjs rememberDownload)
+      rememberDownload(BUCKET, `${ref}/${key}`, body);
       documents.push({ name, size: body.length, url, path: `${ref}/${key}` });
     } catch (e) {
       errors.push(`${name}: ${e.message}`);

@@ -5,6 +5,7 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from './ocr.mjs';
 import { BDS_ONE_LOT, PACKAGE_ROW } from './packageTender.js';
 import { dropFiles, fullyRead } from './documentKeep.mjs';
+import { DOWNLOAD_BUDGET_MESSAGE, countDownload, downloadsOverBudget } from './usageMeter.mjs';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -1289,10 +1290,38 @@ function readTender(supabase, matchProducts, notice, options) {
 // A file download tried again after a dropped connection ("fetch failed"), so a brief network blip doesn't leave a
 // tender unread until the next run
 const DOWNLOAD_TRIES = 3;
+// Files a Sync has just downloaded in this run (psSync.mjs readNotice, philgepsSync.mjs downloadItems) are read from
+// memory, not downloaded back out of Storage: every Storage download counts against the free plan's monthly
+// downloads, which ran out in two weeks on 2026-11-03 (user, 2026-11-04: "We have to prevent that from happening
+// again"). Each is dropped once read; at most JUST_DOWNLOADED_MAX bytes are held.
+const justDownloaded = new Map();
+let justDownloadedBytes = 0;
+const JUST_DOWNLOADED_MAX = 150 * 1024 * 1024;
+export function rememberDownload(bucket, path, bytes) {
+  const key = `${bucket}/${path}`;
+  if (justDownloaded.has(key) || bytes.length > JUST_DOWNLOADED_MAX) return;
+  while (justDownloadedBytes + bytes.length > JUST_DOWNLOADED_MAX && justDownloaded.size) {
+    const [oldest, old] = justDownloaded.entries().next().value;
+    justDownloaded.delete(oldest);
+    justDownloadedBytes -= old.length;
+  }
+  justDownloaded.set(key, bytes);
+  justDownloadedBytes += bytes.length;
+}
+
 async function downloadWithRetry(supabase, bucket, path) {
+  const fresh = justDownloaded.get(`${bucket}/${path}`);
+  if (fresh) {
+    justDownloaded.delete(`${bucket}/${path}`);
+    justDownloadedBytes -= fresh.length;
+    return { data: new Blob([fresh]), error: null };
+  }
+  // The month's Storage downloads near the free plan's limit: no more until next month (lib/usageMeter.mjs)
+  if (await downloadsOverBudget(supabase)) return { data: null, error: { message: DOWNLOAD_BUDGET_MESSAGE } };
   let result;
   for (let attempt = 1; attempt <= DOWNLOAD_TRIES; attempt++) {
     result = await supabase.storage.from(bucket).download(path);
+    if (!result.error) await countDownload(supabase, result.data?.size || 0);
     if (!result.error || !/fetch failed|network|timed? ?out|ECONN|ETIMEDOUT/i.test(result.error.message || '')) return result;
     await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
   }

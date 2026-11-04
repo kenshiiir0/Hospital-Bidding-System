@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { parse } from 'node-html-parser';
 import { checkLogin, recordLogin } from './loginGuard.mjs';
 import { logActivity } from './activityLog.mjs';
-import { loadMatcher, ocrPending, readDocuments } from './psDocs.mjs';
+import { loadMatcher, ocrPending, readDocuments, rememberDownload } from './psDocs.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
 import { isPackageTender } from './packageTender.js';
 import { dropFiles, fullyRead, screenedRefs } from './documentKeep.mjs';
@@ -400,6 +400,8 @@ async function downloadItems(session, supabase, page, ref, orderNo, trail) {
       trail.push(`"${name}": upload failed (${error.message})`);
       continue;
     }
+    // Read from memory right after, not downloaded back out of Storage (psDocs.mjs rememberDownload)
+    rememberDownload(BUCKET, key, body);
     trail.push(`downloaded "${name}" (${body.length} bytes)`);
     files.push({ name, title: link.text, size: body.length, path: key, order_no: orderNo || null });
   }

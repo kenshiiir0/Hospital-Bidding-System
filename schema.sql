@@ -408,3 +408,18 @@ CREATE POLICY "team watches ps-connect" ON realtime.messages FOR SELECT TO authe
 DROP POLICY IF EXISTS "team clicks ps-connect" ON realtime.messages;
 CREATE POLICY "team clicks ps-connect" ON realtime.messages FOR INSERT TO authenticated
     WITH CHECK (realtime.topic() LIKE 'ps-connect:%' AND COALESCE((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+
+-- The month's bid-document downloads out of Storage by the readers (frontend/src/lib/usageMeter.mjs): they stop at
+-- 2.5 GB a month so the free plan's 5 GB of downloads is never used up (it was on 2026-11-03). Server only.
+CREATE TABLE IF NOT EXISTS usage_meter (
+    month TEXT PRIMARY KEY,
+    read_bytes BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE usage_meter ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION add_read_bytes(m TEXT, b BIGINT) RETURNS BIGINT LANGUAGE sql AS $$
+    INSERT INTO usage_meter (month, read_bytes) VALUES (m, b)
+    ON CONFLICT (month) DO UPDATE SET read_bytes = usage_meter.read_bytes + EXCLUDED.read_bytes, updated_at = now()
+    RETURNING read_bytes;
+$$;
+REVOKE EXECUTE ON FUNCTION add_read_bytes(TEXT, BIGINT) FROM PUBLIC, anon, authenticated;
