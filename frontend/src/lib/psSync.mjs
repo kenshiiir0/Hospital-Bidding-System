@@ -383,6 +383,17 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
     if (!found.length) errors.push('The Document Preview showed no files (asked twice); the next Sync asks again.');
     for (const url of found) links.add(url);
   }
+  // Bid bulletins / supplements ("Bid Supplements: 2" -> tender_corr_details): their files are read with the rest;
+  // a bulletin often replaces the Price Schedule (user, 2026-11-05: Davao Regional Medical Center's Bid Bulletin No. 1)
+  for (const supplements of root.querySelectorAll('a[href*="tender_corr_details"]')) {
+    if (!/[1-9]/.test(supplements.text)) continue;
+    try {
+      const list = parse(await getPage(session, absolute(supplements.getAttribute('href')), { ajax: true }));
+      for (const a of list.querySelectorAll('a[href*="/portal_documents/"]')) links.add(absolute(a.getAttribute('href')));
+    } catch (e) {
+      errors.push(`Bid supplements not read (${e.message}); the next Sync asks again.`);
+    }
+  }
 
   const { data: stored } = await supabase.storage.from(BUCKET).list(ref, { limit: 1000 });
   const have = new Map((stored || []).map((f) => [f.name, f.metadata?.size]));

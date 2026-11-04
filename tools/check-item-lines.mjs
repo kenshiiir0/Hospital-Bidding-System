@@ -325,6 +325,17 @@ const PLAN = [
 ];
 keepBestReading(PLAN);
 assert.equal(PLAN.length, 1, 'delivery plan copy dropped');
+// A bid bulletin's Price Schedule replaces the original's (user, 2026-11-05: Davao Regional Medical Center, PhilGEPS
+// 13300232, Bid Bulletin No. 1 "the previously posted Price Schedule ... have been superseded"); the latest wins, and a
+// bulletin that only names the row (a clarification) never replaces a priced reading
+const BB = [
+  { our_products: ['Cetirizine'], item_no: '79', quantity: 20000, unit_price: 30, total: 600000, written: '79 Cetirizine 10mg 20000 Tablet 30.00 600,000.00', source: 'Price Schedule and Technical Specifications.pdf, page 19' },
+  { our_products: ['Cetirizine'], item_no: '79', quantity: 20000, unit_price: 33.6, total: 672000, written: '79 Cetirizine 10mg 20000 Tablet 33.60 672,000.00', source: 'Bid_Bulletin_No._1.pdf, page 22' },
+  { our_products: ['Cetirizine'], item_no: '79', quantity: 20000, unit_price: 34, total: 680000, written: '79 Cetirizine 10mg 20000 Tablet 34.00 680,000.00', source: 'Bid Bulletin No. 2.pdf, page 3' },
+  { our_products: ['Cetirizine'], item_no: '79', written: '79 Cetirizine 10mg - Tablet is acceptable', source: 'Bid Bulletin No. 3.pdf, page 1' },
+];
+keepBestReading(BB);
+assert.deepEqual(BB.map((i) => i.unit_price ?? '-'), [34], 'latest bulletin table wins');
 
 // User, 2026-10-28: "they are in a one table" - every row of one table read the same way, both portals
 // PhilGEPS 13312124 (Rizal): numbers on a line starting with the unit, delivery text after them

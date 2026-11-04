@@ -1093,6 +1093,8 @@ const letterCount = (text) => (text || '').replace(/\s/g, '').length;
 
 // The files that hold the item table (user, 2026-10-27: "always use the tech specs and price sched")
 const TABLE_FILE = /tech\w*[\s._-]*spec|price[\s._-]*sched|schedule[\s._-]*of[\s._-]*req|bill[\s._-]*of[\s._-]*quant|bid[\s._-]*form|\bsor\b/i;
+// "Bid_Bulletin_No._2.pdf", "Supplemental Bid Bulletin No. 1", "Addendum 3", a PS-PhilGEPS corrigendum file
+export const BULLETIN_FILE = /(?:bid[\s._-]*bulletin|supplement(?:al)?[\s._-]*bulletin|addendum|corrigendum)(?:\D{0,12}?(\d{1,2})(?!\d))?/i;
 const DOSE = /\d+(?:[.,]\d+)?\s*(?:(?:mg|mcg|µg|g|gm|ml|l|iu)\b|%)/i;
 
 /** The same row read from several files (or pages): one kept, the most complete reading (quantity, then prices),
@@ -1105,7 +1107,13 @@ export function keepBestReading(items) {
   // "Item No. 55 SEVELAMER ... Qty/Unit: 10,000 Tab" (a Technical Specifications form, PS 114538)
   const itemNoOf = (i) => i.item_no ?? /^\W{0,2}(?:item\s*no\.?\s*)?(\d{1,4})[.)]?\s+[A-Za-z]/i.exec(i.written || i.line || '')?.[1] ?? null;
   const keyOf = (i) => (itemNoOf(i) == null ? null : `${[...i.our_products].sort().join('+')}|${itemNoOf(i)}|${flat(DOSE.exec(withOcrUnits(i.written || i.line || i.description || ""))?.[0])}`);
-  const score = (i) => (i.quantity != null ? 8 : 0) + (i.unit_price != null && i.computed !== 'unit_price' ? 2 : 0) + (i.total != null && i.computed !== 'total' ? 2 : 0) + (TABLE_FILE.test(i.source || '') ? 1 : 0);
+  // A bid bulletin's table replaces the one it amends (user, 2026-11-05: "the previously posted Price Schedule ... have
+  // been superseded"): its full reading of a row wins, the latest bulletin first
+  const bulletin = (i) => {
+    const m = BULLETIN_FILE.exec(i.source || '');
+    return m && i.quantity != null && (i.unit_price != null || i.total != null) ? 16 + Number(m[1] || 0) : 0;
+  };
+  const score = (i) => bulletin(i) + (i.quantity != null ? 8 : 0) + (i.unit_price != null && i.computed !== 'unit_price' ? 2 : 0) + (i.total != null && i.computed !== 'total' ? 2 : 0) + (TABLE_FILE.test(i.source || '') ? 1 : 0);
   const best = new Map();
   for (const i of items) {
     const key = keyOf(i);
