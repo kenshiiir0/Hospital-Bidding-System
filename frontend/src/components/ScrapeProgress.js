@@ -25,8 +25,9 @@ const LOOK = {
 // Bottom-left card with a progress ring for a Sync (log-in and documents; job from GET /api/scrape).
 // A failed Sync, one that finished with a warning, one cancelled, or one not started because PhilGEPS is down,
 // stays on screen until dismissed. raised: lifts the card above the automatic-update bar.
+// title: replaces the status title (SyncAlertHost names the portal). inline: placed by the parent instead of fixed.
 // onCancel: shows a Cancel button while the Sync runs (it stops the Sync; on PhilGEPS it also logs out).
-export default function ScrapeProgress({ job, onDismiss, onCancel, raised = false }) {
+export default function ScrapeProgress({ job, onDismiss, onCancel, raised = false, title, inline = false }) {
   const cancelling = job?.status === 'running' && job.cancelling;
   const look = LOOK[cancelling ? 'cancelling' : job?.status === 'success' && job.warning ? 'warning' : job?.status];
   if (!look) return null;
@@ -38,7 +39,7 @@ export default function ScrapeProgress({ job, onDismiss, onCancel, raised = fals
     <div
       role="status"
       aria-live="polite"
-      className={`fixed ${raised ? 'bottom-14' : 'bottom-5'} left-5 z-40 w-80 max-w-[calc(100vw-2.5rem)] flex gap-3 items-start bg-white border border-[#E2E8F0] rounded-[14px] p-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]`}
+      className={`${inline ? 'w-full' : `fixed ${raised ? 'bottom-14' : 'bottom-5'} left-5 z-40 w-80 max-w-[calc(100vw-2.5rem)]`} flex gap-3 items-start bg-white border border-[#E2E8F0] rounded-[14px] p-4 shadow-[0_4px_16px_rgba(0,0,0,0.08)]`}
     >
       <div className="relative h-12 w-12 shrink-0">
         <svg viewBox="0 0 48 48" className="h-12 w-12 -rotate-90">
@@ -63,7 +64,7 @@ export default function ScrapeProgress({ job, onDismiss, onCancel, raised = fals
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className={`text-sm font-semibold ${look.text} flex items-center gap-1.5`}>
-            {look.title}
+            {title || look.title}
             {busy && <WorkingDots />}
           </div>
           {!busy && (

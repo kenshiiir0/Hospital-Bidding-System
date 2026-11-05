@@ -4,6 +4,7 @@ import { Activity, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import LoginScreen from '@/components/LoginScreen';
 import Sidebar from '@/components/Sidebar';
+import SyncAlertHost from '@/components/SyncAlertHost';
 
 // Shows the sign-in screen until a team member is signed in, then the app. The data itself is protected
 // by Supabase (schema.sql: only signed-in users may read), this only decides what to draw.
@@ -27,6 +28,8 @@ export default function AuthGate({ children }) {
       {session === null && <LoginScreen />}
       {session && !member && <LoginScreen notice="This account is not part of the team yet. Ask an admin to add it." />}
       {member && <Sidebar user={session.user} />}
+      {/* A failed Sync stays on screen on every page until closed */}
+      {member && <SyncAlertHost />}
       {/* Visible while the session loads too: the server render must include the pages */}
       <Activity mode={session === undefined || member ? 'visible' : 'hidden'}>
         <main hidden={!member} className="flex-1 min-w-0">

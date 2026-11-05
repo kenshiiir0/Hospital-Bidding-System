@@ -10,6 +10,7 @@ import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import ScrapeProgress from '@/components/ScrapeProgress';
+import { clearSync, failSync, followSync, philgepsRun, pressedSync, useSyncAlert } from '@/lib/syncAlerts';
 import OcrHealthNotice from '@/components/OcrHealthNotice';
 import TenderDetails from '@/components/TenderDetails';
 import TypeBadge from '@/components/TypeBadge';
@@ -236,18 +237,22 @@ export default function Home() {
       if (result.unavailable) {
         setLocalSync({ status: 'unavailable', error: result.error });
       } else if (result.requested) {
+        pressedSync('philgeps');
         // Asked from a dashboard without the scraper: the team computer starts it within a few seconds
         setLocalSync({ status: 'queued', stage: 'Sent to the team computer; starting in a few seconds', requestedAt: Date.now() });
         wakePoll.current?.();
       } else if (!result.ok) {
         setLocalSync({ status: 'failed', percent: 0, error: result.error || `Sync failed (${res.status})` });
+        failSync('philgeps', { error: result.error || `Sync failed (${res.status})` });
       } else {
         if (result.job) setFetchJob(result.job);
+        pressedSync('philgeps');
         setLocalSync(null);
         wakePoll.current?.();
       }
     } catch (err) {
       setLocalSync({ status: 'failed', percent: 0, error: err.message });
+      failSync('philgeps', { error: err.message });
     }
   };
 
@@ -273,6 +278,9 @@ export default function Home() {
   const jobShown = fetchJob && (jobRunning || (fetchJob.finishedAt && !dismissed.includes(fetchJob.startedAt)));
   const syncQueued = (fetchJob?.queued || []).includes('sync');
   const cancelPressed = jobRunning && cancelFor != null && cancelFor === fetchJob.startedAt && !fetchJob.cancelling;
+  // A failed Sync not closed yet, also when it ended while another page was open (lib/syncAlerts.js)
+  const savedSync = useSyncAlert('philgeps');
+  const savedFailure = savedSync?.status === 'failed' ? { status: 'failed', percent: savedSync.percent, stage: savedSync.stage, error: savedSync.error } : null;
   const syncView =
     localSync ||
     (syncQueued ? { status: 'queued', stage: 'Starts when the automatic update finishes' } : null) ||
@@ -280,7 +288,8 @@ export default function Home() {
       ? cancelPressed
         ? { ...fetchJob, cancelling: true, stage: 'Cancelling: stops after the tender in progress, then logs out of PhilGEPS' }
         : fetchJob
-      : null);
+      : null) ||
+    savedFailure;
   const autoView = jobShown && fetchJob.kind === 'auto' ? fetchJob : null;
   // Each tender's state in the current/last Sync, for the rolling number circles
   const syncTenders = (fetchJob?.kind === 'sync' && fetchJob.tenders) || {};
@@ -298,6 +307,12 @@ export default function Home() {
   const syncing = ['checking', 'queued', 'running'].includes(syncView?.status);
 
   const dismissFetch = () => setDismissed((list) => [...list, fetchJob?.startedAt]);
+  // The ring's ×: a failure closed here is closed on every page
+  const closeRing = () => {
+    if (localSync) setLocalSync(null);
+    else dismissFetch();
+    if (savedSync?.status === 'failed') clearSync('philgeps', savedSync.startedAt);
+  };
 
   // A plain "complete" hides itself after a few seconds; a failure or warning stays until closed
   const finishedCleanly = fetchJob?.status === 'success' && !fetchJob.warning && fetchJob.kind !== 'sync';
@@ -369,6 +384,8 @@ export default function Home() {
           if (first && job.status !== 'running' && job.startedAt) setDismissed((list) => [...list, job.startedAt]);
           first = false;
           setFetchJob(job);
+          // Kept for the other pages: a failure stays on screen there until closed (components/SyncAlertHost.js)
+          followSync('philgeps', philgepsRun(job));
           const nowRunning = job.status === 'running' ? job.startedAt : null;
           if (runningSince && nowRunning !== runningSince) fetchBids();
           runningSince = nowRunning;
@@ -797,7 +814,7 @@ export default function Home() {
         // The freshest copy of the open tender (the list reloads while a Sync saves each result)
         <TenderDetails bid={ourBids.find((b) => b.id === selectedBid.id) || selectedBid} onClose={() => setSelectedBid(null)} />
       )}
-      <ScrapeProgress job={syncView} raised={Boolean(autoView)} onCancel={cancelSync} onDismiss={() => (localSync ? setLocalSync(null) : dismissFetch())} />
+      <ScrapeProgress job={syncView} raised={Boolean(autoView)} onCancel={cancelSync} onDismiss={closeRing} />
       <AutoFetchBar job={autoView} onDismiss={dismissFetch} />
     </div>
   );

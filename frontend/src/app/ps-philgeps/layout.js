@@ -9,6 +9,7 @@ import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import PsConnectModal from '@/components/PsConnectModal';
 import ScrapeProgress from '@/components/ScrapeProgress';
+import { clearSync, failSync, followSync, pressedSync, psRun, useSyncAlert } from '@/lib/syncAlerts';
 import AutoFetchBar from '@/components/AutoFetchBar';
 import OcrHealthNotice from '@/components/OcrHealthNotice';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
@@ -106,7 +107,19 @@ export default function PsPhilgepsLayout({ children }) {
   // The hourly Sync (started by the Supabase schedule) shows as the thin bar along the bottom, as the PhilGEPS
   // hourly update does; a Sync someone pressed keeps the ring
   const scheduled = sync?.started_by === 'schedule';
-  const ringJob = scheduled ? null : syncJob;
+  // A failed Sync not closed yet, also when it ended while another page was open (lib/syncAlerts.js)
+  const savedSync = useSyncAlert('ps');
+  const savedFailure = savedSync?.status === 'failed' ? { status: 'failed', percent: savedSync.percent, stage: savedSync.stage, error: savedSync.error } : null;
+  const ringJob = (scheduled ? null : syncJob) || savedFailure;
+  // The ring's ×: a failure closed here is closed on every page
+  const closeRing = () => {
+    setDismissed(watched);
+    if (savedSync?.status === 'failed') clearSync('ps', savedSync.startedAt);
+  };
+  // Kept for the other pages: a failure stays on screen there until closed (components/SyncAlertHost.js)
+  useEffect(() => {
+    if (sync) followSync('ps', psRun(sync));
+  }, [sync]);
   const barJob = scheduled ? syncJob : null;
   const ringDone = syncJob?.status === 'success';
   useEffect(() => {
@@ -176,7 +189,19 @@ export default function PsPhilgepsLayout({ children }) {
   };
   const connected = Boolean(sync?.connected_at);
 
-  const runSync = useCallback(() => post('/api/ps-sync', loadSync), [loadSync]);
+  // Followed from the press on, so a failure shows on whatever page is open (lib/syncAlerts.js)
+  const runSync = useCallback(async () => {
+    pressedSync('ps');
+    setRequestError('');
+    try {
+      const res = await authFetch('/api/ps-sync', { method: 'POST' });
+      const result = await res.json();
+      if (!result.ok) failSync('ps', { error: result.error || `Could not start (${res.status})` });
+    } catch (err) {
+      failSync('ps', { error: err.message });
+    }
+    loadSync();
+  }, [loadSync]);
   const cancelSync = async () => {
     if (!window.confirm('Cancel the PS-PhilGEPS Sync? Nothing is changed and PS-PhilGEPS stays connected.')) return;
     setCancelFor(startedAt);
@@ -292,12 +317,12 @@ export default function PsPhilgepsLayout({ children }) {
 
           {requestError && <Notice tone="error">{requestError}</Notice>}
           <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
-          <SyncNotice sync={sync} ringShowing={Boolean(syncJob)} />
+          <SyncNotice sync={sync} ringShowing={Boolean(syncJob || savedFailure)} />
           <OcrHealthNotice />
           {children}
         </div>
       </div>
-      <ScrapeProgress job={ringJob} onCancel={cancelSync} onDismiss={() => setDismissed(watched)} />
+      <ScrapeProgress job={ringJob} onCancel={cancelSync} onDismiss={closeRing} />
       <AutoFetchBar job={barJob} running="Hourly PS-PhilGEPS Sync" done="PS-PhilGEPS updated" onDismiss={() => setDismissed(watched)} />
     </PsContext.Provider>
   );
