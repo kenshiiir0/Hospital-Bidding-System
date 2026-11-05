@@ -8,7 +8,7 @@ import NumberCircle from '@/components/NumberCircle';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import { stillReading } from '@/lib/documentsReading';
 import { usePsFilters, PS_SORTS } from '@/components/PsFilters';
-import { LotPill, MultiSelectDropdown, NewPill, ProductChips as Products, PublishedTag, SegmentedTabs, StatusDot } from '@/components/FilterControls';
+import { LotPill, MultiSelectDropdown, NewPill, ProductChips as Products, PublishedTag, SegmentedTabs } from '@/components/FilterControls';
 import { useExcludedProducts } from '@/lib/excludedProducts';
 import { useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 import { KpiRow, pesoTotal, pesoValue } from '@/components/PageHeader';
@@ -157,7 +157,6 @@ export default function BidMatchPage() {
                   </div>
                   <div className="flex flex-wrap gap-1">
                     <TypeBadge type={psType(cell(row, 'Mode of Procurement'))} />
-                    <StatusDot text={cell(row, 'Status')} />
                   </div>
                   <div className="font-normal"><DocumentCount notice={noticeOf(row)} reading={reading(row)} /></div>
                 </div>
