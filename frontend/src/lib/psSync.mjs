@@ -398,9 +398,14 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
   const { data: stored } = await supabase.storage.from(BUCKET).list(ref, { limit: 1000 });
   const have = new Map((stored || []).map((f) => [f.name, f.metadata?.size]));
   const documents = [];
+  // One entry per file: the same bulletin is linked from the Document Preview and the Bid Supplements list, at two
+  // addresses (PS 112434's "Supplemental_Bid_Bulletin_No._2026_003.pdf" was listed and read twice)
+  const named = new Set();
   for (const url of links) {
     const name = decodeURIComponent(new URL(url).pathname.split('/').pop()).replace(/[<>:"/\\|?*]/g, '_');
     const key = storageName(name);
+    if (named.has(key)) continue;
+    named.add(key);
     if (have.has(key)) {
       documents.push({ name, size: have.get(key), url, path: `${ref}/${key}` });
       continue;
