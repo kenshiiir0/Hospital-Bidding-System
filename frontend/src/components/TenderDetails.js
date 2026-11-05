@@ -256,26 +256,6 @@ export default function TenderDetails({ bid, onClose }) {
         )}
       </PanelSection>
 
-      <PanelSection title={`Bid supplements${supplements.length ? ` (${supplements.length})` : ''}`}>
-        {supplements.length > 0 ? (
-          <ul className="space-y-1.5 text-sm">
-            {supplements.map((s) => (
-              <li key={s.no}>
-                <div className="text-black">{s.title}</div>
-                <div className="text-xs text-black/46">{s.no} · {s.type} · {formatDate(s.published) || s.published}</div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-black/46">No bid bulletins or addenda posted.</p>
-        )}
-        {validRef && supplements.length > 0 && (
-          <a href={supplementsUrl(bid.ref_no)} target="_blank" rel="noreferrer" className="inline-block text-sm text-[#12769F] hover:text-[#0E5C7C] hover:underline">
-            Supplement list on PhilGEPS ↗
-          </a>
-        )}
-      </PanelSection>
-
       <PanelSection title="Contact person">
         {d.contact_name ? (
           <FactList items={[['Name', d.contact_name], ...(d.contact_info || []).map((line, i) => [i ? '' : 'Contact', contactLine(line)])].filter(([, v]) => v)} />
@@ -288,6 +268,12 @@ export default function TenderDetails({ bid, onClose }) {
           by Sync: status pill, one card per file (View / Save), and the remark on why there are files or not */}
       <DocumentsPanel
         documents={documents}
+        // Bid bulletins PhilGEPS lists whose file isn't downloaded yet (the documents Sync downloads them): shown in the
+        // Bid bulletins group, as on PS-PhilGEPS (user, 2026-11-05)
+        pendingBulletins={supplements
+          .filter((s) => /^\d{8}-\d{1,3}$/.test(s.no || '') && !documents.some((doc) => doc.supplement_no === s.no))
+          .map((s) => ({ ...s, noFile: (d.documents_supplements_tried || []).includes(s.no) }))}
+        pendingLink={validRef ? supplementsUrl(bid.ref_no) : null}
         bucket="philgeps-documents"
         tenderRef={bid.ref_no}
         status={{ label: remark.pill, tone: remark.tone }}

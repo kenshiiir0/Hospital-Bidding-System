@@ -114,7 +114,8 @@ function readSupplements(html) {
   return tableRows
     .slice(tableRows.indexOf(header) + 1)
     .map((tr) => tr.querySelectorAll('td').map((td) => decode(td.text).replace(/\s+/g, ' ').trim()))
-    .filter((cells) => cells.length >= 4 && cells[0])
+    // (the list's own header row is read again from a nested table: "Bid Supplement No. | Title | Type")
+    .filter((cells) => cells.length >= 4 && /^\d{8}-\d{1,3}$/.test(cells[0]))
     .map(([no, title, type, published]) => ({ no, title, type, published: toIsoDate(published) }));
 }
 

@@ -39,7 +39,7 @@ export const isBulletin = (doc) =>
  * @param {React.ReactNode} [props.footer]  Muted line under the files (where from, last checked)
  * @param {React.ReactNode} [props.empty]   Shown when there are no files
  */
-export default function DocumentsPanel({ documents = [], bucket, tenderRef, source, status, footer, empty = 'None found', children }) {
+export default function DocumentsPanel({ documents = [], pendingBulletins = [], pendingLink, bucket, tenderRef, source, status, footer, empty = 'None found', children }) {
   const canOpen = /^\d+$/.test(tenderRef || '');
   // One card per file (an older Sync could list the same file twice, PS 112434)
   const unique = documents.filter((d, i, all) => all.findIndex((x) => (x.path || x.name) === (d.path || d.name)) === i);
@@ -55,7 +55,7 @@ export default function DocumentsPanel({ documents = [], bucket, tenderRef, sour
   return (
     <PanelSection
       title="Attached documents"
-      count={unique.length}
+      count={unique.length + pendingBulletins.length}
       aside={
         status && (
           <span className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${STATUS_TONE[status.tone] || STATUS_TONE.grey}`}>
@@ -64,18 +64,25 @@ export default function DocumentsPanel({ documents = [], bucket, tenderRef, sour
         )
       }
     >
-      {unique.length > 0 ? (
+      {unique.length + pendingBulletins.length > 0 ? (
         <div className="space-y-4">
           {files.length > 0 && (
             <section>
-              {bulletins.length > 0 && <GroupTitle label="Bidding documents" count={files.length} />}
+              {bulletins.length + pendingBulletins.length > 0 && <GroupTitle label="Bidding documents" count={files.length} />}
               {list(files)}
             </section>
           )}
-          {bulletins.length > 0 && (
+          {bulletins.length + pendingBulletins.length > 0 && (
             <section>
-              <GroupTitle label="Bid bulletins" count={bulletins.length} />
+              <GroupTitle label="Bid bulletins" count={bulletins.length + pendingBulletins.length} />
               {list(bulletins)}
+              {pendingBulletins.length > 0 && (
+                <ul className={`space-y-2 ${bulletins.length ? 'mt-2' : ''}`}>
+                  {pendingBulletins.map((b) => (
+                    <PendingBulletin key={b.no} bulletin={b} link={pendingLink} />
+                  ))}
+                </ul>
+              )}
             </section>
           )}
         </div>
@@ -93,6 +100,26 @@ function GroupTitle({ label, count }) {
     <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#12769F]">
       {label} <span className="font-normal text-black/46">({count})</span>
     </h4>
+  );
+}
+
+// A bulletin PhilGEPS lists whose file isn't here yet: its title and number, why, and the PhilGEPS list
+function PendingBulletin({ bulletin, link }) {
+  const date = bulletin.published ? new Date(`${bulletin.published}T00:00:00+08:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+  return (
+    <li className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-3 sm:flex-nowrap">
+      <div className="min-w-0 flex-1 basis-56">
+        <div className="break-words text-xs font-semibold text-black">{bulletin.title}</div>
+        <div className="mt-0.5 text-[11px] text-black/46">
+          {[bulletin.no, bulletin.type, date, bulletin.noFile ? 'No file attached on PhilGEPS' : 'File comes with the next documents Sync'].filter(Boolean).join(' • ')}
+        </div>
+      </div>
+      {link && (
+        <a href={link} target="_blank" rel="noopener noreferrer" className="flex w-full shrink-0 items-center justify-center rounded-lg bg-[#1EA0DA]/10 px-3 py-1.5 text-xs font-semibold text-[#12769F] transition-all hover:bg-[#1EA0DA]/20 sm:w-auto">
+          Open on PhilGEPS
+        </a>
+      )}
+    </li>
   );
 }
 
