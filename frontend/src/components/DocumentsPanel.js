@@ -22,6 +22,14 @@ const extensionOf = (name) => (/\.([a-z0-9]+)$/i.exec(name || '')?.[1] || '').to
 const sizeText = (bytes) =>
   !bytes ? null : bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
+// A bid bulletin / supplement: fetched from the bulletin's page (PhilGEPS, philgepsSync.mjs fetchBulletins), a
+// PS-PhilGEPS corrigendum file, or named so. Shown apart from the bidding documents (user, 2026-11-05)
+export const isBulletin = (doc) =>
+  doc.source === 'bulletin' ||
+  Boolean(doc.supplement_no) ||
+  /corrigendum/i.test(doc.url || '') ||
+  /bid[\s._-]*bulletin|supplement(?:al)?[\s._-]*bulletin|addendum|corrigendum/i.test(doc.name || '');
+
 /**
  * @param {object[]} props.documents  [{ name, title?, path?, size?, downloaded_at? }]
  * @param {string} props.bucket       Storage bucket of the files ("philgeps-documents", "ps-documents")
@@ -33,10 +41,21 @@ const sizeText = (bytes) =>
  */
 export default function DocumentsPanel({ documents = [], bucket, tenderRef, source, status, footer, empty = 'None found', children }) {
   const canOpen = /^\d+$/.test(tenderRef || '');
+  // One card per file (an older Sync could list the same file twice, PS 112434)
+  const unique = documents.filter((d, i, all) => all.findIndex((x) => (x.path || x.name) === (d.path || d.name)) === i);
+  const bulletins = unique.filter(isBulletin);
+  const files = unique.filter((d) => !isBulletin(d));
+  const list = (docs) => (
+    <ul className="space-y-2">
+      {docs.map((doc) => (
+        <FileRow key={doc.path || doc.name} doc={doc} bucket={bucket} tenderRef={tenderRef} source={source} canOpen={canOpen} />
+      ))}
+    </ul>
+  );
   return (
     <PanelSection
       title="Attached documents"
-      count={documents.length}
+      count={unique.length}
       aside={
         status && (
           <span className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${STATUS_TONE[status.tone] || STATUS_TONE.grey}`}>
@@ -45,18 +64,35 @@ export default function DocumentsPanel({ documents = [], bucket, tenderRef, sour
         )
       }
     >
-      {documents.length > 0 ? (
-        <ul className="space-y-2">
-          {documents.map((doc) => (
-            <FileRow key={doc.path || doc.name} doc={doc} bucket={bucket} tenderRef={tenderRef} source={source} canOpen={canOpen} />
-          ))}
-        </ul>
+      {unique.length > 0 ? (
+        <div className="space-y-4">
+          {files.length > 0 && (
+            <section>
+              {bulletins.length > 0 && <GroupTitle label="Bidding documents" count={files.length} />}
+              {list(files)}
+            </section>
+          )}
+          {bulletins.length > 0 && (
+            <section>
+              <GroupTitle label="Bid bulletins" count={bulletins.length} />
+              {list(bulletins)}
+            </section>
+          )}
+        </div>
       ) : (
         <p className="text-xs text-black/46">{empty}</p>
       )}
       {footer && <p className="mt-2 px-1 text-[11px] leading-relaxed text-black/46">{footer}</p>}
       {children}
     </PanelSection>
+  );
+}
+
+function GroupTitle({ label, count }) {
+  return (
+    <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#12769F]">
+      {label} <span className="font-normal text-black/46">({count})</span>
+    </h4>
   );
 }
 
