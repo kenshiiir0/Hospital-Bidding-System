@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { CustomSelect, LotPill, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs, StatusBadge } from '@/components/FilterControls';
+import { CustomSelect, LotPill, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs, StatusDot } from '@/components/FilterControls';
 import PageHeader, { KpiRow, blueAction, pesoTotal, plainAction } from '@/components/PageHeader';
 import { setNavCount } from '@/lib/navCounts';
 import { reportUnread, useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
@@ -742,7 +742,7 @@ export default function Home() {
                       {/* Type and PhilGEPS status side by side, as on the PS-PhilGEPS list */}
                       <div className="flex flex-wrap gap-1">
                         <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} />
-                        {bid.details?.status && <StatusBadge text={bid.details.status} />}
+                        <StatusDot text={bid.details?.status} />
                       </div>
                       <div className="font-normal"><DocumentCount bid={bid} /></div>
                     </div>

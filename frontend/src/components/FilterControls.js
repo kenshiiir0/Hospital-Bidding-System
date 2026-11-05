@@ -670,6 +670,22 @@ export function StatusBadge({ text }) {
   );
 }
 
+// A notice still open for bids: PhilGEPS "Active", PS-PhilGEPS "Active" / "Open"
+const LIVE = /^(active|open)\b/i;
+
+/** A notice's status as a dot for the Bid Match rows: green = active, red = inactive (closed, cancelled,
+ *  awarded…). The status word shows on hover and is read out by screen readers. */
+export function StatusDot({ text }) {
+  if (!text) return null;
+  const live = LIVE.test(text.trim());
+  const label = `${live ? 'Active' : 'Inactive'}: ${text}`;
+  return (
+    <span title={label} aria-label={label} role="img" className="inline-flex h-[22px] items-center px-0.5">
+      <span className={`block h-2.5 w-2.5 rounded-full ring-4 ${live ? 'bg-[#61A644] ring-[#61A644]/15' : 'bg-[#B3312C] ring-[#B3312C]/15'}`} />
+    </span>
+  );
+}
+
 /** The row's "View details" action. */
 export function DetailsButton({ onClick }) {
   return (
