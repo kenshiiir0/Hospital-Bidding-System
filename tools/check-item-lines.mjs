@@ -5,6 +5,7 @@
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
 import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
+import { needsDocuments, supplementNos } from '../frontend/src/lib/philgepsSync.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
 import { strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
@@ -336,6 +337,11 @@ const BB = [
 ];
 keepBestReading(BB);
 assert.deepEqual(BB.map((i) => i.unit_price ?? '-'), [34], 'latest bulletin table wins');
+// PhilGEPS bulletins: the list's own header row is no supplement; one not looked at yet sends the tender to the Sync
+assert.deepEqual(supplementNos([{ no: 'Bid Supplement No.' }, { no: '13300232-01' }, { no: '13300232-03' }]), ['13300232-01', '13300232-03'], 'supplement numbers');
+const SUPP = { documents_checked_at: '2026-11-04T00:00:00Z', documents: [{ name: 'ITB.pdf' }], supplements: [{ no: '13300232-01' }], documents_supplements_seen: 1 };
+assert.equal(needsDocuments({ details: SUPP }), true, 'bulletin not fetched yet');
+assert.equal(needsDocuments({ details: { ...SUPP, documents_supplements_tried: ['13300232-01'] } }), false, 'bulletin looked at once');
 
 // User, 2026-10-28: "they are in a one table" - every row of one table read the same way, both portals
 // PhilGEPS 13312124 (Rizal): numbers on a line starting with the unit, delivery text after them

@@ -41,6 +41,9 @@ const BASKET_URL = `${HOST}/GEPS/Tender/OrderBasketUI.aspx?ClickFrom=OpenOpp&Org
 // An order's page, as the "Ordered By" list's order number opens it (the list's own link only works in a browser)
 const ORDER_URL = (orderNo, ref) => `${HOST}/GEPS/Tender/OrderConfirmationUI.aspx?DirectFrom=MyOpportunities&OrderID=${orderNo}&refID=${ref}`;
 const BUCKET = 'philgeps-documents';
+// A bid bulletin's own page: logged in, its file name downloads the attachment (no order needed, checked on
+// 13300232 on 2026-11-05)
+const SUPPLEMENT_URL = (ref, no) => `${HOST}/GEPS/Tender/BidSupplementViewUI.aspx?menuIndex=3&refId=${ref}&&bidSuppID=${no}&directFrom=BidAbstract`;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
 // Time a round may start new tenders in; the host stops a request at 300 s and the log-out needs a moment
 export const ROUND_MS = 200 * 1000;
@@ -408,6 +411,50 @@ async function downloadItems(session, supabase, page, ref, orderNo, trail) {
   return { files, pickUp: false };
 }
 
+// Bid bulletins / supplements of a tender (user, 2026-11-05: "Can we fetch the bid bulletin"; a bulletin often
+// replaces the Price Schedule, psDocs.mjs keepBestReading). Each is stored under its supplement number, as they are
+// often all named "Bid_Bulletin_No._1.pdf". Returns { files, tried }: tried lists every supplement looked at (one
+// without a file isn't asked again)
+export const supplementNos = (supplements) => (supplements || []).map((s) => s.no).filter((no) => /^\d{8}-\d{1,3}$/.test(no || ''));
+async function fetchBulletins(session, supabase, o, trail) {
+  const ref = o.ref_no;
+  const tried = new Set(o.details?.documents_supplements_tried || []);
+  const files = [];
+  const done = [];
+  for (const no of supplementNos(o.details?.supplements)) {
+    if (tried.has(no)) continue;
+    try {
+      const page = await getPage(session, SUPPLEMENT_URL(ref, no));
+      for (const link of postbackLinks(page.html).filter((l) => /dgDocs/.test(l.target))) {
+        const { res } = await postBack(session, page, { target: link.target, argument: link.argument });
+        const type = res.headers.get('content-type') || '';
+        const disposition = res.headers.get('content-disposition') || '';
+        if (/text\/html/i.test(type) && !/attachment/i.test(disposition)) {
+          trail.push(`bulletin ${no} "${link.text}": PhilGEPS answered with a page, not a file`);
+          await res.text();
+          continue;
+        }
+        const plain = /filename="?([^";]+)"?/i.exec(disposition);
+        const original = (plain ? plain[1].trim() : `${link.text}.pdf`).replace(/[<>:"/\\|?*]/g, '_');
+        const name = `Bid Bulletin ${no.split('-')[1]} - ${original}`;
+        const body = Buffer.from(await res.arrayBuffer());
+        const key = `${ref}/${storageName(name)}`;
+        const ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+        const { error } = await supabase.storage.from(BUCKET).upload(key, body, { contentType: TYPES[ext] || type.split(';')[0] || 'application/octet-stream', upsert: true });
+        if (error) throw new Error(`upload failed (${error.message})`);
+        rememberDownload(BUCKET, key, body);
+        trail.push(`bulletin ${no}: downloaded "${original}" (${body.length} bytes)`);
+        files.push({ name, title: link.text, size: body.length, path: key, supplement_no: no });
+      }
+      done.push(no);
+    } catch (e) {
+      if (e.code === 'SESSION_ENDED' || e.code === 'SITE_DOWN') throw e;
+      trail.push(`bulletin ${no}: ${e.message}; the next Sync tries again`);
+    }
+  }
+  return { files, tried: [...tried, ...done] };
+}
+
 // Already-ordered route: null when PhilGEPS lists no order for this tender
 async function fromOrdered(session, supabase, ref, trail, step) {
   const list = await getPage(session, ORDERED_URL(ref));
@@ -528,7 +575,11 @@ export async function fetchTender(session, supabase, o, step) {
   status ||= files.length ? 'downloaded' : 'none-found';
   const now = new Date().toISOString();
   const documents = files.map((f) => ({ ...f, source: 'order', downloaded_at: now }));
-  return { documents, status, ordered, remark: remarkFor({ status, files: documents.length, ordered, orderNos, said }), trail };
+  // Its bid bulletins, whatever the order said (they are on their own pages)
+  const bulletins = status === 'closed' ? { files: [], tried: o.details?.documents_supplements_tried || [] } : await fetchBulletins(session, supabase, o, trail);
+  documents.push(...bulletins.files.map((f) => ({ ...f, source: 'bulletin', downloaded_at: now })));
+  if (bulletins.files.length && status === 'none-found') status = 'downloaded';
+  return { documents, status, ordered, supplementsTried: bulletins.tried, remark: remarkFor({ status, files: documents.length, ordered, orderNos, said }), trail };
 }
 
 // ---------- which tenders ----------
@@ -556,6 +607,9 @@ export function needsDocuments(o, now = Date.now()) {
   if (o.closing_date && Date.parse(String(o.closing_date).replace(' ', 'T').replace(/(\+\d\d:\d\d|Z)?$/, (z) => z || '+08:00')) < now) return false;
   if (!d.documents_checked_at) return true;
   if ((d.supplements?.length || 0) > (d.documents_supplements_seen || 0)) return true;
+  // a bid bulletin not looked at yet (fetchBulletins)
+  const tried = new Set(d.documents_supplements_tried || []);
+  if (supplementNos(d.supplements).some((no) => !tried.has(no))) return true;
   if (d.documents?.length || d.documents_status === 'pick-up' || d.documents_status === 'closed') return false;
   return true;
 }
@@ -843,6 +897,7 @@ export async function runSyncRound() {
         documents_remark: result.remark,
         documents_checked_at: new Date().toISOString(),
         documents_supplements_seen: o.details?.supplements?.length || 0,
+        documents_supplements_tried: result.supplementsTried || o.details?.documents_supplements_tried || [],
       };
       // Our products are often only in the documents: read them now (PDF, Word, Excel)
       let matched = o.matched_molecules || [];
