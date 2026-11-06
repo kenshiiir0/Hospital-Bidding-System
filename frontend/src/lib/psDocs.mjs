@@ -190,9 +190,12 @@ const withoutEmptyCells = (line) => line.replace(/(?<=\d)(?:\s+(?:[-–—]{1,2}
 // An amount a scan wrote with dots between its thousands ("300 61.00 18.300.00", "2.087.50", PhilGEPS 13279404): read
 // with commas, as every rule expects
 const withCommaThousands = (line) => line.replace(/(?<![\d.,])\d{1,3}(?:\.\d{3})+\.\d{2}(?![\d.,])/g, (amount) => amount.replace(/\.(?=\d{3}[.])/g, ','));
+// A scanned amount with dots for its thousands and a space before its centavos ("1.817.000 00" for 1,817,000.00, PCMC
+// RFQ 2026-1020, PhilGEPS 13314319)
+const withScannedAmounts = (line) => line.replace(/(?<![\d.,])(\d{1,3}(?:\.\d{3})+)\s(\d{2})(?![\d.,])/g, (m, whole, cents) => `${whole.replace(/\./g, ',')}.${cents}`);
 const cleanLines = (rawLines) => {
   let lines = cleanedCache.get(rawLines);
-  if (!lines) cleanedCache.set(rawLines, (lines = joinSplitAmounts(rawLines.map((line) => withCentavos(withoutEmptyCells(withCommaThousands(withoutNextRow(withoutRules(line)))))))));
+  if (!lines) cleanedCache.set(rawLines, (lines = joinSplitAmounts(rawLines.map((line) => withCentavos(withoutEmptyCells(withCommaThousands(withoutNextRow(withoutRules(withScannedAmounts(line))))))))));
   return lines;
 };
 
@@ -232,6 +235,8 @@ function itemNumberOf(lines, n) {
 // "As written"
 export function parseItemRow(rawLines, n) {
   const lines = cleanLines(rawLines);
+  const oneLine = ROW_ABC_UNIT_QTY.exec(lines[n] || '');
+  if (oneLine) return { item_no: oneLine[1], description: oneLine[2], quantity: num(oneLine[5]), unit: oneLine[4], ...amountBeforeUnit(lines, n, num(oneLine[3]), num(oneLine[5])), written: lines[n] };
   // The table's own header first (user, 2026-10-26: "the documents usually have this on top so you will know
   // where is the name, quantity, and other needed info"); the row rules below when there is none or the row
   // doesn't fit it
@@ -258,6 +263,18 @@ const QTY_AMOUNT_LINE = /^\d[\d,]*\s+\d[\d,]*\.\d{2}(?:\s+\d[\d,]*\.\d{2})?$/;
 // The row's numbers alone in the order ABC/unit, quantity, total ("170. Epoetin Alfa (recombinant human" / ... /
 // "552.68 201 111,088.68", PhilGEPS 13300127): its end, not the next row
 const PRICE_QTY_TOTAL_LINE = /^\d[\d,]*\.\d{2}\s+\d[\d,]*\s+\d[\d,]*\.\d{2}$/;
+// The row's numbers in the order ABC, unit, quantity, the Bid Data Sheet's "Item | Description | ABC | Unit | Quantity"
+// ("8 VANCOMYCIN HYDROCHLORIDE 500MG" / "VIAL (IV)" / "765,810.00 VIAL 3000", PhilGEPS 13317511): its end, the amount
+// the item's ABC (its total)
+const ABC_UNIT_QTY_LINE = /^(\d[\d,]*\.\d{2})\s+([A-Za-z][A-Za-z/.-]*(?:\s+[A-Za-z][A-Za-z/.-]*)?)\s+(\d[\d,]*)$/;
+// ... with the quantity on the next line ("462,000.00 AMPULE" / "3300", PhilGEPS 13316957) or the whole row on one line
+// ("28 ONDANSETRON 8MG TABLET 112,000.00 TABLET 1600")
+const ABC_UNIT_LINE = /^(\d[\d,]*\.\d{2})\s+([A-Za-z][A-Za-z/.-]*(?:\s+[A-Za-z][A-Za-z/.-]*)?)$/;
+// The amount before the unit is the item's ABC total, unless the table's header gives an ABC per unit, or it is too
+// small to be a total for its quantity ("2.50 tab 1000": a unit price)
+const amountBeforeUnit = (lines, n, amount, quantity) =>
+  unitAbcOnly(lines, n) || (quantity > 0 && amount / quantity < SENSIBLE_UNIT_PRICE) ? { unit_price: amount } : { total: amount };
+const ROW_ABC_UNIT_QTY = /^\W*(\d{1,4})[.)]?\s+([A-Za-z].*?)\s+(\d[\d,]*\.\d{2})\s+([A-Za-z][A-Za-z/.-]*)\s+(\d[\d,]*)$/;
 // A line that stops mid-phrase: the row goes on
 const UNFINISHED = /(?:\b(?:for|of|in|with|and|or|to|as|per)|[,(/+-])$/i;
 
@@ -270,7 +287,11 @@ function rowBelow(lines, n) {
   const ownNumber = /^\d{1,4}[.)]*\s+[A-Za-z]/.test(lines[n]);
   // The row's number and unit on the lines above ("12 Prefilled" / "Syringe" / "Filgrastim (G-CSF)" / ... / "1,300
   // 598.00 777,400.00", PS 115220)
-  const numberAbove = !ownNumber && /^[A-Za-z][A-Za-z/-]*$/.test(before) && /^(\d{1,4})[.)]?\s+[A-Za-z][A-Za-z/-]*$/.exec(lines[n - 2] || '');
+  // or both on the line above ("2 Vial" / "Paclitaxel With Safety Filter Set (1:1) 6Mg/Ml-" / ... / "900 1,595.00",
+  // the Item No. | UOM | Item/Specification | Qty. | ABC/Unit RFQ of PhilGEPS 13321259)
+  const numberAbove =
+    (!ownNumber && /^[A-Za-z][A-Za-z/-]*$/.test(before) && /^(\d{1,4})[.)]?\s+[A-Za-z][A-Za-z/-]*$/.exec(lines[n - 2] || '')) ||
+    (!ownNumber && /^(\d{1,4})[.)]?\s+([A-Za-z][A-Za-z/-]*)$/.exec(before));
   if (!(ownNumber || numberAbove || !before || LONE_NUMBER.test(before) || /\d\.\d{2}$/.test(before))) return null;
   const parts = [lines[n]];
   let found = false;
@@ -294,6 +315,14 @@ function rowBelow(lines, n) {
     // A blank line inside a row cut mid-phrase ("212 Filgrastim (G-CSF) 300mcg/0.5mi solution for" / "" / "injection
     // in prefilled syringe pfs 100 P514.56 P 51,456.00", PhilGEPS 13316606)
     if (!next && UNFINISHED.test(parts.at(-1)) && lines[n + 2 + k]) continue;
+    const abcUnit = ABC_UNIT_LINE.exec(next || '');
+    const qtyAfter = abcUnit && /^\d[\d,]*$/.test(lines[n + 2 + k] || '') ? lines[n + 2 + k] : null;
+    const abcUnitQty = ABC_UNIT_QTY_LINE.exec(next || '') || (qtyAfter && [next, abcUnit[1], abcUnit[2], qtyAfter]);
+    if (abcUnitQty && parts.length >= 1) {
+      const itemNo = ownNumber ? leadingNumber(lines[n]) : numberAbove ? Number(numberAbove[1]) : LONE_NUMBER.test(before) ? Number(before) : null;
+      const description = parts.join(' ').replace(LEADING_NUMBER, '');
+      return { ...(itemNo != null && { item_no: String(itemNo) }), description, quantity: num(abcUnitQty[3]), unit: abcUnitQty[2], ...amountBeforeUnit(lines, n, num(abcUnitQty[1]), num(abcUnitQty[3])), written: [...parts, next, ...(qtyAfter ? [qtyAfter] : [])].join(' ') };
+    }
     if (!next || LONE_NUMBER.test(next) || FORM_TEXT.test(next) || (ROW_START.test(next) && !NUMBERS_LINE.test(next) && !QTY_AMOUNT_LINE.test(next) && !PRICE_QTY_TOTAL_LINE.test(next) && !qtyGoesOn)) return null;
     parts.push(next);
     if ((found = UNIT_NUMBERS_LINE.test(next) || NUMBERS_LINE.test(next) || QTY_AMOUNT_LINE.test(next) || PRICE_QTY_TOTAL_LINE.test(next) || ROW_AMOUNTS.test(next) || (SPLIT_UNIT_END.test(parts.slice(0, -1).join(' ')) && UNIT_AMOUNTS_LINE.test(next)))) break;
@@ -301,9 +330,19 @@ function rowBelow(lines, n) {
   if (!found) return null;
   const itemNo = ownNumber ? leadingNumber(lines[n]) : numberAbove ? Number(numberAbove[1]) : LONE_NUMBER.test(before) ? Number(before) : null;
   const text = parts.join(' ');
-  const parsed = parseItemLine(ownNumber ? text.replace(LEADING_NUMBER, '') : text);
+  let parsed = parseItemLine(ownNumber ? text.replace(LEADING_NUMBER, '') : text);
   if (parsed.quantity == null) return null;
-  return abcTotalNotUnit({ ...parsed, ...(itemNo != null && { item_no: String(itemNo) }), written: text });
+  // One amount under a header with an ABC per unit and no ABC total ("Qty. ABC/Unit", PhilGEPS 13321259): the unit price
+  if (parsed.unit_price == null && parsed.total != null && unitAbcOnly(lines, n)) parsed = { ...parsed, unit_price: parsed.total, total: undefined };
+  const unit = parsed.unit ?? (numberAbove?.[2] || undefined);
+  return abcTotalNotUnit({ ...parsed, ...(unit && { unit }), ...(itemNo != null && { item_no: String(itemNo) }), written: text });
+}
+
+// The table's header (the lines just above the row) names an ABC per unit and no ABC total; a bidder's own "Unit
+// Cost / Total Cost" columns don't count
+function unitAbcOnly(lines, n) {
+  const head = lines.slice(Math.max(0, n - 15), n).join(' ');
+  return /\bABC\s*(?:\/|per)\s*unit\b|\bunit\s*ABC\b/i.test(head) && !/\btotal\s*ABC\b|\bABC\s*(?:\/\s*)?(?:total|item)\b|\bapproved\s+budget\b/i.test(head);
 }
 
 // An ABC/unit can't be hundreds of thousands (user, 2026-10-27: "always assume it as abc total"): such an amount
@@ -334,6 +373,16 @@ export function withBothAmounts(row) {
     // one digit away ("1,860 ampule/vial 469.50 685,470.00" for 1,460, PS 114413)
     const quantity = Math.round(row.total / row.unit_price);
     if (Math.abs(quantity * row.unit_price - row.total) < 0.005 && oneDigitOff(quantity, row.quantity)) return { ...row, quantity, quantity_from: 'total', read_quantity: row.quantity };
+    // ... or a scan that split the quantity's thousands and lost the row number ("2 300 J Filgrastim ... 290.00
+    // 1,817,000.00" for item 1, 2,300 vials at 790.00, PCMC, PhilGEPS 13314319): read as row 2, quantity 300. The joined
+    // quantity gives a price exact to the centavo one digit away from the one read
+    const split = row.item_no != null && row.quantity < 1000 && new RegExp(`^\\W*${row.item_no}\\s+${String(row.quantity).padStart(3, '0')}\\s`).test(row.written || '');
+    const joined = split && Number(row.item_no) * 1000 + row.quantity;
+    const price = joined && Math.round((row.total / joined) * 100) / 100;
+    if (joined && Math.abs(joined * price - row.total) < 0.005 && oneDigitOff(price, row.unit_price)) {
+      const { item_no, ...rest } = row;
+      return { ...rest, quantity: joined, unit_price: price, computed: 'unit_price', read_unit_price: row.unit_price, quantity_from: 'total', read_quantity: row.quantity };
+    }
     return { ...row, unit_price: Math.round((row.total / row.quantity) * 100) / 100, computed: 'unit_price', read_unit_price: row.unit_price };
   }
   // computed: which amount was worked out, not read (shown green: View details, the Excel)
@@ -1762,7 +1811,9 @@ export function completeLots(items, lotRows) {
 
 // Hidden only when the documents give one lot and no line items: a row of ours with a quantity is a line item (not a
 // row asking for "1 lot" or "1 package")
-export const hasLineItems = (items) => items.some((i) => i.quantity != null && !/^(?:lots?|packages?)\b/i.test(i.unit || ''));
+// (and its own ABC: a lot's list of contents with quantities only is the lot, not line items; user, 2026-11-06,
+// PhilGEPS 13307875 "This is a lot ... if it is a one single lot then do not include them")
+export const hasLineItems = (items) => items.some((i) => i.quantity != null && (i.unit_price != null || i.total != null) && !/^(?:lots?|packages?)\b/i.test(i.unit || ''));
 export const wholeLot = (oneLot, many, items) => oneLot && !many && !hasLineItems(items);
 
 export function lotSchedule(lines) {

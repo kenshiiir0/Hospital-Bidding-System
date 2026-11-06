@@ -4,10 +4,11 @@
 // row number the molecule tracker must show. The row number must never be read as the quantity (user,
 // 2026-10-26: PS 111622 showed Cetirizine 25 box where the document asks for 250). Any wrong answer blocks the push.
 import assert from 'node:assert/strict';
+import { withOcrUnits } from '../frontend/src/lib/products.mjs';
 import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
 import { needsDocuments, supplementNos } from '../frontend/src/lib/philgepsSync.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -337,6 +338,23 @@ const BB = [
 ];
 keepBestReading(BB);
 assert.deepEqual(BB.map((i) => i.unit_price ?? '-'), [34], 'latest bulletin table wins');
+// User, 2026-11-06: "Why there is tenders that is incomplete again?" - rows laid out over several lines
+// CLMMRH (PhilGEPS 13317511) Bid Data Sheet "Item | Description | ABC | Unit | Quantity": the numbers two lines down
+expect(parseItemRow(['7 LEVOFLOXACIN 5MG/ML SOLUTION FOR', 'IV INFUSION, 100ML VIAL', '100,000.00 VIAL 200', '8 VANCOMYCIN HYDROCHLORIDE 500MG', 'VIAL (IV)', '765,810.00 VIAL 3000', '13.1(a)(iv) "No incidental services are required."'], 3), { item_no: '8', quantity: 3000, total: 765810 }, 'ABC, unit, quantity line');
+expect(parseItemRow(['26 MUPIROCIN 2% OINTMENT, 5G', 'TUBE', '128,000.00 TUBE 1000', '27 ONDANSETRON 2MG/ML', 'SOLUTION FOR INJECTION, 4ML', 'AMPULE (IM, IV)', '462,000.00 AMPULE', '3300', '28 ONDANSETRON 8MG TABLET 112,000.00 TABLET 1600'], 3), { item_no: '27', quantity: 3300, total: 462000 }, 'quantity on the line after ABC and unit');
+expect(parseItemRow(['28 ONDANSETRON 8MG TABLET 112,000.00 TABLET 1600', '29 PANTOPRAZOLE 40MG TABLET'], 0), { item_no: '28', quantity: 1600, total: 112000, unit: 'TABLET' }, 'ABC, unit, quantity on the row line');
+expect(parseItemRow(['5 PARACETAMOL 500MG TABLET 2.50 TABLET 1000'], 0), { quantity: 1000, unit_price: 2.5 }, 'a small amount before the unit is a unit price');
+// JBLMGH RFQ (PhilGEPS 13321259) "Item No. | UOM | Item/Specification | Qty. | ABC/Unit": number and unit above, numbers below
+const JBL = ['No. UOM Item/Specification Qty. ABC/Unit', 'Unit Cost Total Cost', '1 Vial Oxaliplatin 5Mg/Ml-20Ml Solution For Injection 958 589.00', '2 Vial', 'Paclitaxel With Safety Filter Set (1:1) 6Mg/Ml-', '43.4Ml Iv, Iv Infusion', 'Paclitaxel 6Mg/Ml-43.4Ml Iv, Iv Infusion', '900 1,595.00', '1. Please submit RFQ on or before:'];
+expect(parseItemRow(JBL, 4), { item_no: '2', quantity: 900, unit_price: 1595, unit: 'Vial' }, 'number and unit above, ABC/Unit header');
+// PCMC RFQ (PhilGEPS 13314319), a scan: "1 | 2,300 | vl ... 300mcg 790.00 1,817,000.00" read "2 300 J ... 300meg 290.00 1.817.000 00"
+const PCMC = ['NO Qry UNIT DESCRIPTION ABC/UNIT TOTAL ABC BRAND/ MANUFACTUR', '2 300 J Filgrastim (G-CSF) vl 300meg 290.00 1.817.000 00', '(IV. SC)'];
+expect(withBothAmounts(parseItemRow(PCMC, 1)), { quantity: 2300, unit_price: 790, total: 1817000 }, 'scan: split thousands, misread price, dotted amount');
+assert.equal(withOcrUnits('vl 300meg'), 'vl 300 mcg', 'meg read as mcg');
+// Camarines Norte (PhilGEPS 13307875): one lot whose list gives quantities but no ABC per item is the lot, not line items
+assert.equal(hasLineItems([{ quantity: 800, unit: 'tab' }]), false, 'quantities only: the lot itself');
+assert.equal(hasLineItems([{ quantity: 3000, total: 765810, unit: 'VIAL' }]), true, 'a priced row is a line item');
+
 // PhilGEPS bulletins: the list's own header row is no supplement; one not looked at yet sends the tender to the Sync
 assert.deepEqual(supplementNos([{ no: 'Bid Supplement No.' }, { no: '13300232-01' }, { no: '13300232-03' }]), ['13300232-01', '13300232-03'], 'supplement numbers');
 const SUPP = { documents_checked_at: '2026-11-04T00:00:00Z', documents: [{ name: 'ITB.pdf' }], supplements: [{ no: '13300232-01' }], documents_supplements_seen: 1 };
@@ -529,8 +547,9 @@ assert.deepEqual(lotHeading('Lot 3: ORAL MEDICINES'), { lot: 'Lot 3' }, 'a lot h
 assert.equal(lotHeading('Lot 1 shall be delivered within 30 days'), null, 'a sentence is no heading');
 
 // One lot with line items is shown; one lot with none is hidden; several lots are shown (user, 2026-10-31)
-assert.equal(wholeLot(true, false, [{ quantity: 2000, unit: 'tablet' }]), false, 'one lot with a line item');
-assert.equal(wholeLot(true, false, [{ quantity: 2000 }]), false, 'one lot with a line item, no ABC');
+// A line item has its own ABC (user, 2026-11-06, PhilGEPS 13307875: one lot listing quantities only is the lot)
+assert.equal(wholeLot(true, false, [{ quantity: 2000, unit: 'tablet', unit_price: 5 }]), false, 'one lot with a line item');
+assert.equal(wholeLot(true, false, [{ quantity: 2000 }]), true, 'one lot listing a quantity but no ABC: the lot');
 assert.equal(wholeLot(true, false, []), true, 'one lot only');
 assert.equal(wholeLot(true, false, [{ quantity: null, line: 'Paclitaxel 6 mg/ml' }]), true, 'a name in a list is no line item');
 assert.equal(wholeLot(true, false, [{ quantity: 1, unit: 'lot' }]), true, '1 lot is no line item');

@@ -28,7 +28,9 @@ const SALT_OR_FORM = new RegExp(`^(?:${SALT}|dihydrochloride|sulfate|sulphate|br
 export const withOcrUnits = (text) =>
   String(text)
     .replace(/(\d)\s?(?:rna|rng|mq|m9|ma|mc\])(?![A-Za-z])/g, '$1 mg')
-    .replace(/(\d)\s?mi(?![A-Za-z])/gi, '$1 ml');
+    .replace(/(\d)\s?mi(?![A-Za-z])/gi, '$1 ml')
+    // "300meg" for 300mcg (a scan, PCMC RFQ 2026-1020, PhilGEPS 13314319)
+    .replace(/(\d)\s?meg(?![A-Za-z])/gi, '$1 mcg');
 
 // Spelling fixes of names as written in the lists
 const NAME_FIXES = { cisatractcurium: 'Cisatracurium' };
