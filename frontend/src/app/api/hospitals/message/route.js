@@ -1,0 +1,81 @@
+import { requireUser } from '@/lib/auth';
+import { mailConfigured, sendMail } from '@/lib/awardNotify.mjs';
+import { logActivity } from '@/lib/activityLog.mjs';
+import { createClient } from '@supabase/supabase-js';
+
+export const maxDuration = 120;
+
+// Vercel refuses request bodies over 4.5 MB, so the attachments together stay under 4 MB
+const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+const ALLOWED = /^(image\/(png|jpe?g|gif|webp)|application\/pdf|application\/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)|application\/vnd\.openxmlformats-officedocument\.[a-z.]+|text\/(plain|csv))$/i;
+
+function admin() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const titleCase = (name) => name.toLowerCase().replace(/(^|[\s(.-])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+
+// Message Hospitals (Hospital List): one e-mail per chosen hospital, to that hospital's own addresses, with the
+// same subject, message and attachments. {hospital} in the subject or message becomes the hospital's name.
+// multipart form: subject, message, keys (JSON array of agency_key), files (0+). Sent from the award e-mails' mailbox.
+export async function POST(request) {
+  const { user, response } = await requireUser(request);
+  if (response) return response;
+  if (!mailConfigured()) {
+    return Response.json({ ok: false, error: 'E-mail is not set up on the server yet (SMTP_USER / SMTP_PASS on Vercel). Nothing was sent.' }, { status: 503 });
+  }
+  const form = await request.formData().catch(() => null);
+  if (!form) return Response.json({ ok: false, error: 'The message could not be read. Please try again.' }, { status: 400 });
+
+  const subject = String(form.get('subject') || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const message = String(form.get('message') || '').replace(/\r\n/g, '\n').trim().slice(0, 10000);
+  let keys = [];
+  try {
+    keys = JSON.parse(String(form.get('keys') || '[]'));
+  } catch {}
+  if (!subject || !message) return Response.json({ ok: false, error: 'Please fill in the subject and the message.' }, { status: 400 });
+  if (!Array.isArray(keys) || !keys.length || keys.length > 200 || keys.some((k) => typeof k !== 'string')) {
+    return Response.json({ ok: false, error: 'Please choose at least one hospital.' }, { status: 400 });
+  }
+
+  const files = form.getAll('files').filter((f) => f && typeof f === 'object' && f.size > 0);
+  const total = files.reduce((sum, f) => sum + f.size, 0);
+  if (total > MAX_ATTACHMENT_BYTES) return Response.json({ ok: false, error: 'The attachments are over 4 MB together. Please send smaller files.' }, { status: 400 });
+  const refused = files.find((f) => !ALLOWED.test(f.type || ''));
+  if (refused) return Response.json({ ok: false, error: `${refused.name} cannot be attached (images, PDF, Word, Excel, PowerPoint, text or CSV only).` }, { status: 400 });
+  // Read once, attached to every e-mail
+  const attachments = await Promise.all(files.map(async (f) => ({ filename: f.name, contentType: f.type, content: Buffer.from(await f.arrayBuffer()) })));
+
+  const { data: hospitals, error } = await admin().from('hospitals').select('agency_key, name, emails').in('agency_key', keys).not('status', 'is', null).is('archived_at', null);
+  if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+
+  const results = [];
+  for (const h of hospitals) {
+    if (!h.emails?.length) {
+      results.push({ name: h.name, status: 'skipped', error: 'No e-mail address' });
+      continue;
+    }
+    const fill = (s) => s.replaceAll('{hospital}', titleCase(h.name));
+    const text = fill(message);
+    const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111">${esc(text).replace(/\n/g, '<br>')}</div>`;
+    try {
+      await sendMail({ to: h.emails.join(', '), subject: fill(subject), text, html, attachments });
+      results.push({ name: h.name, status: 'sent', to: h.emails });
+    } catch (e) {
+      results.push({ name: h.name, status: 'failed', to: h.emails, error: e.message });
+    }
+  }
+
+  const sent = results.filter((r) => r.status === 'sent').length;
+  const failed = results.filter((r) => r.status === 'failed');
+  await logActivity({
+    event: 'hospital-message',
+    status: !sent ? 'failed' : failed.length ? 'partial' : 'success',
+    by: user.email,
+    summary: `Message "${subject}" e-mailed to ${sent} of ${results.length} hospital${results.length === 1 ? '' : 's'}`,
+    details: { subject, message, attachments: files.map((f) => f.name), results },
+  });
+  return Response.json({ ok: sent > 0, sent, results });
+}

@@ -78,15 +78,20 @@ export function composeEmail({ award, lineItem, details, route }) {
 }
 
 let transport;
-async function send({ to, cc, subject, text, html }) {
+// The award e-mails' mailbox, also used by Message Hospitals (api/hospitals/message): sendMail(nodemailer message)
+export async function sendMail(message) {
   const auth = { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS };
   const port = Number(process.env.SMTP_PORT) || 465;
   transport ||= process.env.SMTP_HOST
     ? nodemailer.createTransport({ host: process.env.SMTP_HOST, port, secure: port === 465, auth })
     : nodemailer.createTransport({ service: 'gmail', auth });
-  const who = (people) => people.map((p) => `"${p.name}" <${p.email}>`).join(', ');
   const from = process.env.MAIL_FROM || `"Government Bidding System" <${process.env.SMTP_USER}>`;
-  await transport.sendMail({ from, to: who(to), cc: cc.length ? who(cc) : undefined, subject, text, html });
+  return transport.sendMail({ from, ...message });
+}
+
+async function send({ to, cc, subject, text, html }) {
+  const who = (people) => people.map((p) => `"${p.name}" <${p.email}>`).join(', ');
+  await sendMail({ to: who(to), cc: cc.length ? who(cc) : undefined, subject, text, html });
 }
 
 /**

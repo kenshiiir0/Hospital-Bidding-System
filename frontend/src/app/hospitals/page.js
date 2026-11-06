@@ -5,9 +5,10 @@ import { authFetch } from '@/lib/authFetch';
 import { agencyKey } from '@/lib/agencyKey';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
+import MessageHospitals from '@/components/MessageHospitals';
 import { SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
-import PageHeader, { KpiRow, blueAction } from '@/components/PageHeader';
+import PageHeader, { KpiRow, blueAction, plainAction } from '@/components/PageHeader';
 
 // The hospitals we bid for (table hospitals, /api/hospitals): the "Active Hospital" sheet of the WINNING BID TRACKER
 // (tools/import-hospitals.mjs) plus Add Hospital. The same hospitals post tenders on PhilGEPS and PS-PhilGEPS.
@@ -45,6 +46,7 @@ export default function HospitalsPage() {
   const [hospitals, setHospitals] = useState(null);
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
+  const [messaging, setMessaging] = useState(false);
   const [search, setSearch] = useState('');
   const [added, setAdded] = useState('');
   const [view, setView] = useState('active');
@@ -221,15 +223,24 @@ export default function HospitalsPage() {
           title="Hospital List"
           subtitle="The hospitals we bid for on PhilGEPS and PS-PhilGEPS, with their contact persons, WhatsApp numbers and e-mail addresses"
           actions={
-            <button
-              onClick={() => {
-                setAdding(true);
-                setAdded('');
-              }}
-              className={blueAction}
-            >
-              + Add Hospital
-            </button>
+            <>
+              <button
+                onClick={() => setMessaging(true)}
+                disabled={!hospitals}
+                className={plainAction}
+              >
+                ✉ Message Hospitals
+              </button>
+              <button
+                onClick={() => {
+                  setAdding(true);
+                  setAdded('');
+                }}
+                className={blueAction}
+              >
+                + Add Hospital
+              </button>
+            </>
           }
         />
         <KpiRow
@@ -255,6 +266,7 @@ export default function HospitalsPage() {
             }}
           />
         )}
+        {messaging && <MessageHospitals hospitals={all} onClose={() => setMessaging(false)} />}
         {archiving && (
           <ArchiveHospital
             hospital={archiving}
