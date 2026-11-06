@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { CustomSelect, LotPill, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
 import PageHeader, { KpiRow, blueAction, pesoTotal, pesoValue, plainAction } from '@/components/PageHeader';
 import { PsPortalProvider, psDateTime, psDay } from '@/components/PsPortal';
@@ -10,6 +10,7 @@ import { startedByLabel } from '@/components/FetchedSection';
 import { usePsPhilgeps } from '@/lib/psContext';
 import { psRefOf } from '@/lib/opportunityWorkbook';
 import { psType } from '@/lib/tenderType';
+import { hospitalMatcher } from '@/lib/agencyKey';
 import { setNavCount } from '@/lib/navCounts';
 import { reportUnread, useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 import AutoFetchBar from '@/components/AutoFetchBar';
@@ -38,6 +39,13 @@ const SORTS = [
   { value: 'closing', label: 'Closing soonest' },
   { value: 'budget', label: 'Highest budget' },
 ];
+// General side: PhilGEPS's tenders not for our products, light columns only (the full row loads in View details)
+const GENERAL_COLUMNS =
+  'id, ref_no, publish_date, closing_date, title, procuring_entity, abc_amount, detail_link, matched_molecules, created_at, notice_type:details->>notice_type, procurement_mode:details->>procurement_mode, documents_status:details->>documents_status';
+const lightBid = ({ notice_type, procurement_mode, documents_status, ...bid }) => ({ ...bid, details: { notice_type, procurement_mode, documents_status }, light: true });
+// Supabase returns at most 1000 rows per request
+const PAGE_ROWS = 1000;
+
 // Last list loaded from Supabase, shown at once on the next visit while the fresh copy loads
 const BIDS_CACHE_KEY = 'bidsCache';
 // How often the page asks the server about PhilGEPS fetches: often while one runs, less when idle
@@ -218,6 +226,49 @@ function BidMatch() {
   const [typeFilter, setTypeFilter] = useState('');
   // Portal filter: '' = both, 'philgeps' or 'ps'
   const [portalFilter, setPortalFilter] = useState('');
+  // Bid Match side (user, 2026-11-06): 'filtered' = tenders for our products, 'general' = every tender from a hospital
+  // on the Hospital List, whatever it asks for
+  const [view, setView] = useState('filtered');
+  // agency_key of the Hospital List's hospitals (not archived); PhilGEPS's tenders not for our products (light
+  // columns), loaded the first time General is opened
+  const [hospitalKeys, setHospitalKeys] = useState(() => new Set());
+  const [generalBids, setGeneralBids] = useState(null);
+  useEffect(() => {
+    let stopped = false;
+    supabase
+      .from('hospitals')
+      .select('agency_key')
+      .not('status', 'is', null)
+      .is('archived_at', null)
+      .then(({ data }) => {
+        if (!stopped && data) setHospitalKeys(new Set(data.map((h) => h.agency_key)));
+      });
+    return () => {
+      stopped = true;
+    };
+  }, []);
+  const generalWanted = view === 'general' && generalBids === null;
+  useEffect(() => {
+    if (!generalWanted) return;
+    let stopped = false;
+    (async () => {
+      const rows = [];
+      for (let from = 0; ; from += PAGE_ROWS) {
+        const { data, error } = await supabase.from('philgeps_opportunities').select(GENERAL_COLUMNS).eq('matched_molecules', '{}').order('id', { ascending: false }).range(from, from + PAGE_ROWS - 1);
+        if (stopped) return;
+        if (error) {
+          setScrapeError(`Could not load the general list: ${error.message}`);
+          break;
+        }
+        rows.push(...data);
+        if (data.length < PAGE_ROWS) break;
+      }
+      setGeneralBids(rows.map(lightBid));
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [generalWanted]);
   const [today, setToday] = useState(''); // "YYYY-MM-DD" in Philippine time, set after mount
   // Page of the list shown (1-based) and rows per page; any filter or sort change goes back to page 1
   const [page, setPage] = useState(1);
@@ -542,26 +593,29 @@ function BidMatch() {
   const filesOf = (bid) => (bid.details?.documents || []).filter((doc) => doc.path).length;
 
   // Both portals' tenders in one shape, for the list, the filters and the counts.
-  // published: "YYYY-MM-DD"; closing: "YYYY-MM-DDTHH:MM" (sorts the same on both); text: what the search looks in
-  const tenders = [
-    ...ourBids.map((bid) => ({
-      source: 'philgeps',
-      key: `philgeps:${bid.id}`,
-      bid,
-      ref: bid.ref_no || '',
-      agency: bid.procuring_entity || bid.title || '',
-      abc: Number(bid.abc_amount) || 0,
-      published: bid.publish_date || '',
-      closing: String(bid.closing_date || ''),
-      products: bid.matched_molecules || [],
-      type: philgepsType(bid.details?.notice_type, bid.details?.procurement_mode),
-      lot: Boolean(bid.lot),
-      docGroup: docGroupOf(bid),
-      files: filesOf(bid),
-      isNew: isNew(bid),
-      text: `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''}`,
-    })),
-    ...psOurs.map((row) => ({
+  // published: "YYYY-MM-DD"; closing: "YYYY-MM-DDTHH:MM" (sorts the same on both); text: what the search looks in.
+  // ours: asks for our products (or is Screened); only those count as NEW (the sidebar number counts the same)
+  const philgepsRow = (bid, ours) => ({
+    source: 'philgeps',
+    key: `philgeps:${bid.id}`,
+    bid,
+    ref: bid.ref_no || '',
+    agency: bid.procuring_entity || bid.title || '',
+    abc: Number(bid.abc_amount) || 0,
+    published: bid.publish_date || '',
+    closing: String(bid.closing_date || ''),
+    products: ours ? bid.matched_molecules || [] : [],
+    type: philgepsType(bid.details?.notice_type, bid.details?.procurement_mode),
+    lot: Boolean(bid.lot),
+    docGroup: docGroupOf(bid),
+    files: filesOf(bid),
+    isNew: ours && isNew(bid),
+    text: `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''}`,
+  });
+  const psOurKeys = new Set(psOurs.map(psKey));
+  const psRow = (row) => {
+    const ours = psOurKeys.has(psKey(row));
+    return {
       source: 'ps',
       key: psKey(row),
       row,
@@ -576,11 +630,23 @@ function BidMatch() {
       // PS-PhilGEPS has no pick-up only notices
       docGroup: psNotice(row)?.documents?.length ? 'files' : 'none',
       files: (psNotice(row)?.documents || []).filter((doc) => doc.path).length,
-      isNew: news.isNewPs(psKey(row)) || psSeenNow.has(psKey(row)),
+      isNew: ours && (news.isNewPs(psKey(row)) || psSeenNow.has(psKey(row))),
       // Every column of the row, including the long title the list doesn't show
       text: row.cells.join(' '),
-    })),
-  ];
+    };
+  };
+  // Filtered: tenders for our products (+ Screened). General: every tender from a hospital on the Hospital List,
+  // whatever it asks for (PhilGEPS's other tenders load when General is first opened, generalBids)
+  const fromOurHospital = useMemo(() => hospitalMatcher(hospitalKeys), [hospitalKeys]);
+  const ourIds = new Set(ourBids.map((bid) => bid.id));
+  const tenders =
+    view === 'general'
+      ? [
+          ...ourBids.filter((bid) => fromOurHospital(bid.procuring_entity)).map((bid) => philgepsRow(bid, true)),
+          ...(generalBids || []).filter((bid) => !ourIds.has(bid.id) && fromOurHospital(bid.procuring_entity)).map((bid) => philgepsRow(bid, false)),
+          ...(psList?.rows || []).filter((row) => fromOurHospital(psCell(row, 'Agency name'))).map(psRow),
+        ]
+      : [...ourBids.map((bid) => philgepsRow(bid, true)), ...psOurs.map(psRow)];
   // Drop every tender that requests an excluded product
   const visible = tenders.filter((t) => !t.products.some((name) => excluded.includes(name)));
 
@@ -682,7 +748,22 @@ function BidMatch() {
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * pageSize;
   const pageTenders = filtered.slice(pageStart, pageStart + pageSize);
-  const loadingList = loading && !psData;
+  const loadingList = (loading && !psData) || (view === 'general' && generalBids === null);
+  // Tab counts: the general one once PhilGEPS's other tenders have loaded
+  const filteredCount = ourBids.length + psOurs.length;
+  const generalCount =
+    generalBids === null
+      ? null
+      : ourBids.filter((bid) => fromOurHospital(bid.procuring_entity)).length +
+        generalBids.filter((bid) => !ourIds.has(bid.id) && fromOurHospital(bid.procuring_entity)).length +
+        (psList?.rows || []).filter((row) => fromOurHospital(psCell(row, 'Agency name'))).length;
+  // View details: a General PhilGEPS row has light columns only, so its full row is loaded when opened
+  const openDetails = async (t) => {
+    setSelectedBid(t);
+    if (t.source !== 'philgeps' || !t.bid.light) return;
+    const { data } = await supabase.from('philgeps_opportunities').select('*').eq('id', t.bid.id).maybeSingle();
+    if (data) setSelectedBid((cur) => (cur?.key === t.key ? { ...t, bid: data } : cur));
+  };
 
   return (
     <div className="min-h-screen bg-white text-black antialiased">
@@ -731,7 +812,7 @@ function BidMatch() {
 
         <KpiRow
           items={[
-            { label: 'Total opportunities', value: filtered.length, note: `of ${visible.length} asking for our products` },
+            { label: 'Total opportunities', value: filtered.length, note: view === 'general' ? `of ${visible.length} from the ${hospitalKeys.size} hospitals on the Hospital List` : `of ${visible.length} asking for our products` },
             { label: 'Product matches', value: listedProducts, tone: 'green', note: `of our products requested (${productCount} in all)` },
             { label: 'Total ABC value', value: pesoTotal(listedAbc), tone: 'blue', note: 'approved budgets of the listed tenders' },
             { label: 'Documents fetched', value: fetchedFiles, tone: 'docs', note: `files of ${tendersWithFiles} of the ${filtered.length} listed tenders` },
@@ -739,8 +820,20 @@ function BidMatch() {
         />
 
         <section ref={listTop} className="scroll-mt-6 space-y-3">
-          {/* Tier 1: which tenders, by their documents */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Tier 1: which side (Filtered: our products; General: everything from our hospitals), then documents */}
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedTabs
+              label="Which tenders"
+              value={view}
+              onChange={(next) => {
+                setView(next);
+                setPage(1);
+              }}
+              options={[
+                { value: 'filtered', label: 'Filtered', count: filteredCount },
+                { value: 'general', label: 'General', count: generalCount ?? undefined },
+              ]}
+            />
             <SegmentedTabs
               label="Documents"
               value={docFilter}
@@ -845,6 +938,13 @@ function BidMatch() {
             )}
           </div>
 
+          {view === 'general' && (
+            <p className="text-xs text-black/62">
+              General: every tender from the {hospitalKeys.size} hospitals on the Hospital List, on both portals, whether or not it asks for our
+              products in our dosages. Matched Molecules is empty for the ones that don&rsquo;t.
+            </p>
+          )}
+
           {excluded.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="text-black/62">Leaving out ({tenders.length - visible.length} tenders hidden):</span>
@@ -865,12 +965,12 @@ function BidMatch() {
           {loadingList ? (
             <EmptyState>Loading opportunities…</EmptyState>
           ) : filtered.length === 0 ? (
-            <EmptyState>Nothing to show.</EmptyState>
+            <EmptyState>{view === 'general' && !hospitalKeys.size ? 'No hospitals on the Hospital List yet.' : 'Nothing to show.'}</EmptyState>
           ) : (
             <ResponsiveTable
               rows={pageTenders}
               rowKey={(t) => t.key}
-              onDetails={setSelectedBid}
+              onDetails={openDetails}
               columns={[
                 {
                   label: '#',
