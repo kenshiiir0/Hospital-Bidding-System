@@ -102,7 +102,7 @@ export default function HospitalsPage() {
   const byStatus = (s) => listed.filter((h) => h.status === s);
   const shown = view === 'archived' ? archived : byStatus(view);
   const query = search.trim().toLowerCase();
-  const text = (h) => `${h.name} ${h.list_note || ''} ${h.emails.join(' ')} ${h.contacts.map((c) => `${c.name || ''} ${c.phone || ''}`).join(' ')}`.toLowerCase();
+  const text = (h) => `${h.name} ${h.list_note || ''} ${h.emails.join(' ')} ${h.contacts.map((c) => `${c.name || ''} ${c.role || ''} ${c.phone || ''}`).join(' ')}`.toLowerCase();
   const rows = shown.filter((h) => !query || text(h).includes(query));
   const noEmail = listed.filter((h) => h.status !== 'prospect' && !h.emails.length).length;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -142,8 +142,9 @@ export default function HospitalsPage() {
         h.contacts.length ? (
           <ul className="space-y-1 text-xs">
             {h.contacts.map((c, i) => (
-              <li key={i} title={c.name || ''} className={`${contactLine} text-black`}>
-                {c.name || '—'}
+              <li key={i} title={[c.name, c.role].filter(Boolean).join(' · ')} className={`${contactLine} text-black`}>
+                {c.name || (!c.role && '—')}
+                {c.role && <span className="text-black/62">{c.name ? ' · ' : ''}{c.role}</span>}
               </li>
             ))}
           </ul>

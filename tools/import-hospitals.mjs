@@ -3,7 +3,7 @@
 // person / number and maybe an e-mail. A value without "@" in the e-mail column is the hospital's website.
 // Rows are matched by agency_key (lib/agencyKey.js), the same key View details uses for websites: a hospital
 // already there keeps its name, website, procurement pages and note; status, list note, contacts and e-mails
-// come from the sheet. Archived hospitals stay archived. Hospitals added on the page are left alone.
+// come from the sheet (contacts marked source 'added' are kept). Archived hospitals stay archived. Hospitals added on the page are left alone.
 //   node tools/import-hospitals.mjs "<path to .xlsx>" --dry-run   (print what would be saved)
 //   node tools/import-hospitals.mjs "<path to .xlsx>"             (save)
 import { createRequire } from 'node:module';
@@ -121,7 +121,7 @@ async function main() {
     return;
   }
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { auth: { persistSession: false } });
-  const { data: existing, error: readError } = await supabase.from('hospitals').select('agency_key, website');
+  const { data: existing, error: readError } = await supabase.from('hospitals').select('agency_key, website, contacts');
   if (readError) throw new Error(readError.message);
   const have = new Map(existing.map((h) => [h.agency_key, h]));
   const now = new Date().toISOString();
@@ -132,6 +132,9 @@ async function main() {
     const listed = { status: h.status, list_note: h.list_note, contacts: h.contacts, emails: h.emails, sheet_row: h.sheet_row, updated_at: now };
     const site = websites[0] ? `https://${websites[0].replace(/^https?:\/\//, '')}/` : null;
     const old = have.get(agency_key);
+    // Contacts added outside the sheet (source 'added', e.g. tools/add-hospital-contacts.mjs) are kept after the sheet's
+    const kept = (old?.contacts || []).filter((c) => c.source === 'added' && !h.contacts.some((s) => s.phone && s.phone === c.phone));
+    listed.contacts = [...h.contacts, ...kept];
     if (old) updates.push({ agency_key, ...listed, ...(!old.website && site ? { website: site } : {}) });
     else inserts.push({ agency_key, name: h.name, website: site, source: 'winning-bid-tracker', ...listed });
   }
