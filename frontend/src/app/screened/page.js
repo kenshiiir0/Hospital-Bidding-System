@@ -15,8 +15,7 @@ import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, pesoValue } fro
 import { downloadScreenedDocuments, exportScreened, loadScreenedDetails, removeScreened, useScreened } from '@/lib/screened';
 import { formatDate, formatDateTime, formatInstant, instantDay } from '@/lib/format';
 import { displayName } from '@/lib/username';
-
-const SOURCES = { philgeps: 'PhilGEPS', ps: 'PS-PhilGEPS' };
+import SourceTag, { SOURCES } from '@/components/SourceTag';
 
 // Screened Tenders: the tenders the team picked with "Add to Screened" in View details on the PhilGEPS
 // Dashboard and PS-PhilGEPS Bid Match (lib/screened.js). Export Excel writes the ones listed here to the
@@ -393,10 +392,6 @@ function SavedDetails({ r, loading, error, onClose }) {
   );
 }
 
-function SourceTag({ source }) {
-  const tone = source === 'ps' ? 'border-[#1EA0DA]/30 bg-[#1EA0DA]/8 text-[#12769F]' : 'border-[#CBD5E1] bg-white text-black/62';
-  return <span className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{SOURCES[source] || source}</span>;
-}
 
 // The tender's molecule lines as they go into the sheet (first column), the first three then "+n more"
 function Molecules({ lines = [] }) {

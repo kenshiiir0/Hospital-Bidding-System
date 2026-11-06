@@ -26,7 +26,8 @@ const PORTALS = {
   },
   ps: {
     title: 'PS-PhilGEPS',
-    onOwnPage: (path) => path.startsWith('/ps-philgeps'),
+    // Its Bid Match is part of the merged Bid Match at /
+    onOwnPage: (path) => path === '/' || path.startsWith('/ps-philgeps'),
     read: async () => {
       const { data: row } = await supabase.from('ps_sync_status').select('status, error, stage, percent, started_at, started_by').eq('id', 'latest').maybeSingle();
       return psRun(row);
@@ -78,7 +79,7 @@ export default function SyncAlertHost() {
           key={portal}
           inline
           job={{ status: 'failed', percent: alert.percent, stage: alert.stage, error: alert.error }}
-          title={`${PORTALS[portal].title} Sync failed`}
+          name={PORTALS[portal].title}
           onDismiss={() => clearSync(portal, alert.startedAt)}
         />
       ))}

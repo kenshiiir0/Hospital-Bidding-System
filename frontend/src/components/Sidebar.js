@@ -10,19 +10,17 @@ import { setNavCount, useNavCounts } from '@/lib/navCounts';
 import { philgepsCutoff, reportUnread, unreadPhilgeps } from '@/lib/newTenders';
 import { useScreened } from '@/lib/screened';
 
-// Two sources, each with its own pages and its own Sync: the old PhilGEPS (notices.philgeps.gov.ph)
-// and the new PS-PhilGEPS (philgeps.gov.ph)
+// Two sources: the old PhilGEPS (notices.philgeps.gov.ph, being phased out) and the new PS-PhilGEPS
+// (philgeps.gov.ph). Bid Match lists both (user, 2026-11-06); its red number adds up both portals' new tenders
+// (unread: the counts reported under each key, lib/newTenders.js).
 const GROUPS = [
   {
-    label: 'PhilGEPS Portal',
-    links: [
-      { href: '/', label: 'Bid Match', icon: '▦' },
-    ],
+    label: 'Tenders',
+    links: [{ href: '/', label: 'Bid Match', icon: '▦', unread: ['/', '/ps-philgeps'] }],
   },
   {
     label: 'PS-PhilGEPS',
     links: [
-      { href: '/ps-philgeps', label: 'Bid Match', icon: '◎' },
       { href: '/ps-philgeps/opportunities', label: 'My Opportunities', icon: '☰' },
       { href: '/ps-philgeps/awards', label: 'Award Notices', icon: '★' },
     ],
@@ -74,9 +72,9 @@ function SidebarContent({ pathname, user, counts, onNavigate }) {
           {GROUPS.map((group, g) => (
             <div key={group.label} className={g ? 'mt-4 border-t border-[#EEF1F5] pt-4' : ''}>
               <div className={`mb-2 select-none px-3.5 text-[11px] font-medium uppercase tracking-wider text-black/40 ${g ? 'mt-1' : ''}`}>{group.label}</div>
-              {group.links.map(({ href, label, icon }) => {
+              {group.links.map(({ href, label, icon, unread: keys = [href] }) => {
                 const active = pathname === href;
-                const unread = counts[`new:${href}`] || 0;
+                const unread = keys.reduce((sum, key) => sum + (counts[`new:${key}`] || 0), 0);
                 return (
                   <Link
                     key={href}

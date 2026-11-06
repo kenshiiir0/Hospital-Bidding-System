@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { CustomSelect, LotPill, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
-import PageHeader, { KpiRow, blueAction, pesoTotal, plainAction } from '@/components/PageHeader';
+import PageHeader, { KpiRow, blueAction, pesoTotal, pesoValue, plainAction } from '@/components/PageHeader';
+import { PsPortalProvider, psDateTime, psDay } from '@/components/PsPortal';
+import PsBidMatchDetails from '@/components/PsBidMatchDetails';
+import SourceTag, { SOURCES } from '@/components/SourceTag';
+import { startedByLabel } from '@/components/FetchedSection';
+import { usePsPhilgeps } from '@/lib/psContext';
+import { psRefOf } from '@/lib/opportunityWorkbook';
+import { psType } from '@/lib/tenderType';
 import { setNavCount } from '@/lib/navCounts';
 import { reportUnread, useSeenOnOpen, useTenderNews } from '@/lib/newTenders';
 import AutoFetchBar from '@/components/AutoFetchBar';
@@ -113,6 +120,32 @@ function RefLink({ bid }) {
   );
 }
 
+// A PS-PhilGEPS notice number links to the notice on PS-PhilGEPS
+function PsRefLink({ row }) {
+  const ref = row.cells[0];
+  const link = row.links.find((l) => l.text === ref);
+  if (!link) return ref;
+  return (
+    <a href={link.href} target="_blank" rel="noreferrer" className="text-[#12769F] underline-offset-2 hover:text-[#0E5C7C] hover:underline">
+      {ref}
+    </a>
+  );
+}
+
+// A PS-PhilGEPS tender's downloaded documents (reading: scanned ones still being read with OCR)
+function PsDocumentCount({ notice, reading }) {
+  if (!notice) return <span className="text-black/46">—</span>;
+  if (notice.error) return <span className="text-xs text-[#B3312C]">Not read</span>;
+  const n = notice.documents?.length || 0;
+  if (!n) return <span className="text-xs text-[#B3312C]">None yet</span>;
+  return (
+    <span className="text-xs text-[#3F6F2C]">
+      📎 {n} file{n > 1 ? 's' : ''}
+      {reading && <span className="block font-medium text-[#12769F]">Reading scans (OCR)</span>}
+    </span>
+  );
+}
+
 
 function Notice({ tone = 'info', children }) {
   const tones = {
@@ -140,7 +173,18 @@ function shortDay(value, thisYear) {
   return text && thisYear && text.endsWith(`, ${thisYear}`) ? text.slice(0, -6) : text;
 }
 
+// Bid Match: both portals' tenders for our products in one list (PhilGEPS is being phased out, user 2026-11-06),
+// each tagged with its portal, with each portal's own Sync button, progress and notices. The PS-PhilGEPS state
+// (data, Sync, log-in) comes from PsPortalProvider, shared with the PS-PhilGEPS pages.
 export default function Home() {
+  return (
+    <PsPortalProvider>
+      <BidMatch />
+    </PsPortalProvider>
+  );
+}
+
+function BidMatch() {
   const [bids, setBids] = useState([]);
   // New, unread tenders (lib/newTenders.js)
   const [loading, setLoading] = useState(true);
@@ -172,6 +216,8 @@ export default function Home() {
   const [docFilter, setDocFilter] = useState('all');
   // Tender type filter: '' = all, else a code from lib/tenderType.js (ITB, RFQ, RFP, Negotiated)
   const [typeFilter, setTypeFilter] = useState('');
+  // Portal filter: '' = both, 'philgeps' or 'ps'
+  const [portalFilter, setPortalFilter] = useState('');
   const [today, setToday] = useState(''); // "YYYY-MM-DD" in Philippine time, set after mount
   // Page of the list shown (1-based) and rows per page; any filter or sort change goes back to page 1
   const [page, setPage] = useState(1);
@@ -470,52 +516,115 @@ export default function Home() {
   const seenNow = useSeenOnOpen(unreadBids.map((bid) => `philgeps:${bid.id}`));
   const isNew = (bid) => news.isNewPhilgeps(bid) || seenNow.has(`philgeps:${bid.id}`);
 
+  // PS-PhilGEPS (components/PsPortal.js): its Bid Match list, notices and what was read in the documents
+  const ps = usePsPhilgeps();
+  const psData = ps.data;
+  const psList = psData?.lists?.bidMatch;
+  const psCell = (row, name) => row.cells[psList.headers.indexOf(name)] || '';
+  const psNotice = (row) => psData?.notices?.[psRefOf(row)];
+  const psReading = (row) => psData?.analysis?.[psRefOf(row)];
+  // Our products of a PS-PhilGEPS tender: matched on the notice page or named in its documents (a notice titled
+  // only "Drugs and Medicines" lists its items in the documents)
+  const psProductsOf = (row) => [...new Set([...(psNotice(row)?.matched || []), ...(psReading(row)?.result?.items || []).flatMap((i) => i.our_products)])];
+  const psKey = (row) => `ps:${psRefOf(row) || row.cells[0]}`;
+  // Screened tenders always stay in the list (findable by search) even without our products now
+  const psOurs = (psList?.rows || []).filter((row) => psProductsOf(row).length || screened.has('ps', psRefOf(row)));
+  // Opening this page reads the new ones: labelled NEW for this visit, gone from the sidebar count
+  const psSeenNow = useSeenOnOpen(news.ready ? psOurs.filter((row) => news.isNewPs(psKey(row))).map(psKey) : []);
+  // Who started the Sync that fetched the current PS-PhilGEPS list (the status row describes the last run)
+  const psLastSyncBy =
+    ps.sync?.finished_at && psData?.syncedAt && Math.abs(new Date(ps.sync.finished_at) - new Date(psData.syncedAt)) < 10 * 60 * 1000 ? startedByLabel(ps.sync.started_by) : null;
+
   // Only molecules still on the Product List (an archived one shows nowhere, before the stored matches catch up)
   // Screened tenders always stay (findable by search) even without molecules
   const ourBids = activeTenders(bids, products.length ? new Set(products) : null, screened);
+  // Bid documents a Sync downloaded into the system for a tender
+  const filesOf = (bid) => (bid.details?.documents || []).filter((doc) => doc.path).length;
+
+  // Both portals' tenders in one shape, for the list, the filters and the counts.
+  // published: "YYYY-MM-DD"; closing: "YYYY-MM-DDTHH:MM" (sorts the same on both); text: what the search looks in
+  const tenders = [
+    ...ourBids.map((bid) => ({
+      source: 'philgeps',
+      key: `philgeps:${bid.id}`,
+      bid,
+      ref: bid.ref_no || '',
+      agency: bid.procuring_entity || bid.title || '',
+      abc: Number(bid.abc_amount) || 0,
+      published: bid.publish_date || '',
+      closing: String(bid.closing_date || ''),
+      products: bid.matched_molecules || [],
+      type: philgepsType(bid.details?.notice_type, bid.details?.procurement_mode),
+      lot: Boolean(bid.lot),
+      docGroup: docGroupOf(bid),
+      files: filesOf(bid),
+      isNew: isNew(bid),
+      text: `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''}`,
+    })),
+    ...psOurs.map((row) => ({
+      source: 'ps',
+      key: psKey(row),
+      row,
+      ref: psRefOf(row) || row.cells[0],
+      agency: psCell(row, 'Agency name'),
+      abc: pesoValue(psCell(row, 'Approve Budget Contract')),
+      published: psDay(psCell(row, 'Publish Date')),
+      closing: psDateTime(psCell(row, 'Closing Date')),
+      products: psProductsOf(row),
+      type: psType(psCell(row, 'Mode of Procurement')),
+      lot: Boolean(psNotice(row)?.lot),
+      // PS-PhilGEPS has no pick-up only notices
+      docGroup: psNotice(row)?.documents?.length ? 'files' : 'none',
+      files: (psNotice(row)?.documents || []).filter((doc) => doc.path).length,
+      isNew: news.isNewPs(psKey(row)) || psSeenNow.has(psKey(row)),
+      // Every column of the row, including the long title the list doesn't show
+      text: row.cells.join(' '),
+    })),
+  ];
   // Drop every tender that requests an excluded product
-  const visibleBids = ourBids.filter(
-    (bid) => !(bid.matched_molecules || []).some((name) => excluded.includes(name))
-  );
+  const visible = tenders.filter((t) => !t.products.some((name) => excluded.includes(name)));
 
   // Distinct products of ours requested across the listed tenders
-  const productCount = new Set(visibleBids.flatMap((bid) => bid.matched_molecules || [])).size;
+  const productCount = new Set(visible.flatMap((t) => t.products)).size;
 
-  // Listed tenders first saved to the database today (Philippine date of created_at).
+  // New today: PhilGEPS tenders first saved today, PS-PhilGEPS tenders published today (Philippine dates).
   // `today` comes from state set in the browser (see the effect above): reading the clock while
   // rendering would freeze the prerender's date into the page.
-  const addedToday = today ? visibleBids.filter((bid) => instantDay(bid.created_at) === today).length : 0;
+  const addedToday = today ? visible.filter((t) => (t.source === 'philgeps' ? instantDay(t.bid.created_at) === today : t.published === today)).length : 0;
 
   // How many loaded tenders request each product, shown next to it in the filter
   const tendersPerProduct = {};
-  for (const bid of ourBids) {
-    for (const name of bid.matched_molecules || []) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
-  }
+  for (const t of tenders) for (const name of t.products) tendersPerProduct[name] = (tendersPerProduct[name] || 0) + 1;
 
-  // Search the reference number, tender title, procuring entity (agency) and matched products,
-  // keep the published and closing date ranges and the chosen product, then the chosen sort
-  const query = search.toLowerCase();
-  const matchesSearchAndDates = (bid) => {
-    const published = bid.publish_date || '';
-    const closing = String(bid.closing_date || '').slice(0, 10);
+  // Search: every word typed must appear in the tender (reference number, title, agency, our products);
+  // then the published and closing date ranges, the chosen product and portal, then the chosen sort
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+  const matchesSearchAndDates = (t) => {
+    const text = `${t.text} ${t.products.join(' ')}`.toLowerCase();
+    const closingDay = t.closing.slice(0, 10);
     return (
-      `${bid.ref_no || ''} ${bid.title || ''} ${bid.procuring_entity || ''} ${(bid.matched_molecules || []).join(' ')}`.toLowerCase().includes(query) &&
-      (!dateFrom || published >= dateFrom) &&
-      (!dateTo || (published && published <= dateTo)) &&
-      (!closingFrom || closing >= closingFrom) &&
-      (!closingTo || (closing && closing <= closingTo)) &&
-      (!productFilter || (bid.matched_molecules || []).includes(productFilter))
+      words.every((w) => text.includes(w)) &&
+      (!dateFrom || t.published >= dateFrom) &&
+      (!dateTo || (t.published && t.published <= dateTo)) &&
+      (!closingFrom || closingDay >= closingFrom) &&
+      (!closingTo || (closingDay && closingDay <= closingTo)) &&
+      (!productFilter || t.products.includes(productFilter))
     );
   };
-  const matchingBids = visibleBids.filter(matchesSearchAndDates);
+  const ofPortal = (t) => !portalFilter || t.source === portalFilter;
+  // Portal filter counts follow the search and dates
+  const portalCounts = { philgeps: 0, ps: 0 };
+  for (const t of visible) if (matchesSearchAndDates(t)) portalCounts[t.source]++;
+  const matching = visible.filter((t) => matchesSearchAndDates(t) && ofPortal(t));
   // Our product filter: the products asked for in the listed tenders, most requested first, with counts
   const productCounts = {};
-  for (const bid of visibleBids) for (const name of bid.matched_molecules || []) productCounts[name] = (productCounts[name] || 0) + 1;
+  for (const t of visible) for (const name of t.products) productCounts[name] = (productCounts[name] || 0) + 1;
   const productOptions = Object.keys(productCounts)
     .sort((a, b) => productCounts[b] - productCounts[a])
     .map((name) => ({ value: name, label: name, count: productCounts[name] }));
-  const filtersActive = Boolean(typeFilter || productFilter || dateFrom || dateTo || closingFrom || closingTo);
+  const filtersActive = Boolean(portalFilter || typeFilter || productFilter || dateFrom || dateTo || closingFrom || closingTo);
   const clearFilters = () => {
+    setPortalFilter('');
     setTypeFilter('');
     setProductFilter('');
     setDateFrom('');
@@ -525,66 +634,77 @@ export default function Home() {
     setPage(1);
   };
   // Type filter (ITB, RFQ...): options are the types in the searched list, most common first, with counts
-  const typeOf = (bid) => philgepsType(bid.details?.notice_type).code;
   const typeCounts = {};
-  for (const bid of matchingBids) if (typeOf(bid)) typeCounts[typeOf(bid)] = (typeCounts[typeOf(bid)] || 0) + 1;
+  for (const t of matching) if (t.type.code) typeCounts[t.type.code] = (typeCounts[t.type.code] || 0) + 1;
   const typeOptions = Object.keys(typeCounts)
     .sort((a, b) => typeCounts[b] - typeCounts[a])
     .map((code) => ({ value: code, label: code, count: typeCounts[code] }));
-  const ofType = (bid) => !typeFilter || typeOf(bid) === typeFilter;
-  const searchedBids = matchingBids.filter(ofType);
-  // Counts for the documents filter follow the search, date and type filters
-  const ourSearched = visibleBids.filter((bid) => matchesSearchAndDates(bid) && ofType(bid));
-  const docCounts = { all: ourSearched.length, files: 0, pickup: 0, none: 0 };
-  for (const bid of ourSearched) docCounts[docGroupOf(bid)]++;
-  const filteredBids = searchedBids
-    .filter((bid) => docFilter === 'all' || docGroupOf(bid) === docFilter)
+  const ofType = (t) => !typeFilter || t.type.code === typeFilter;
+  const searched = matching.filter(ofType);
+  // Counts for the documents filter follow the search, date, portal and type filters
+  const docCounts = { all: searched.length, files: 0, pickup: 0, none: 0 };
+  for (const t of searched) docCounts[t.docGroup]++;
+  const filtered = searched
+    .filter((t) => docFilter === 'all' || t.docGroup === docFilter)
     .sort((a, b) => {
       // New, unread tenders first, then the chosen order
-      const byNew = Number(isNew(b)) - Number(isNew(a));
-      const byDate = (a.publish_date || '').localeCompare(b.publish_date || '') || (a.ref_no || '').localeCompare(b.ref_no || '');
-      const byClosing = String(a.closing_date || '9999').localeCompare(String(b.closing_date || '9999'));
-      const byBudget = (Number(b.abc_amount) || 0) - (Number(a.abc_amount) || 0);
+      const byNew = Number(b.isNew) - Number(a.isNew);
+      const byDate = a.published.localeCompare(b.published) || a.ref.localeCompare(b.ref);
+      const byClosing = (a.closing || '9999').localeCompare(b.closing || '9999');
+      const byBudget = b.abc - a.abc;
       const chosen = { latest: -byDate, oldest: byDate, closing: byClosing || -byDate, budget: byBudget || -byDate }[sortKey];
       return byNew || chosen;
     });
 
-
   // Header and summary cards: what is listed now (after the tabs, search and filters)
-  const listedProducts = new Set(filteredBids.flatMap((bid) => bid.matched_molecules || [])).size;
-  const listedAbc = filteredBids.reduce((sum, bid) => sum + (Number(bid.abc_amount) || 0), 0);
-  // Bid documents the Sync downloaded into the system for the listed tenders (as on PS-PhilGEPS)
-  const filesOf = (bid) => (bid.details?.documents || []).filter((doc) => doc.path).length;
-  const fetchedFiles = filteredBids.reduce((sum, bid) => sum + filesOf(bid), 0);
-  const tendersWithFiles = filteredBids.filter((bid) => filesOf(bid) > 0).length;
+  const listedProducts = new Set(filtered.flatMap((t) => t.products)).size;
+  const listedAbc = filtered.reduce((sum, t) => sum + t.abc, 0);
+  // Bid documents the Syncs downloaded into the system for the listed tenders
+  const fetchedFiles = filtered.reduce((sum, t) => sum + t.files, 0);
+  const tendersWithFiles = filtered.filter((t) => t.files > 0).length;
   const thisYear = today.slice(0, 4);
-  const status = scrapeError
+  const philgepsStatus = scrapeError
     ? { tone: 'error', text: 'Could not load' }
     : syncing
       ? { tone: 'busy', text: syncView?.status === 'running' ? `Syncing ${syncView.percent || 0}%` : 'Sync starting' }
       : loading || reloading
         ? { tone: 'busy', text: loading ? 'Loading…' : 'Updating…' }
-        : { tone: 'ok', text: `Connected · Updated ${updatedAt ? formatUpdatedAt(updatedAt) : ''}` };
+        : { tone: 'ok', text: `Updated ${updatedAt ? formatUpdatedAt(updatedAt) : ''}` };
+  const status = [
+    { ...philgepsStatus, text: `PhilGEPS · ${philgepsStatus.text}` },
+    { ...ps.portal.status, text: `PS-PhilGEPS · ${ps.portal.status.text}` },
+  ];
+  // The bottom bars (hourly updates) of both portals stack; the progress cards sit above them
+  const bars = Number(Boolean(autoView)) + Number(Boolean(ps.portal.barJob));
 
   // Only the current page is drawn; the page is clamped in case the list shrank (realtime, reload)
-  const totalPages = Math.max(1, Math.ceil(filteredBids.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * pageSize;
-  const pageBids = filteredBids.slice(pageStart, pageStart + pageSize);
+  const pageTenders = filtered.slice(pageStart, pageStart + pageSize);
+  const loadingList = loading && !psData;
 
   return (
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {/* Header: title + live status, actions (Sync last), then the summary cards */}
+        {/* Header: title + each portal's live status, actions (the two Syncs last), then the summary cards */}
         <PageHeader
-          title="PhilGEPS Procurement Radar"
+          title="Bid Match"
           status={status}
-          subtitle={<>notices.philgeps.gov.ph{addedToday > 0 && ` · ${addedToday} new today`}</>}
+          subtitle={<>PhilGEPS and PS-PhilGEPS tenders for our products{addedToday > 0 && ` · ${addedToday} new today`}</>}
           actions={
             <>
-              <button onClick={fetchBids} disabled={reloading} title="Reload the list from the database without contacting PhilGEPS" className={plainAction}>
-                {reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
+              <button
+                onClick={() => {
+                  fetchBids();
+                  ps.portal.reloadNow();
+                }}
+                disabled={reloading || ps.portal.reloading}
+                title="Reload both portals' lists from the database without contacting PhilGEPS"
+                className={plainAction}
+              >
+                {reloading || ps.portal.reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
               </button>
               <button
                 onClick={triggerSync}
@@ -600,24 +720,26 @@ export default function Home() {
                       ? <>Syncing {syncView.percent || 0}% <WorkingDots /></>
                       : '🔄 Sync PhilGEPS'}
               </button>
+              {ps.portal.syncButton}
             </>
           }
         />
 
         {scrapeError && <Notice tone="error">{scrapeError}</Notice>}
+        {ps.portal.notices}
         <OcrHealthNotice />
 
         <KpiRow
           items={[
-            { label: 'Total opportunities', value: filteredBids.length, note: `of ${visibleBids.length} asking for our products` },
+            { label: 'Total opportunities', value: filtered.length, note: `of ${visible.length} asking for our products` },
             { label: 'Product matches', value: listedProducts, tone: 'green', note: `of our products requested (${productCount} in all)` },
             { label: 'Total ABC value', value: pesoTotal(listedAbc), tone: 'blue', note: 'approved budgets of the listed tenders' },
-            { label: 'Documents fetched', value: fetchedFiles, tone: 'docs', note: `files of ${tendersWithFiles} of the ${filteredBids.length} listed tenders` },
+            { label: 'Documents fetched', value: fetchedFiles, tone: 'docs', note: `files of ${tendersWithFiles} of the ${filtered.length} listed tenders` },
           ]}
         />
 
         <section ref={listTop} className="scroll-mt-6 space-y-3">
-          {/* Tier 1: which tenders, by their documents; Mark all as read while there are new ones */}
+          {/* Tier 1: which tenders, by their documents */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <SegmentedTabs
               label="Documents"
@@ -632,15 +754,28 @@ export default function Home() {
 
           {/* Tier 2: search, then the dropdowns. Phones: an even two-column grid under a full-width search */}
           <div className="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap sm:items-center">
-            {/* Same controls, order and words as the PS-PhilGEPS lists (PsFilters.js) */}
             <SearchPill
               className="col-span-2"
-              label="Search PhilGEPS"
+              label="Search tenders"
               value={search}
               onChange={(value) => {
                 setSearch(value);
                 setPage(1);
               }}
+            />
+            <CustomSelect
+              label="Portal"
+              className="w-full sm:w-auto"
+              value={portalFilter}
+              onChange={(value) => {
+                setPortalFilter(value);
+                setPage(1);
+              }}
+              options={[
+                { value: '', label: 'Both' },
+                { value: 'philgeps', label: SOURCES.philgeps, count: portalCounts.philgeps },
+                { value: 'ps', label: SOURCES.ps, count: portalCounts.ps },
+              ]}
             />
             <CustomSelect
               label="Our product"
@@ -712,7 +847,7 @@ export default function Home() {
 
           {excluded.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-black/62">Leaving out ({ourBids.length - visibleBids.length} tenders hidden):</span>
+              <span className="text-black/62">Leaving out ({tenders.length - visible.length} tenders hidden):</span>
               {excluded.map((name) => (
                 <button
                   key={name}
@@ -726,50 +861,57 @@ export default function Home() {
             </div>
           )}
 
-          {/* The list: same table as the PS-PhilGEPS pages (PsListTable) */}
-          {loading ? (
+          {/* The list: both portals in one table, each row tagged with its portal */}
+          {loadingList ? (
             <EmptyState>Loading opportunities…</EmptyState>
-          ) : filteredBids.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <EmptyState>Nothing to show.</EmptyState>
           ) : (
             <ResponsiveTable
-              rows={pageBids}
-              rowKey={(bid, index) => bid.id || index}
+              rows={pageTenders}
+              rowKey={(t) => t.key}
               onDetails={setSelectedBid}
               columns={[
                 {
                   label: '#',
                   lead: true,
                   width: '3rem',
-                  render: (bid, index) => (
-                    <NumberCircle n={pageStart + index + 1} state={circleState(bid)} percent={syncPercent[bid.ref_no]} error={syncErrors[bid.ref_no]} hasDocs={bid.details?.documents?.length > 0} />
-                  ),
+                  render: (t, index) =>
+                    t.source === 'philgeps' ? (
+                      <NumberCircle n={pageStart + index + 1} state={circleState(t.bid)} percent={syncPercent[t.ref]} error={syncErrors[t.ref]} hasDocs={t.bid.details?.documents?.length > 0} />
+                    ) : (
+                      // Green once the notice's documents are downloaded
+                      <NumberCircle n={pageStart + index + 1} hasDocs={t.docGroup === 'files'} />
+                    ),
                 },
                 {
                   label: 'Ref No. & Type',
                   title: true,
-                  width: '8.5rem',
-                  render: (bid) => (
+                  width: '9rem',
+                  render: (t) => (
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5 font-semibold">
-                        <RefLink bid={bid} />
-                        {bid.lot && <LotPill />}
-                        {isNew(bid) && <NewPill />}
+                        {t.source === 'philgeps' ? <RefLink bid={t.bid} /> : <PsRefLink row={t.row} />}
+                        {t.lot && <LotPill />}
+                        {t.isNew && <NewPill />}
                       </div>
-                      {/* Type, as on the PS-PhilGEPS list */}
+                      {/* Portal and type */}
                       <div className="flex flex-wrap gap-1">
-                        <TypeBadge type={philgepsType(bid.details?.notice_type, bid.details?.procurement_mode)} />
+                        <SourceTag source={t.source} />
+                        <TypeBadge type={t.type} />
                       </div>
-                      <div className="font-normal"><DocumentCount bid={bid} /></div>
+                      <div className="font-normal">
+                        {t.source === 'philgeps' ? <DocumentCount bid={t.bid} /> : <PsDocumentCount notice={psNotice(t.row)} reading={stillReading(psReading(t.row)?.documents_read)} />}
+                      </div>
                     </div>
                   ),
                 },
                 {
                   label: 'Procuring Agency',
                   wide: true,
-                  render: (bid) => (
-                    <span className="line-clamp-2 text-[13px] font-medium leading-snug text-black" title={bid.procuring_entity || bid.title}>
-                      {bid.procuring_entity || bid.title}
+                  render: (t) => (
+                    <span className="line-clamp-2 text-[13px] font-medium leading-snug text-black" title={t.agency}>
+                      {t.agency}
                     </span>
                   ),
                 },
@@ -778,28 +920,28 @@ export default function Home() {
                   width: '9rem',
                   align: 'right',
                   nowrap: true,
-                  render: (bid) => <span className="text-[13px] font-medium tabular-nums text-black">{bid.abc_amount ? formatPeso(bid.abc_amount) : '—'}</span>,
+                  render: (t) => <span className="text-[13px] font-medium tabular-nums text-black">{t.abc ? formatPeso(t.abc) : '—'}</span>,
                 },
                 // Only the published date in the list; the closing date is in View details
                 {
                   label: 'Published',
                   width: '8rem',
-                  render: (bid) => (
+                  render: (t) => (
                     <div className="text-xs">
-                      <PublishedTag text={shortDay(bid.publish_date, thisYear)} />
+                      <PublishedTag text={shortDay(t.published, thisYear) || '—'} />
                     </div>
                   ),
                 },
-                { label: 'Matched Molecules', wide: true, render: (bid) => <Products names={bid.matched_molecules} /> },
+                { label: 'Matched Molecules', wide: true, render: (t) => <Products names={t.products} /> },
               ]}
             />
           )}
 
-          {!loading && filteredBids.length > 0 && (
+          {!loadingList && filtered.length > 0 && (
             <Pagination
               page={currentPage}
               pageSize={pageSize}
-              total={filteredBids.length}
+              total={filtered.length}
               onPageChange={goToPage}
               onPageSizeChange={(size) => {
                 setPageSize(size);
@@ -810,12 +952,28 @@ export default function Home() {
         </section>
       </div>
 
-      {selectedBid && (
-        // The freshest copy of the open tender (the list reloads while a Sync saves each result)
-        <TenderDetails bid={ourBids.find((b) => b.id === selectedBid.id) || selectedBid} onClose={() => setSelectedBid(null)} />
+      {/* The freshest copy of the open tender (the lists reload while a Sync saves each result) */}
+      {selectedBid?.source === 'philgeps' && (
+        <TenderDetails bid={ourBids.find((b) => b.id === selectedBid.bid.id) || selectedBid.bid} onClose={() => setSelectedBid(null)} />
       )}
-      <ScrapeProgress job={syncView} raised={Boolean(autoView)} onCancel={cancelSync} onDismiss={closeRing} />
-      <AutoFetchBar job={autoView} onDismiss={dismissFetch} />
+      {selectedBid?.source === 'ps' && (
+        <PsBidMatchDetails
+          data={psData}
+          row={psOurs.find((row) => psKey(row) === selectedBid.key) || selectedBid.row}
+          lastSyncBy={psLastSyncBy}
+          onClose={() => setSelectedBid(null)}
+        />
+      )}
+
+      {/* Each portal's Sync card, stacked bottom-left above the hourly-update bars */}
+      <div className={`fixed left-5 z-40 flex w-80 max-w-[calc(100vw-2.5rem)] flex-col gap-2 ${bars === 2 ? 'bottom-24' : bars === 1 ? 'bottom-14' : 'bottom-5'}`}>
+        <ScrapeProgress inline job={syncView} name="PhilGEPS" onCancel={cancelSync} onDismiss={closeRing} />
+        <ScrapeProgress inline job={ps.portal.ringJob} name="PS-PhilGEPS" onCancel={ps.portal.cancelSync} onDismiss={ps.portal.closeRing} />
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-30 flex flex-col">
+        <AutoFetchBar inline job={autoView} onDismiss={dismissFetch} />
+        <AutoFetchBar inline job={ps.portal.barJob} running="Hourly PS-PhilGEPS Sync" done="PS-PhilGEPS updated" onDismiss={ps.portal.dismissBar} />
+      </div>
     </div>
   );
 }

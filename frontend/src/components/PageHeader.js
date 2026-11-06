@@ -6,7 +6,8 @@
 
 /**
  * @param {string} props.title
- * @param {{ tone: 'ok' | 'busy' | 'off' | 'error', text: string }} [props.status]  The live status pill
+ * @param {{ tone: 'ok' | 'busy' | 'off' | 'error', text: string } | Array} [props.status]  The live status pill(s)
+ *   (the merged Bid Match shows one per portal)
  * @param {React.ReactNode} [props.subtitle]  One quiet line under the title (the site's address, etc.)
  * @param {React.ReactNode} [props.actions]
  */
@@ -16,7 +17,9 @@ export default function PageHeader({ title, status, subtitle, actions }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <h1 className="text-xl font-semibold tracking-tight text-black">{title}</h1>
-          {status && <StatusPill {...status} />}
+          {[].concat(status || []).map((st) => (
+            <StatusPill key={st.text} {...st} />
+          ))}
         </div>
         {subtitle && <p className="mt-1 text-xs text-black/62">{subtitle}</p>}
       </div>

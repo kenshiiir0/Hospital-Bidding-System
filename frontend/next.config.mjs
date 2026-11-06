@@ -39,6 +39,10 @@ const nextConfig = {
       "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*",
     ],
   },
+  // PS-PhilGEPS Bid Match is part of the merged Bid Match at / (user, 2026-11-06): old links and bookmarks go there
+  async redirects() {
+    return [{ source: "/ps-philgeps", destination: "/", permanent: false }];
+  },
   // Basic hardening: no framing (clickjacking of the scrape button), no MIME sniffing,
   // no referrer sent to PhilGEPS or other sites, no device APIs, never listed by search engines.
   // The Content-Security-Policy only reports for now (browser console): it is enforced once a few days

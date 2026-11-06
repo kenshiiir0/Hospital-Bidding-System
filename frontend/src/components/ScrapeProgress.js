@@ -7,27 +7,28 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 const LOOK = {
   // Before starting: is PhilGEPS up?
-  checking: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: 'Checking PhilGEPS…' },
+  checking: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: (n) => `Checking ${n}…` },
   // Clicked while the automatic update runs: starts right after it
-  queued: { ring: 'stroke-[#94A3B8]', text: 'text-[#12769F]', title: 'Sync waiting' },
-  running: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: 'Syncing with PhilGEPS' },
+  queued: { ring: 'stroke-[#94A3B8]', text: 'text-[#12769F]', title: (n) => `${n} Sync waiting` },
+  running: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: (n) => `Syncing with ${n}` },
   // PhilGEPS was down, so nothing was started
-  unavailable: { ring: 'stroke-[#94A3B8]', text: 'text-black/80', title: 'PhilGEPS is down — Sync not started' },
-  success: { ring: 'stroke-[#61A644]', text: 'text-[#3F6F2C]', title: 'Sync complete' },
+  unavailable: { ring: 'stroke-[#94A3B8]', text: 'text-black/80', title: (n) => `${n} is down — Sync not started` },
+  success: { ring: 'stroke-[#61A644]', text: 'text-[#3F6F2C]', title: (n) => `${n} Sync complete` },
   // Finished, but something was left for later (e.g. the session time limit); blue, as amber is off-brand
-  warning: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: 'Synced with a warning' },
-  failed: { ring: 'stroke-[#B3312C]', text: 'text-[#B3312C]', title: 'Sync failed' },
+  warning: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: (n) => `${n} synced with a warning` },
+  failed: { ring: 'stroke-[#B3312C]', text: 'text-[#B3312C]', title: (n) => `${n} Sync failed` },
   // Stopped with the Cancel button (PhilGEPS: after a confirmed log-out)
-  cancelling: { ring: 'stroke-[#94A3B8]', text: 'text-[#12769F]', title: 'Cancelling Sync' },
-  cancelled: { ring: 'stroke-[#94A3B8]', text: 'text-black/80', title: 'Sync cancelled' },
+  cancelling: { ring: 'stroke-[#94A3B8]', text: 'text-[#12769F]', title: (n) => `Cancelling ${n} Sync` },
+  cancelled: { ring: 'stroke-[#94A3B8]', text: 'text-black/80', title: (n) => `${n} Sync cancelled` },
 };
 
 // Bottom-left card with a progress ring for a Sync (log-in and documents; job from GET /api/scrape).
 // A failed Sync, one that finished with a warning, one cancelled, or one not started because PhilGEPS is down,
 // stays on screen until dismissed. raised: lifts the card above the automatic-update bar.
-// title: replaces the status title (SyncAlertHost names the portal). inline: placed by the parent instead of fixed.
+// name: the portal in the titles ("PS-PhilGEPS Sync failed"). inline: placed by the parent instead of fixed
+// (the merged Bid Match stacks both portals' cards).
 // onCancel: shows a Cancel button while the Sync runs (it stops the Sync; on PhilGEPS it also logs out).
-export default function ScrapeProgress({ job, onDismiss, onCancel, raised = false, title, inline = false }) {
+export default function ScrapeProgress({ job, onDismiss, onCancel, raised = false, name = 'PhilGEPS', inline = false }) {
   const cancelling = job?.status === 'running' && job.cancelling;
   const look = LOOK[cancelling ? 'cancelling' : job?.status === 'success' && job.warning ? 'warning' : job?.status];
   if (!look) return null;
@@ -64,7 +65,7 @@ export default function ScrapeProgress({ job, onDismiss, onCancel, raised = fals
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className={`text-sm font-semibold ${look.text} flex items-center gap-1.5`}>
-            {title || look.title}
+            {look.title(name)}
             {busy && <WorkingDots />}
           </div>
           {!busy && (
