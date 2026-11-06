@@ -75,3 +75,50 @@ export async function PATCH(request) {
   if (!data) return Response.json({ ok: false, error: 'That result is no longer in the abstract.' }, { status: 404 });
   return Response.json({ ok: true, result: data });
 }
+
+// Import Excel: { results: [...] } as read in the browser from the "ABSTRACT 2026" sheet (lib/sheetImport.mjs
+// readAbstractSheet). Saved by (year, hospital, item): a row already there is updated (archive state kept), others
+// added; rows not on the sheet are left alone.
+export async function PUT(request) {
+  const { response } = await requireUser(request);
+  if (response) return response;
+  const body = await request.json().catch(() => ({}));
+  if (!Array.isArray(body.results) || !body.results.length || body.results.length > 5000) {
+    return Response.json({ ok: false, error: 'No results to import.' }, { status: 400 });
+  }
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+  const now = new Date().toISOString();
+  const seen = new Set();
+  const rows = [];
+  for (const r of body.results) {
+    const hospital = clean(r?.hospital).toUpperCase();
+    const item = clean(r?.item);
+    const agency_key = agencyKey(hospital);
+    const year = Number.isInteger(r?.year) && r.year > 2000 && r.year < 2100 ? r.year : new Date().getFullYear();
+    if (!agency_key || !item || seen.has(`${year}|${agency_key}|${item}`)) continue;
+    seen.add(`${year}|${agency_key}|${item}`);
+    rows.push({
+      year,
+      hospital,
+      agency_key,
+      item,
+      abc_price: num(r.abc_price),
+      quantity: num(r.quantity),
+      our_price: num(r.our_price),
+      winner: clean(r.winner).toUpperCase() || null,
+      winning_price: num(r.winning_price),
+      sheet_row: Number.isInteger(r.sheet_row) ? r.sheet_row : null,
+      source: 'excel-import',
+      updated_at: now,
+    });
+  }
+  if (!rows.length) return Response.json({ ok: false, error: 'No rows with a hospital and an item.' }, { status: 400 });
+  const supabase = admin();
+  const { data: before, error: readError } = await supabase.from('bid_abstracts').select('year, agency_key, item');
+  if (readError) return Response.json({ ok: false, error: readError.message }, { status: 500 });
+  const had = new Set(before.map((r) => `${r.year}|${r.agency_key}|${r.item}`));
+  const { error } = await supabase.from('bid_abstracts').upsert(rows, { onConflict: 'year,agency_key,item' });
+  if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+  const updated = rows.filter((r) => had.has(`${r.year}|${r.agency_key}|${r.item}`)).length;
+  return Response.json({ ok: true, added: rows.length - updated, updated });
+}

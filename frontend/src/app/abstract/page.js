@@ -5,6 +5,8 @@ import { authFetch } from '@/lib/authFetch';
 import { formatPeso } from '@/lib/format';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
+import ImportExcel from '@/components/ImportExcel';
+import { ABSTRACT_SHEET, readAbstractSheet } from '@/lib/sheetImport.mjs';
 import { SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import PageHeader, { KpiRow, blueAction } from '@/components/PageHeader';
@@ -167,15 +169,33 @@ export default function AbstractPage() {
           title="Abstract of Bids"
           subtitle="Who won each item the hospitals bid out, at what price, next to our price (PhilGEPS and PS-PhilGEPS)"
           actions={
-            <button
-              onClick={() => {
-                setAdding(true);
-                setAdded('');
-              }}
-              className={blueAction}
-            >
-              + Add Result
-            </button>
+            <>
+              <ImportExcel
+                sheet={ABSTRACT_SHEET}
+                columns="HOSPITAL, ITEM, ABC PRICE, QUANTITY, 2MG PRICE, WON, PRICE"
+                read={(wb) => {
+                  const { sheet, results: rows } = readAbstractSheet(wb);
+                  return { sheet, rows };
+                }}
+                describe={(rows) => describeAbstractImport(rows, all)}
+                endpoint="/api/abstracts"
+                field="results"
+                disabled={!results}
+                onDone={(message) => {
+                  setAdded(message);
+                  load();
+                }}
+              />
+              <button
+                onClick={() => {
+                  setAdding(true);
+                  setAdded('');
+                }}
+                className={blueAction}
+              >
+                + Add Result
+              </button>
+            </>
           }
         />
         <KpiRow
@@ -263,6 +283,24 @@ export default function AbstractPage() {
       </div>
     </div>
   );
+}
+
+// What the Import Excel window says about the sheet: new results, updated ones, per hospital
+function describeAbstractImport(rows, current) {
+  const have = new Set(current.map((r) => `${r.year}|${r.agency_key}|${r.item}`));
+  const fresh = rows.filter((r) => !have.has(`${r.year}|${r.agency_key}|${r.item}`));
+  const perHospital = Object.entries(rows.reduce((m, r) => ({ ...m, [r.hospital]: (m[r.hospital] || 0) + 1 }), {}));
+  return {
+    headline: `${rows.length} results from ${perHospital.length} hospital${perHospital.length === 1 ? '' : 's'} (${rows[0].year}): ${rows.filter((r) => r.our_price != null).length} we bid, ${rows.filter((r) => r.our_price == null).length} not bid`,
+    lines: [
+      `New (${fresh.length}), already in the abstract and updated (${rows.length - fresh.length}).`,
+      perHospital
+        .slice(0, 8)
+        .map(([h, n]) => `${h} (${n})`)
+        .join(' · ') + (perHospital.length > 8 ? ` · and ${perHospital.length - 8} more` : ''),
+      'Kept as they are: archived results and results not on the sheet.',
+    ],
+  };
 }
 
 function ArchiveIcon({ className }) {

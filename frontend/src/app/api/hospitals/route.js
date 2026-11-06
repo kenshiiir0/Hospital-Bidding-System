@@ -1,5 +1,6 @@
 import { requireUser } from '@/lib/auth';
 import { agencyKey } from '@/lib/agencyKey';
+import { planHospitalImport } from '@/lib/sheetImport.mjs';
 import { createClient } from '@supabase/supabase-js';
 
 function admin() {
@@ -75,4 +76,42 @@ export async function PATCH(request) {
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
   if (!data) return Response.json({ ok: false, error: 'That hospital is no longer on the list.' }, { status: 404 });
   return Response.json({ ok: true, hospital: data });
+}
+
+// Import Excel: { hospitals: [...] } as read in the browser from the "Active Hospital" sheet (lib/sheetImport.mjs
+// readHospitalSheet). Same rules as tools/import-hospitals.mjs: matched by name, websites and archive state kept,
+// contacts added outside the sheet kept, hospitals not on the sheet left alone.
+export async function PUT(request) {
+  const { user, response } = await requireUser(request);
+  if (response) return response;
+  const body = await request.json().catch(() => ({}));
+  if (!Array.isArray(body.hospitals) || !body.hospitals.length || body.hospitals.length > 2000) {
+    return Response.json({ ok: false, error: 'No hospitals to import.' }, { status: 400 });
+  }
+  const text = (v, max) => clean(v, max) || null;
+  const hospitals = body.hospitals
+    .map((h) => ({
+      name: clean(h?.name).toUpperCase(),
+      status: STATUSES.includes(h?.status) ? h.status : 'prospect',
+      list_note: text(h?.list_note, 500),
+      contacts: (Array.isArray(h?.contacts) ? h.contacts : []).slice(0, 30).map((c) => ({ name: text(c?.name, 200), phone: text(c?.phone, 80) })).filter((c) => c.name || c.phone),
+      emails: (Array.isArray(h?.emails) ? h.emails : []).map((e) => clean(e, 200).toLowerCase()).filter((e) => e.includes('@')).slice(0, 10),
+      websites: (Array.isArray(h?.websites) ? h.websites : []).map((w) => clean(w, 200).toLowerCase()).filter((w) => /^[a-z0-9.-]+\.[a-z]{2,}(\/\S*)?$/.test(w.replace(/^https?:\/\//, ''))).slice(0, 3),
+      sheet_row: Number.isInteger(h?.sheet_row) ? h.sheet_row : null,
+    }))
+    .filter((h) => agencyKey(h.name));
+  const supabase = admin();
+  const { data: existing, error: readError } = await supabase.from('hospitals').select('agency_key, website, contacts');
+  if (readError) return Response.json({ ok: false, error: readError.message }, { status: 500 });
+  const { inserts, updates } = planHospitalImport(hospitals, existing, { source: 'excel-import', addedBy: user.email });
+  for (let i = 0; i < updates.length; i += 10) {
+    const results = await Promise.all(updates.slice(i, i + 10).map(({ agency_key, ...change }) => supabase.from('hospitals').update(change).eq('agency_key', agency_key)));
+    const failed = results.find((r) => r.error);
+    if (failed) return Response.json({ ok: false, error: failed.error.message }, { status: 500 });
+  }
+  if (inserts.length) {
+    const { error } = await supabase.from('hospitals').insert(inserts);
+    if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+  }
+  return Response.json({ ok: true, added: inserts.length, updated: updates.length });
 }

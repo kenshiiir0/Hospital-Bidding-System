@@ -6,6 +6,8 @@ import { agencyKey } from '@/lib/agencyKey';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
 import MessageHospitals from '@/components/MessageHospitals';
+import ImportExcel from '@/components/ImportExcel';
+import { HOSPITAL_SHEET, readHospitalSheet } from '@/lib/sheetImport.mjs';
 import { SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import PageHeader, { KpiRow, blueAction, plainAction } from '@/components/PageHeader';
@@ -225,6 +227,22 @@ export default function HospitalsPage() {
           subtitle="The hospitals we bid for on PhilGEPS and PS-PhilGEPS, with their contact persons, WhatsApp numbers and e-mail addresses"
           actions={
             <>
+              <ImportExcel
+                sheet={HOSPITAL_SHEET}
+                columns="HOSPITAL, STATUS, CONTACT NUMBER, CONTACT PERSON, HOSPITAL EMAIL ADDRESS"
+                read={(wb) => {
+                  const { sheet, hospitals: rows } = readHospitalSheet(wb);
+                  return { sheet, rows };
+                }}
+                describe={(rows) => describeHospitalImport(rows, all)}
+                endpoint="/api/hospitals"
+                field="hospitals"
+                disabled={!hospitals}
+                onDone={(message) => {
+                  setAdded(message);
+                  load();
+                }}
+              />
               <button
                 onClick={() => setMessaging(true)}
                 disabled={!hospitals}
@@ -339,6 +357,23 @@ function WhatsAppIcon({ className }) {
       <path d="M9 8.5c0 3.5 2.6 6.5 6.5 6.5l1-1.5-2-1-1 .8c-1.2-.5-2.3-1.6-2.8-2.8l.8-1-1-2L9 8.5z" />
     </svg>
   );
+}
+
+// What the Import Excel window says about the sheet: new hospitals, updated ones, and the status counts
+function describeHospitalImport(rows, listed) {
+  const have = new Set(listed.map((h) => h.agency_key));
+  const fresh = rows.filter((h) => !have.has(agencyKey(h.name)));
+  const count = (s) => rows.filter((h) => h.status === s).length;
+  const names = (list) => list.slice(0, 6).map((h) => h.name).join(' · ') + (list.length > 6 ? ` · and ${list.length - 6} more` : '');
+  return {
+    headline: `${rows.length} hospitals: ${count('active')} active tender, ${count('rfq')} RFQ, ${count('prospect')} prospects`,
+    lines: [
+      fresh.length ? `New on the list (${fresh.length}): ${names(fresh)}` : 'No new hospitals.',
+      `Already on the list (${rows.length - fresh.length}): status, note, contacts and e-mails updated from the sheet.`,
+      `${rows.reduce((n, h) => n + h.contacts.length, 0)} contacts, ${rows.reduce((n, h) => n + h.emails.length, 0)} e-mail addresses.`,
+      'Kept as they are: websites, contacts added on the dashboard, archived hospitals, and hospitals not on the sheet.',
+    ],
+  };
 }
 
 function ArchiveIcon({ className }) {
