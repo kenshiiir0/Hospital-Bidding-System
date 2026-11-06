@@ -253,6 +253,20 @@ CREATE POLICY "team can edit" ON hospitals FOR UPDATE TO authenticated
 REVOKE ALL ON hospitals FROM anon;
 REVOKE DELETE, TRUNCATE ON hospitals FROM authenticated;
 GRANT SELECT, INSERT, UPDATE ON hospitals TO authenticated;
+-- The Hospital List page (Catalog Management, /api/hospitals): the hospitals we bid for, imported from the "Active
+-- Hospital" sheet of the WINNING BID TRACKER (tools/import-hospitals.mjs) plus Add Hospital. status NULL = not on the
+-- list (e.g. a city added only for its website in View details). status: active (active tender) | rfq | prospect
+-- (not bidding yet; list_note says why). contacts = [{ name, phone }]. Archive keeps the row; Restore brings it back.
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS status TEXT CHECK (status IN ('active', 'rfq', 'prospect'));
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS list_note TEXT;
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS contacts JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS emails TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS sheet_row INT;
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS source TEXT;          -- winning-bid-tracker | added
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS added_by TEXT;
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS archived_by TEXT;
 
 -- Postings found on hospitals' procurement pages (links only, nothing downloaded). first_seen_at = the
 -- day the check first saw it (the pages show no dates), used for "this month".

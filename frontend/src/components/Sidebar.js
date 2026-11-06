@@ -30,11 +30,12 @@ const GROUPS = [
     label: 'Screening & Matching',
     links: [{ href: '/screened', label: 'Screened Tenders', icon: '✓' }],
   },
-  // The one product list both sites' tenders are screened against, and who handles each hospital
+  // The one product list both sites' tenders are screened against, the hospitals we bid for, and who handles each
   {
     label: 'Catalog Management',
     links: [
       { href: '/products', label: 'Product List', icon: '✚' },
+      { href: '/hospitals', label: 'Hospital List', icon: '⌂' },
       { href: '/assigned-persons', label: 'Assigned Persons', icon: '☺' },
     ],
   },
