@@ -77,17 +77,59 @@ export const nameKey = (name = '') =>
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim()} `;
 
-const KEYS = HOSPITALS.flatMap(([no, name, rep, aliases = []]) => [name, ...aliases].map((n) => ({ key: nameKey(n), no, name, rep })));
-
 /**
- * The hospital on the list whose name (or other spelling) is inside the agency name PhilGEPS shows
- * ("DOH - SOUTHERN PHILIPPINES MEDICAL CENTER"); the longest match wins, so "Bicol Regional Hospital and
+ * The routing for a given list ({ people: {key: {name, email}}, backups: [key], hospitals: [[no, name, rep, aliases]] }).
+ * The dashboard's Assigned Persons page edits that list (tables assigned_people and assigned_hospitals,
+ * loadRouting below); the lists above are what those tables start from, and the fallback when they can't be read.
+ * routeAward(agency): the hospital on the list whose name (or other spelling) is inside the agency name PhilGEPS
+ * shows ("DOH - SOUTHERN PHILIPPINES MEDICAL CENTER"); the longest match wins, so "Bicol Regional Hospital and
  * Medical Center" is never taken for "Bicol Medical Center".
  * Returns { hospital: {no, name} | null, to: [{name, email}], cc: [{name, email}] }.
+ * A hospital whose representative is missing goes to the back-ups.
  */
-export function routeAward(agency) {
-  const key = nameKey(agency);
-  const found = KEYS.filter((k) => key.includes(k.key)).sort((a, b) => b.key.length - a.key.length)[0];
-  if (!found) return { hospital: null, to: BACKUPS.map((p) => PEOPLE[p]), cc: [] };
-  return { hospital: { no: found.no, name: found.name }, to: [PEOPLE[found.rep]], cc: BACKUPS.map((p) => PEOPLE[p]) };
+export function makeRouter({ people = PEOPLE, backups = BACKUPS, hospitals = HOSPITALS } = {}) {
+  const backupList = backups.map((p) => people[p]).filter(Boolean);
+  const keys = hospitals.flatMap(([no, name, rep, aliases = []]) => [name, ...(aliases || [])].map((n) => ({ key: nameKey(n), no, name, rep })));
+  return function route(agency) {
+    const key = nameKey(agency);
+    const found = keys.filter((k) => k.key.trim() && key.includes(k.key)).sort((a, b) => b.key.length - a.key.length)[0];
+    if (!found || !people[found.rep]) return { hospital: found ? { no: found.no, name: found.name } : null, to: backupList, cc: [] };
+    return { hospital: { no: found.no, name: found.name }, to: [people[found.rep]], cc: backupList.filter((p) => p.email !== people[found.rep].email) };
+  };
+}
+
+export const routeAward = makeRouter();
+
+/** Defaults as table rows (what assigned_people / assigned_hospitals start from) */
+export const defaultRows = () => ({
+  people: Object.entries(PEOPLE).map(([key, p]) => ({ key, name: p.name, email: p.email, backup: BACKUPS.includes(key) })),
+  hospitals: HOSPITALS.map(([no, name, rep, aliases = []]) => ({ no, name, rep, aliases })),
+});
+
+/** Table rows -> the shape makeRouter takes */
+export const fromRows = ({ people, hospitals }) => ({
+  people: Object.fromEntries(people.map((p) => [p.key, { name: p.name, email: p.email }])),
+  backups: people.filter((p) => p.backup).map((p) => p.key),
+  hospitals: hospitals.map((h) => [h.no, h.name, h.rep, h.aliases || []]),
+});
+
+/**
+ * The list as edited on the Assigned Persons page (service-key Supabase client). Falls back to the lists above
+ * when the tables are missing or empty, so an award email always goes somewhere.
+ * Returns { ...fromRows, route, fromTables }.
+ */
+export async function loadRouting(supabase) {
+  try {
+    const [p, h] = await Promise.all([
+      supabase.from('assigned_people').select('key, name, email, backup'),
+      supabase.from('assigned_hospitals').select('no, name, rep, aliases'),
+    ]);
+    if (!p.error && !h.error && p.data?.length) {
+      const list = fromRows({ people: p.data, hospitals: h.data || [] });
+      return { ...list, route: makeRouter(list), fromTables: true };
+    }
+  } catch {
+    // fall through to the built-in list
+  }
+  return { people: PEOPLE, backups: BACKUPS, hospitals: HOSPITALS, route: routeAward, fromTables: false };
 }

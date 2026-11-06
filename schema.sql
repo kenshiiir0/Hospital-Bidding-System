@@ -469,3 +469,36 @@ CREATE POLICY "dashboard can read" ON bid_abstracts FOR SELECT TO authenticated
     USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
 REVOKE ALL ON bid_abstracts FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON bid_abstracts FROM authenticated;
+
+-- Assigned Persons page (/api/assigned-persons): who handles each hospital on the "2MG Incorporated served list of
+-- hospitals", the list the award notice emails go by (frontend/src/lib/awardRouting.mjs loadRouting). Filled from the
+-- list in awardRouting.mjs the first time the page opens, then edited there (Add Hospital, Edit, Add Person).
+-- backup = copied on every award email and takes any hospital not on the list. Writes only through the API.
+CREATE TABLE IF NOT EXISTS assigned_people (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    backup BOOLEAN NOT NULL DEFAULT false,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS assigned_hospitals (
+    no INT PRIMARY KEY,                       -- number on the served list
+    name TEXT NOT NULL,
+    rep TEXT NOT NULL REFERENCES assigned_people(key),
+    aliases TEXT[] NOT NULL DEFAULT '{}',     -- other spellings seen on PhilGEPS / PS-PhilGEPS
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE assigned_people ENABLE ROW LEVEL SECURITY;
+ALTER TABLE assigned_hospitals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON assigned_people;
+CREATE POLICY "dashboard can read" ON assigned_people FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "dashboard can read" ON assigned_hospitals;
+CREATE POLICY "dashboard can read" ON assigned_hospitals FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON assigned_people FROM anon;
+REVOKE ALL ON assigned_hospitals FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON assigned_people FROM authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON assigned_hospitals FROM authenticated;

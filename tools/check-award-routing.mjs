@@ -6,7 +6,7 @@
 // The wrong person told means an award can lapse unanswered, so every hospital on the served list must reach
 // its own representative, under the spellings PhilGEPS uses, and the back-ups must be on every email.
 import assert from 'node:assert/strict';
-import { BACKUPS, HOSPITALS, PEOPLE, routeAward } from '../frontend/src/lib/awardRouting.mjs';
+import { BACKUPS, HOSPITALS, PEOPLE, defaultRows, fromRows, loadRouting, makeRouter, routeAward } from '../frontend/src/lib/awardRouting.mjs';
 import { composeEmail, notifyPendingAwards, readAwardPage } from '../frontend/src/lib/awardNotify.mjs';
 
 let checks = 0;
@@ -91,6 +91,25 @@ const read = [];
 const results = await notifyPendingAwards(stub, list, async (url) => (read.push(url), page), { dryRun: true });
 ok(() => assert.deepEqual(results.map((r) => r.award), ['31453']), 'pending and not yet emailed only');
 ok(() => assert.equal(read.length, 1), 'one award page read');
+
+
+// The list as edited on the Assigned Persons page (tables assigned_people / assigned_hospitals)
+{
+  const rows = defaultRows();
+  ok(() => assert.equal(makeRouter(fromRows(rows))('DOH - SOUTHERN PHILIPPINES MEDICAL CENTER').to[0].email, 'gov4@getmeds.ph'), 'tables start as the built-in list');
+  rows.people.push({ key: 'maria', name: 'Maria Santos', email: 'gov6@getmeds.ph', backup: false });
+  rows.hospitals.find((h) => h.no === 1).rep = 'maria';
+  rows.hospitals.push({ no: 48, name: 'Davao Regional Medical Center', rep: 'maria', aliases: ['DRMC'] });
+  const edited = makeRouter(fromRows(rows));
+  ok(() => assert.equal(edited('SOUTHERN PHILIPPINES MEDICAL CENTER').to[0].email, 'gov6@getmeds.ph'), 'an edit moves the hospital to the new person');
+  ok(() => assert.deepEqual(edited('DAVAO REGIONAL MEDICAL CENTER').cc.map((p) => p.email), backups), 'an added hospital copies the back-ups');
+  ok(() => assert.equal(edited('DOH - DRMC').hospital.no, 48), 'other spellings of an added hospital');
+  ok(() => assert.deepEqual(edited('SOME UNLISTED HOSPITAL').to.map((p) => p.email), backups), 'unlisted still to the back-ups');
+  const noTables = { from: () => ({ select: async () => ({ data: null, error: { message: 'relation does not exist' } }) }) };
+  const fallback = await loadRouting(noTables);
+  ok(() => assert.equal(fallback.fromTables, false), 'tables missing -> built-in list');
+  ok(() => assert.equal(fallback.route('BICOL MEDICAL CENTER').to[0].email, 'gov3@getmeds.ph'), 'fallback still routes');
+}
 
 console.log(`Award email routing check passed (${checks} checks).`);
 

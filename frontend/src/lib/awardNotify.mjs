@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
-import { routeAward } from './awardRouting.mjs';
+import { loadRouting } from './awardRouting.mjs';
 
 // Emails the hospital's representative (awardRouting.mjs) when the PS-PhilGEPS Sync finds an award notice
 // "Pending for Acceptance", so it gets accepted or refused in time. Once per award (table award_notifications);
@@ -47,7 +47,8 @@ const dashboardUrl = () => {
 
 export function composeEmail({ award, lineItem, details, route }) {
   const hospital = route.hospital?.name || details.agency || 'a hospital';
-  const greeting = route.hospital ? `Hi ${route.to[0].name.split(' ')[0]},` : 'Hi Aljean and Jimmy,';
+  const firstNames = route.to.map((p) => p.name.split(' ')[0]);
+  const greeting = `Hi ${firstNames.length > 1 ? `${firstNames.slice(0, -1).join(', ')} and ${firstNames.at(-1)}` : firstNames[0] || 'team'},`;
   const intro = route.hospital
     ? `${hospital} (your hospital on the served list) has an award notice for 2MG Incorporated waiting for our answer on PS-PhilGEPS.`
     : `${details.agency || 'A hospital'} is not on the served list of hospitals, so this award notice comes to you. It is waiting for our answer on PS-PhilGEPS.`;
@@ -108,6 +109,8 @@ export async function notifyPendingAwards(supabase, awards, readPage, { dryRun =
   const { data: done, error } = await supabase.from('award_notifications').select('award_no, status, attempts').in('award_no', pending.map((r) => r.cells[0]));
   if (error) return [{ status: 'failed', error: `Reading award_notifications: ${error.message}` }];
   const known = new Map((done || []).map((d) => [d.award_no, d]));
+  // Who handles which hospital, as edited on the Assigned Persons page
+  const { route: routeAward } = await loadRouting(supabase);
   const results = [];
   for (const row of pending) {
     const award = row.cells[0];
