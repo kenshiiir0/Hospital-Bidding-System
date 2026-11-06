@@ -160,3 +160,9 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 
 - **No prices in the document:** a request for quotation with blank price columns (PS 114030), or a lot price list with ceiling prices only (PhilGEPS 13299815). Shown empty and said so.
 - **Poor scans:** cells lost by OCR (PS 114413, PS 107166). Recovered where the numbers add up; otherwise left empty and reported.
+
+## Rows spread over several lines (2026-11-06)
+- **Number and unit above, numbers below** ("2 Vial" / description / "900 1,595.00"; JBLMGH 13321259). Under an "ABC/Unit" header with no ABC total, a lone amount is the unit price.
+- **ABC, unit, quantity** (Bid Data Sheet "Item | Description | ABC | Unit | Quantity"; CLMMRH 13317511, 13316957, 13317172, 13317450), in three layouts: two lines down ("765,810.00 VIAL 3000"), with the quantity on the next line ("462,000.00 AMPULE" / "3300"), or on the row's own line. The amount is the item's ABC total, unless the header says ABC/Unit or the amount is too small to be a total.
+- **A bad scan** (PCMC 13314319): "1.817.000 00" is read as 1,817,000.00, "300meg" as 300mcg, and "2 300 ... 290.00 1,817,000.00" as 2,300 at 790.00 when only the joined quantity gives the total.
+- **One lot** (Camarines Norte 13307875): a line item needs its own ABC. A single lot whose list gives quantities only is the lot itself, and is hidden.
