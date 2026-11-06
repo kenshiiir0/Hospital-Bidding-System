@@ -77,8 +77,9 @@ export async function PATCH(request) {
 }
 
 // Import Excel: { results: [...] } as read in the browser from the "ABSTRACT 2026" sheet (lib/sheetImport.mjs
-// readAbstractSheet). Saved by (year, hospital, item): a row already there is updated (archive state kept), others
-// added; rows not on the sheet are left alone.
+// readAbstractSheet) or from a hospital's own abstract (readHospitalAbstract, which sends a note for every row: why
+// our price is unknown, or none). Saved by (year, hospital, item): a row already there is updated (archive state
+// kept), others added; rows not on the sheet are left alone. The tracker sends no note, so a typed note stays.
 export async function PUT(request) {
   const { response } = await requireUser(request);
   if (response) return response;
@@ -90,6 +91,8 @@ export async function PUT(request) {
   const now = new Date().toISOString();
   const seen = new Set();
   const rows = [];
+  // Every row of one import has the same columns (an upsert writes each column for all rows)
+  const withNotes = body.results.some((r) => r && 'note' in r);
   for (const r of body.results) {
     const hospital = clean(r?.hospital).toUpperCase();
     const item = clean(r?.item);
@@ -108,6 +111,7 @@ export async function PUT(request) {
       winner: clean(r.winner).toUpperCase() || null,
       winning_price: num(r.winning_price),
       sheet_row: Number.isInteger(r.sheet_row) ? r.sheet_row : null,
+      ...(withNotes ? { note: clean(r.note, 500) || null } : {}),
       source: 'excel-import',
       updated_at: now,
     });

@@ -6,7 +6,7 @@ import { formatPeso } from '@/lib/format';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
 import ImportExcel from '@/components/ImportExcel';
-import { ABSTRACT_SHEET, readAbstractSheet } from '@/lib/sheetImport.mjs';
+import { ABSTRACT_SHEET, completeHospitalAbstract, readAbstractSheet, readHospitalAbstract } from '@/lib/sheetImport.mjs';
 import { SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import PageHeader, { KpiRow, blueAction } from '@/components/PageHeader';
@@ -55,6 +55,15 @@ export default function AbstractPage() {
   useEffect(() => {
     Promise.resolve().then(load);
   }, [load]);
+
+  // Hospital List names, offered when importing a hospital's own abstract (the file names no hospital)
+  const [hospitalList, setHospitalList] = useState([]);
+  useEffect(() => {
+    authFetch('/api/hospitals')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows) => Array.isArray(rows) && setHospitalList(rows.filter((h) => !h.archived_at).map((h) => h.name)))
+      .catch(() => {});
+  }, []);
 
   const setArchived = async (result, archived) => {
     const res = await authFetch('/api/abstracts', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: result.id, archived }) });
@@ -174,6 +183,23 @@ export default function AbstractPage() {
                 sheet={ABSTRACT_SHEET}
                 columns="HOSPITAL, ITEM, ABC PRICE, QUANTITY, 2MG PRICE, WON, PRICE"
                 read={(wb) => {
+                  // A hospital's own abstract (every bidder's price per item): only the winner, the winning price and
+                  // our price are kept, for the hospital and year chosen in the window
+                  const own = readHospitalAbstract(wb);
+                  if (own) {
+                    return {
+                      sheet: own.sheet,
+                      rows: own.results,
+                      format: `Read as a hospital's own Abstract of Bids: for each item only the winner (lowest bid), its price and our price (2MG) are kept; ${own.skippedNoBids} item${own.skippedNoBids === 1 ? '' : 's'} nobody bid on ${own.skippedNoBids === 1 ? 'is' : 'are'} left out.`,
+                      ask: {
+                        fields: [
+                          { key: 'hospital', label: 'Hospital', placeholder: 'Choose or type the hospital', options: [...new Set([...hospitalList, ...all.map((r) => r.hospital)])].sort() },
+                          { key: 'year', label: 'Year', placeholder: '2026', defaultValue: String(new Date().getFullYear()), number: true },
+                        ],
+                        complete: completeHospitalAbstract,
+                      },
+                    };
+                  }
                   const { sheet, results: rows } = readAbstractSheet(wb);
                   return { sheet, rows };
                 }}
@@ -291,7 +317,10 @@ function describeAbstractImport(rows, current) {
   const fresh = rows.filter((r) => !have.has(`${r.year}|${r.agency_key}|${r.item}`));
   const perHospital = Object.entries(rows.reduce((m, r) => ({ ...m, [r.hospital]: (m[r.hospital] || 0) + 1 }), {}));
   return {
-    headline: `${rows.length} results from ${perHospital.length} hospital${perHospital.length === 1 ? '' : 's'} (${rows[0].year}): ${rows.filter((r) => r.our_price != null).length} we bid, ${rows.filter((r) => r.our_price == null).length} not bid`,
+    // A hospital's own abstract can lack our column on a sheet (its rows carry a note): our price unknown, not "not bid"
+    headline: `${rows.length} results from ${perHospital.length} hospital${perHospital.length === 1 ? '' : 's'} (${rows[0].year}): ${rows.filter((r) => r.our_price != null).length} we bid, ${rows.filter((r) => r.our_price == null && !r.note).length} not bid${
+      rows.some((r) => r.our_price == null && r.note) ? `, ${rows.filter((r) => r.our_price == null && r.note).length} with our price not on the hospital's sheet` : ''
+    }`,
     lines: [
       `New (${fresh.length}), already in the abstract and updated (${rows.length - fresh.length}).`,
       perHospital

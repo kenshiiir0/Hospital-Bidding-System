@@ -205,3 +205,81 @@ export function readAbstractSheet(wb) {
   });
   return { sheet: ws.name.trim(), year, results };
 }
+
+// ---------- A hospital's own Abstract of Bids (every bidder's unit price per item, one column per bidder)
+// Header row (within the first 10 rows): "Item No.", "Item Description", then "1. SAHAR INTERNATIONAL TRADING INC.",
+// "2. ...", ...; extra columns such as "No. of Bids", "Lowest Bid", "Lowest Bidder" are ignored (worked out here).
+// A price cell is a number, or "No Bid". Sheets without numbered bidder columns (a summary such as "2MG vs Lowest")
+// are skipped. Several sheets (items 28-53, 136-162, ...) are read together.
+
+// Us among the bidders (as on the Abstract of Bids page)
+export const isOurBidder = (name) => /\b2\s*MG\b|GET\s*MEDS/i.test(name || '');
+const BIDDER = /^(\d+)\s*[.)]\s*(\S.*)$/;
+
+function abstractHeader(ws) {
+  for (let n = 1; n <= Math.min(10, ws.rowCount); n++) {
+    const cols = { bidders: [] };
+    ws.getRow(n).eachCell((cell, c) => {
+      const text = clean(cellText(cell.value));
+      const h = text.toUpperCase();
+      if (/^ITEM\s*(NO|#|NUMBER)/.test(h)) cols.no ??= c;
+      else if (/^ITEM\s*DESCRIPTION|^DESCRIPTION|^PARTICULARS/.test(h)) cols.item ??= c;
+      else if (BIDDER.test(text)) cols.bidders.push({ c, no: Number(text.match(BIDDER)[1]), name: clean(text.match(BIDDER)[2]).toUpperCase() });
+    });
+    if (cols.item && cols.bidders.length) return { row: n, ...cols };
+  }
+  return null;
+}
+
+/**
+ * One result per item that got at least one bid: the winner (lowest unit price; the first on a tie) and its price,
+ * and our price (2MG's bid; none = we did not bid). Items nobody bid on are left out. The file names no hospital
+ * or year: they are asked for when importing (completeHospitalAbstract). The item keeps its number ("FUROSEMIDE
+ * (item 29)") since a hospital can list the same medicine twice. A sheet without our column (e.g. only bidders 11-20
+ * visible) gets a note: our price is unknown there, and the lowest is only the lowest of the bidders shown.
+ * Returns null when no sheet is in this format, else { sheet, results, skippedNoBids }.
+ */
+export function readHospitalAbstract(wb) {
+  const results = [];
+  const sheets = [];
+  let skippedNoBids = 0;
+  for (const ws of wb.worksheets.filter((s) => s.state !== 'veryHidden')) {
+    const head = abstractHeader(ws);
+    if (!head) continue;
+    sheets.push(ws.name.trim());
+    const us = head.bidders.find((b) => isOurBidder(b.name));
+    const nos = head.bidders.map((b) => b.no);
+    const note = us ? null : `Our bid is not on the hospital's sheet "${ws.name.trim()}" (bidders ${Math.min(...nos)}–${Math.max(...nos)} only), so the winner is the lowest of those bidders.`;
+    ws.eachRow((row, n) => {
+      if (n <= head.row) return;
+      const value = (c) => cellText(row.getCell(c).value);
+      const description = clean(value(head.item));
+      if (!description) return;
+      const no = head.no ? clean(value(head.no)) : '';
+      const bids = head.bidders
+        .map((b) => ({ ...b, price: typeof value(b.c) === 'number' ? value(b.c) : amount(/\d/.test(String(value(b.c) ?? '')) ? value(b.c) : null) }))
+        .filter((b) => b.price != null && b.price > 0);
+      if (!bids.length) {
+        skippedNoBids++;
+        return;
+      }
+      const lowest = bids.reduce((best, b) => (b.price < best.price ? b : best));
+      results.push({
+        item: no ? `${description} (item ${no})` : description,
+        winner: lowest.name,
+        winning_price: Math.round(lowest.price * 10000) / 10000,
+        our_price: us ? (bids.find((b) => b === us || b.c === us.c)?.price ?? null) : null,
+        note,
+        sheet_row: n,
+      });
+    });
+  }
+  if (!sheets.length) return null;
+  return { sheet: sheets.join(', '), results, skippedNoBids };
+}
+
+/** The hospital and year chosen when importing, added to every result of readHospitalAbstract. */
+export const completeHospitalAbstract = (results, { hospital, year }) => {
+  const name = clean(hospital).toUpperCase();
+  return results.map((r) => ({ ...r, hospital: name, agency_key: agencyKey(name), year: Number(year) || new Date().getFullYear(), abc_price: null, quantity: null }));
+};
