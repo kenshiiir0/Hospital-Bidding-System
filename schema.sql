@@ -437,3 +437,35 @@ CREATE OR REPLACE FUNCTION add_read_bytes(m TEXT, b BIGINT) RETURNS BIGINT LANGU
     RETURNING read_bytes;
 $$;
 REVOKE EXECUTE ON FUNCTION add_read_bytes(TEXT, BIGINT) FROM PUBLIC, anon, authenticated;
+
+-- Abstract of Bids page (Catalog Management, /api/abstracts): each bid's result per item, from the "ABSTRACT 2026"
+-- sheet of the WINNING BID TRACKER (tools/import-abstract.mjs) plus Add Result. our_price NULL = we did not bid;
+-- winner = the company that won, winning_price its price. agency_key joins the Hospital List (lib/agencyKey.js).
+-- Archive keeps the row; Restore brings it back.
+CREATE TABLE IF NOT EXISTS bid_abstracts (
+    id BIGSERIAL PRIMARY KEY,
+    year INT NOT NULL DEFAULT 2026,
+    hospital TEXT NOT NULL,
+    agency_key TEXT NOT NULL,
+    item TEXT NOT NULL,
+    abc_price NUMERIC,
+    quantity NUMERIC,
+    our_price NUMERIC,
+    winner TEXT,
+    winning_price NUMERIC,
+    note TEXT,
+    sheet_row INT,
+    source TEXT NOT NULL DEFAULT 'added',     -- abstract-2026 | added
+    added_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    archived_at TIMESTAMPTZ,
+    archived_by TEXT,
+    UNIQUE (year, agency_key, item)
+);
+ALTER TABLE bid_abstracts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON bid_abstracts;
+CREATE POLICY "dashboard can read" ON bid_abstracts FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON bid_abstracts FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON bid_abstracts FROM authenticated;

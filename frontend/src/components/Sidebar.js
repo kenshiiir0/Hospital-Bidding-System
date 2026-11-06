@@ -36,6 +36,7 @@ const GROUPS = [
     links: [
       { href: '/products', label: 'Product List', icon: '✚' },
       { href: '/hospitals', label: 'Hospital List', icon: '⌂' },
+      { href: '/abstract', label: 'Abstract of Bids', icon: '≡' },
       { href: '/assigned-persons', label: 'Assigned Persons', icon: '☺' },
     ],
   },
