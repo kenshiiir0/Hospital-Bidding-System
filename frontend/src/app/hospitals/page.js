@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import { agencyKey } from '@/lib/agencyKey';
-import { HOSPITALS, PEOPLE, routeAward } from '@/lib/awardRouting.mjs';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
 import { SegmentedTabs } from '@/components/FilterControls';
@@ -18,12 +17,29 @@ const STATUS = {
   prospect: { label: 'Prospect', tab: 'Prospects', pill: 'bg-[#E2E8F0]/70 text-black/62' },
 };
 
-// Who handles the hospital (Assigned Persons, lib/awardRouting.mjs); not on that list = the back-ups
-function assigned(name) {
-  const { hospital } = routeAward(name);
-  const rep = hospital && HOSPITALS.find(([no]) => no === hospital.no)?.[2];
-  return rep ? PEOPLE[rep].name.split(' ')[0] : null;
+// Philippine mobile numbers (09xx xxx xxxx) are the WhatsApp numbers; landlines and local lines stay plain text.
+const MOBILE = /(?<!\d)(?:\+?63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}(?!\d)/g;
+const whatsappLink = (mobile) => `https://wa.me/63${mobile.replace(/\D/g, '').replace(/^(63|0)/, '')}`;
+
+function PhoneNumber({ value }) {
+  const parts = [];
+  let last = 0;
+  for (const m of value.matchAll(MOBILE)) {
+    if (m.index > last) parts.push(value.slice(last, m.index));
+    parts.push(
+      <a key={m.index} href={whatsappLink(m[0])} target="_blank" rel="noreferrer" title="Chat on WhatsApp" className="font-medium text-[#3F6F2C] hover:text-[#2F5321] hover:underline">
+        <WhatsAppIcon className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
+        {m[0]}
+      </a>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < value.length) parts.push(<span key="rest" className="text-black/62">{value.slice(last)}</span>);
+  return <>{parts}</>;
 }
+
+// One line pair per contact: the names and the numbers sit in two columns, so each item has the same fixed height
+const contactLine = 'h-8 line-clamp-2 break-words';
 
 export default function HospitalsPage() {
   const [hospitals, setHospitals] = useState(null);
@@ -84,7 +100,7 @@ export default function HospitalsPage() {
   const byStatus = (s) => listed.filter((h) => h.status === s);
   const shown = view === 'archived' ? archived : byStatus(view);
   const query = search.trim().toLowerCase();
-  const text = (h) => `${h.name} ${h.list_note || ''} ${h.emails.join(' ')} ${h.contacts.map((c) => `${c.name || ''} ${c.phone || ''}`).join(' ')} ${assigned(h.name) || ''}`.toLowerCase();
+  const text = (h) => `${h.name} ${h.list_note || ''} ${h.emails.join(' ')} ${h.contacts.map((c) => `${c.name || ''} ${c.phone || ''}`).join(' ')}`.toLowerCase();
   const rows = shown.filter((h) => !query || text(h).includes(query));
   const noEmail = listed.filter((h) => h.status !== 'prospect' && !h.emails.length).length;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -124,9 +140,24 @@ export default function HospitalsPage() {
         h.contacts.length ? (
           <ul className="space-y-1 text-xs">
             {h.contacts.map((c, i) => (
-              <li key={i}>
-                <span className="text-black">{c.name || '—'}</span>
-                {c.phone && <span className="block tabular-nums text-black/62">{c.phone}</span>}
+              <li key={i} title={c.name || ''} className={`${contactLine} text-black`}>
+                {c.name || '—'}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <span className="text-black/46">—</span>
+        ),
+    },
+    {
+      label: 'WhatsApp / Phone',
+      width: '11rem',
+      render: (h) =>
+        h.contacts.length ? (
+          <ul className="space-y-1 text-xs tabular-nums">
+            {h.contacts.map((c, i) => (
+              <li key={i} title={c.phone || ''} className={contactLine}>
+                {c.phone ? <PhoneNumber value={c.phone} /> : <span className="text-black/46">—</span>}
               </li>
             ))}
           </ul>
@@ -151,18 +182,20 @@ export default function HospitalsPage() {
           <span className="text-black/46">—</span>
         ),
     },
-    view === 'archived'
-      ? {
-          label: 'Archived',
-          width: '8rem',
-          render: (h) => (
-            <span className="text-xs text-black/62">
-              {new Date(h.archived_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-              {h.archived_by && <span className="block text-black/46">by {h.archived_by.split('@')[0]}</span>}
-            </span>
-          ),
-        }
-      : { label: 'Assigned To', width: '7rem', render: (h) => assigned(h.name) || <span className="text-black/46">Back-ups</span> },
+    ...(view === 'archived'
+      ? [
+          {
+            label: 'Archived',
+            width: '8rem',
+            render: (h) => (
+              <span className="text-xs text-black/62">
+                {new Date(h.archived_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {h.archived_by && <span className="block text-black/46">by {h.archived_by.split('@')[0]}</span>}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       label: 'Actions',
       width: '7rem',
@@ -186,7 +219,7 @@ export default function HospitalsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
         <PageHeader
           title="Hospital List"
-          subtitle="The hospitals we bid for on PhilGEPS and PS-PhilGEPS, with their contact persons and e-mail addresses"
+          subtitle="The hospitals we bid for on PhilGEPS and PS-PhilGEPS, with their contact persons, WhatsApp numbers and e-mail addresses"
           actions={
             <button
               onClick={() => {
@@ -286,6 +319,15 @@ export default function HospitalsPage() {
   );
 }
 
+function WhatsAppIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4l-4.5 1.1z" />
+      <path d="M9 8.5c0 3.5 2.6 6.5 6.5 6.5l1-1.5-2-1-1 .8c-1.2-.5-2.3-1.6-2.8-2.8l.8-1-1-2L9 8.5z" />
+    </svg>
+  );
+}
+
 function ArchiveIcon({ className }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
@@ -351,7 +393,7 @@ function AddHospital({ hospitals, onCancel, onAdded }) {
   const duplicate = form.name.trim() && hospitals.find((h) => h.agency_key === agencyKey(form.name));
   const fields = [
     ['contact_name', 'Contact Person', "e.g. Ma'am Lou (BAC Sec)"],
-    ['contact_phone', 'Contact Number', 'e.g. 0942 971 9227'],
+    ['contact_phone', 'WhatsApp / Contact Number', 'e.g. 0942 971 9227'],
     ['email', 'Hospital E-mail', 'e.g. bac@hospital.doh.gov.ph'],
     ['note', 'Note', 'e.g. Needs a product presentation first'],
   ];
