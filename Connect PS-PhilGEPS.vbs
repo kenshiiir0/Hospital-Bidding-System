@@ -5,8 +5,17 @@
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 shell.CurrentDirectory = fso.GetParentFolderName(WScript.ScriptFullName)
+' The link "ps-philgeps-connect:start?code=..." (from the dashboard) is passed on only when it holds nothing
+' but letters, digits and . _ - = ? & : (ps-philgeps-session.js reads the one-time code from it)
+link = ""
+If WScript.Arguments.Count > 0 Then
+    Set re = New RegExp
+    re.Pattern = "^ps-philgeps-connect:[A-Za-z0-9._?&=:/-]{0,500}$"
+    re.IgnoreCase = True
+    If re.Test(WScript.Arguments(0)) Then link = " """ & WScript.Arguments(0) & """"
+End If
 ' 0 = no window, True = wait for the log-in to finish
-code = shell.Run("node ps-philgeps-session.js --connect", 0, True)
+code = shell.Run("node ps-philgeps-session.js --connect" & link, 0, True)
 If code <> 0 Then
     MsgBox "The PS-PhilGEPS log-in did not finish. Press Sync again to retry." & vbCrLf & "(Details: .ps-philgeps\session.log in the project folder.)", vbExclamation, "Connect PS-PhilGEPS"
 End If

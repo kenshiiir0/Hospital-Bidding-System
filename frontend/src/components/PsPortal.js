@@ -218,7 +218,7 @@ export function PsPortalProvider({ children }) {
     if (connected) return runSync();
     setSyncAfterConnect(true);
     if (connect && !popupHere()) post('/api/ps-philgeps', loadConnect);
-    else window.location.href = 'ps-philgeps-connect:start';
+    else openPopupLogin().catch((err) => setRequestError(`The log-in could not be opened: ${err.message}`));
   };
 
   // The log-in was saved (on this or another laptop): run the Sync that was asked for
@@ -330,10 +330,44 @@ const switchToPopup = () => {
   try {
     localStorage.setItem(POPUP_KEY, '1');
   } catch {}
-  cancelConnect().finally(() => {
-    window.location.href = 'ps-philgeps-connect:start';
-  });
+  cancelConnect().finally(() => openPopupLogin().catch(() => {}));
 };
+
+// Opens the pop-up log-in on this laptop: the link carries a one-time code (15 minutes) for the signed-in person,
+// with which the laptop gets the log-in from the dashboard and hands the session back (api/ps-philgeps/laptop)
+async function openPopupLogin() {
+  const res = await authFetch('/api/ps-philgeps/laptop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'code' }),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (!result.ok) throw new Error(result.error || `Could not start (${res.status})`);
+  window.location.href = `ps-philgeps-connect:start?code=${encodeURIComponent(result.code)}`;
+}
+
+// "Set up this laptop" (log-in dialog): downloads the setup file made for the signed-in person (it can download the
+// log-in files for 60 minutes) and remembers that this browser uses the pop-up from now on
+export async function downloadLaptopSetup() {
+  const res = await authFetch('/api/ps-philgeps/laptop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'setup' }),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (!result.ok) throw new Error(result.error || `Could not prepare the setup (${res.status})`);
+  const url = URL.createObjectURL(new Blob([result.script], { type: 'application/octet-stream' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Set up PS-PhilGEPS log-in.cmd';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  try {
+    localStorage.setItem(POPUP_KEY, '1');
+  } catch {}
+}
 
 const cancelConnect = () =>
   authFetch('/api/ps-philgeps/live', {
@@ -357,7 +391,7 @@ function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
   const inDialog = connect?.status === 'starting' || (connect?.status === 'connecting' && connect.view === 'live');
   if (inDialog) {
     const key = connect.id || connect.startedAt || 'live';
-    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={() => { setHidden(key); switchToPopup(); }} />;
+    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={() => { setHidden(key); switchToPopup(); }} onSetup={downloadLaptopSetup} />;
     return (
       <Notice>
         The PS-PhilGEPS log-in is waiting for you to confirm you are not a robot.{' '}

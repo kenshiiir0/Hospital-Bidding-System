@@ -14,6 +14,7 @@ node tools/check-award-action.mjs || { echo "Push blocked: the award Accept / Re
 node tools/check-award-routing.mjs || { echo "Push blocked: the award email routing check failed."; exit 1; }
 node tools/check-matching.mjs || { echo "Push blocked: the product matching check failed."; exit 1; }
 node tools/check-item-lines.mjs || { echo "Push blocked: the item line (quantity) check failed."; exit 1; }
+node tools/build-laptop-kit.mjs --check || { echo "Push blocked: the laptop log-in files are out of date."; exit 1; }
 echo "Safety gate: 2/3 code check"
 (cd frontend && npx eslint src) || { echo "Push blocked: the code check (ESLint) failed."; exit 1; }
 echo "Safety gate: 3/3 build"

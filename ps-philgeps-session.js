@@ -252,7 +252,8 @@ async function openLoginForm(page) {
 // Fills user type, username and password, waits for a person to tick the reCAPTCHA (in a visible Chrome
 // window, or with live: on the dashboard's picture), then submits and saves the session. Never solves the
 // captcha itself.
-async function connect({ live = false } = {}) {
+async function connect({ live = false, code = null } = {}) {
+    if (code) return connectLaptop(code);
     if (!hasCredentials()) {
         throw new PsPhilgepsSessionError('NO_CREDENTIALS', 'Set PS_PHILGEPS_USERNAME and PS_PHILGEPS_PASSWORD in .env');
     }
@@ -280,7 +281,7 @@ async function connect({ live = false } = {}) {
     }
 }
 
-async function connectWindow({ live, onRefused }) {
+async function connectWindow({ live, onRefused, share = shareSession }) {
     const browser = live ? await launchLive() : await launchLoginWindow();
     let stopLive = () => {};
     try {
@@ -363,12 +364,79 @@ async function connectWindow({ live, onRefused }) {
             throw new PsPhilgepsSessionError('CONNECT_FAILED', 'Logged in, but the Bid Match page sent us back to the log-in form.');
         }
         await saveCookies(page);
-        await shareSession();
+        await share();
         sessionLog(`Connected (landed on ${page.url()})`);
     } finally {
         stopLive();
         await browser.close().catch(() => {});
     }
+}
+
+// A team laptop set up from the dashboard (PsConnectModal "Set up this laptop", api/ps-philgeps/laptop): it
+// keeps no keys and no password. The dashboard's Sync button opens "ps-philgeps-connect:start?code=..." with a
+// one-time code (15 minutes) for the signed-in person; with it this laptop asks the dashboard for the log-in
+// (the dashboard applies the same log-in rules, lib/loginGuard.mjs), the person ticks the captcha here, and the
+// session goes back to the dashboard, which saves it for the whole team.
+const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'https://government-bidding-automation.vercel.app').replace(/\/+$/, '');
+
+async function askDashboard(code, body) {
+    let res;
+    try {
+        res = await fetch(`${DASHBOARD_URL}/api/ps-philgeps/laptop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...body, code })
+        });
+    } catch (e) {
+        throw new PsPhilgepsSessionError('CONNECT_FAILED', `The dashboard could not be reached (${e.message}). Check the internet and press Sync again.`);
+    }
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || !result.ok) throw new PsPhilgepsSessionError(result.code || 'CONNECT_FAILED', result.error || `The dashboard answered ${res.status}.`);
+    return result;
+}
+
+async function connectLaptop(code) {
+    // The account comes from the dashboard (its Vercel settings); a laptop with its own .env may use that instead
+    const { username, password } = await askDashboard(code, { action: 'begin', ownAccount: hasCredentials() });
+    // Only for this log-in, in memory: never written to a file
+    if (username && password) {
+        process.env.PS_PHILGEPS_USERNAME = username;
+        process.env.PS_PHILGEPS_PASSWORD = password;
+    }
+    let refused = 0;
+    try {
+        await connectWindow({
+            live: false,
+            onRefused: async (said) => {
+                refused++;
+                await askDashboard(code, { action: 'refused', detail: said }).catch(() => {});
+                if (refused >= MAX_REFUSED) {
+                    throw new PsPhilgepsSessionError('CONNECT_FAILED', `PS-PhilGEPS refused the log-in ${refused} times${said ? ` ("${said}")` : ''}. Stopped so the account isn't locked.`);
+                }
+            },
+            share: async () => {
+                const { cookies, savedAt } = JSON.parse(fs.readFileSync(COOKIES_FILE, 'utf8'));
+                await askDashboard(code, { action: 'done', cookies, savedAt });
+                sessionLog('Session handed to the dashboard');
+            }
+        });
+        return true;
+    } catch (e) {
+        if (e.code !== 'CONNECT_FAILED' || !refused) {
+            await askDashboard(code, { action: 'failed', outcome: e.code === 'CANCELLED' ? 'cancelled' : 'error', detail: e.message }).catch(() => {});
+        }
+        throw e;
+    } finally {
+        // The laptop keeps no PhilGEPS session of its own: the dashboard has it
+        forgetSession();
+    }
+}
+
+// The one-time code from the link "ps-philgeps-connect:start?code=..." (anything else in the link is ignored)
+function linkCode(argv) {
+    const link = argv.find((a) => /^ps-philgeps-connect:/i.test(a));
+    const m = link && /[?&]code=([A-Za-z0-9_.-]{20,400})(?:[&/]|$)/.exec(link);
+    return m ? m[1] : null;
 }
 
 // Headless check that the saved session still works (also keeps it from going idle)
@@ -385,12 +453,13 @@ async function checkSession() {
     }
 }
 
-module.exports = { openSession, connect, checkSession, shareSession, hasCredentials, PsPhilgepsSessionError, HOST };
+module.exports = { openSession, connect, linkCode, checkSession, shareSession, hasCredentials, PsPhilgepsSessionError, HOST };
 
 if (require.main === module) {
     const mode = process.argv[2];
     const live = process.argv.includes('--live');
-    const run = mode === '--connect' ? () => connect({ live }) : mode === '--check' ? checkSession : mode === '--share' ? shareSession : null;
+    const code = linkCode(process.argv);
+    const run = mode === '--connect' ? () => connect({ live, code }) : mode === '--check' ? checkSession : mode === '--share' ? shareSession : null;
     if (!run) {
         console.log('Usage: node ps-philgeps-session.js --connect [--live] | --check | --share');
         process.exit(2);

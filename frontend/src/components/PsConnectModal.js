@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Modal from '@/components/Modal';
 import PsLiveLogin from '@/components/PsLiveLogin';
 
@@ -10,7 +11,15 @@ const STEPS = ['Secure log-in opens', 'Tick “I’m not a robot”', 'Sync star
 
 // onPopup: a team laptop with the "ps-philgeps-connect:" link opens the log-in in its own Chrome window instead (one
 // tick on the office internet; the cloud computer's address gets many picture puzzles, user 2026-11-03)
-export default function PsConnectModal({ connect, onHide, onCancel, onPopup }) {
+// onSetup: downloads the one-time setup file that makes this laptop able to use the pop-up (Windows, needs Chrome)
+export default function PsConnectModal({ connect, onHide, onCancel, onPopup, onSetup }) {
+  const [setupNote, setSetupNote] = useState('');
+  const setup = () => {
+    setSetupNote('Preparing the setup file…');
+    onSetup()
+      .then(() => setSetupNote('Open the downloaded “Set up PS-PhilGEPS log-in.cmd”, then press Sync again (works for 60 minutes).'))
+      .catch((e) => setSetupNote(`Could not prepare the setup: ${e.message}`));
+  };
   const opened = connect?.status === 'connecting';
   const step = opened ? 1 : 0;
   return (
@@ -28,6 +37,16 @@ export default function PsConnectModal({ connect, onHide, onCancel, onPopup }) {
       footer={
         <>
           <p className="mr-auto text-xs text-black/46">Runs on a secure cloud computer; nothing is installed on this device.</p>
+          {onSetup && (
+            <button
+              type="button"
+              onClick={setup}
+              title="One time per laptop (Windows with Google Chrome): after it, the log-in opens in a Chrome window on this laptop"
+              className="rounded-full border border-[#E2E8F0] px-4 py-2 text-sm font-medium text-[#12769F] transition hover:border-[#1EA0DA]"
+            >
+              Set up this laptop
+            </button>
+          )}
           {onPopup && (
             <button
               type="button"
@@ -48,6 +67,7 @@ export default function PsConnectModal({ connect, onHide, onCancel, onPopup }) {
         </>
       }
     >
+      {setupNote && <p className="rounded-[10px] bg-[#F0F9FF] px-3 py-2 text-xs text-[#12769F]">{setupNote}</p>}
       <ol className="flex items-center gap-2 text-xs">
         {STEPS.map((label, i) => (
           <li key={label} className="flex min-w-0 flex-1 items-center gap-2">

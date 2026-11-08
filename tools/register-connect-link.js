@@ -26,7 +26,8 @@ if (process.argv.includes('--remove')) {
 } else {
     reg('add', KEY, '/ve', '/d', 'URL:Connect PS-PhilGEPS', '/f');
     reg('add', KEY, '/v', 'URL Protocol', '/d', '', '/f');
-    // The link's own text is ignored: it can only start the normal log-in
-    reg('add', `${KEY}\\shell\\open\\command`, '/ve', '/d', `wscript.exe "${SCRIPT}"`, '/f');
+    // The link's text reaches the script only to carry the dashboard's one-time code ("Connect PS-PhilGEPS.vbs"
+    // checks its characters); it can only start the normal log-in
+    reg('add', `${KEY}\\shell\\open\\command`, '/ve', '/d', `wscript.exe "${SCRIPT}" "%1"`, '/f');
     console.log(`Done. The dashboard's Sync button can now open the PS-PhilGEPS log-in on this laptop (${SCRIPT}).`);
 }
