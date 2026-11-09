@@ -8,11 +8,11 @@
 // cid:<file> in the sent e-mail, where the pictures travel inside the e-mail itself (no hosting needed).
 
 export const SETTINGS = {
-  name: 'Getmeds Philippines',
-  signoffSubtitle: 'Your Compassionate Health Ally',
+  name: '2MG Incorporated',
+  signoffSubtitle: '', // italic line under the name in the sign-off ('' to hide)
   font: "'Poppins',Arial,Helvetica,sans-serif", // Gmail always falls back to Arial
   fontUrl: 'https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,600;1,400&display=swap',
-  logo: { file: 'logo.png', width: 210, height: 116 },
+  logo: { file: 'logo-2mg.png', width: 220, height: 69 }, // drawn from public/images/2mgsvglogo.svg
   clipIcon: 'clip.png',
   colors: {
     primary: '#2F5321', // headings, lines, sign-off (Getmeds dark green)
@@ -45,9 +45,9 @@ export const THEMES = {
       bottom: 'diwali-bottom.png',
     },
     sample: {
-      subject: 'Happy Diwali from Getmeds Philippines',
+      subject: 'Happy Diwali from 2MG Incorporated',
       message:
-        'May this Festival of Lights bring warmth, good health and success to everyone at {hospital}.\n\nThank you for your continued trust in Getmeds. We look forward to serving you in the months ahead.',
+        'May this Festival of Lights bring warmth, good health and success to everyone at {hospital}.\n\nThank you for your continued trust in 2MG Incorporated. We look forward to serving you in the months ahead.',
     },
   },
   christmas: {
@@ -68,7 +68,7 @@ export const THEMES = {
       bottom: 'christmas-bottom.png',
     },
     sample: {
-      subject: 'Merry Christmas from Getmeds Philippines',
+      subject: 'Merry Christmas from 2MG Incorporated',
       message:
         'Warmest wishes to everyone at {hospital} this Christmas season. Thank you for a year of partnership and for the care you give your patients every day.\n\nMay your holidays be peaceful and joyful.',
     },
@@ -91,15 +91,15 @@ export const THEMES = {
       bottom: 'newyear-bottom.png',
     },
     sample: {
-      subject: 'Happy New Year from Getmeds Philippines',
-      message: 'As the new year begins, all of us at Getmeds thank {hospital} for your trust and partnership.\n\nWe wish you a healthy, safe and successful year ahead.',
+      subject: 'Happy New Year from 2MG Incorporated',
+      message: 'As the new year begins, all of us at 2MG Incorporated thank {hospital} for your trust and partnership.\n\nWe wish you a healthy, safe and successful year ahead.',
     },
   },
   standard: {
     name: 'Standard',
     title: '',
     wish: '',
-    tagline: ['Getmeds Philippines', 'getmeds.ph'],
+    tagline: ['2MG Incorporated'],
     accent: '#1EA0DA',
     frame: '#E2E8F0',
     backdrop: '#ffffff',

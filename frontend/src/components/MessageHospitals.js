@@ -237,7 +237,7 @@ export default function MessageHospitals({ hospitals, onClose }) {
           <section>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className={label}>Season design</span>
-              <span className="text-xs text-black/46">{theme === 'standard' ? 'Standard Getmeds design' : `${THEMES[theme].name} border and greeting`}</span>
+              <span className="text-xs text-black/46">{theme === 'standard' ? 'Standard design' : `${THEMES[theme].name} border and greeting`}</span>
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2">
               {SEASONS.map((key) => {
@@ -281,7 +281,7 @@ export default function MessageHospitals({ hospitals, onClose }) {
             <span className={label}>
               Subject <span className="text-[#B3312C]">*</span>
             </span>
-            <input value={subject} maxLength={200} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Getmeds product offer for {hospital}" className={`${field} rounded-full`} />
+            <input value={subject} maxLength={200} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. 2MG product offer for {hospital}" className={`${field} rounded-full`} />
           </label>
           <label className="block">
             <span className={label}>

@@ -1,7 +1,7 @@
 // Draws the Message Hospitals e-mail pictures into public/email/ (run from frontend/: node scripts/build-email-images.mjs).
 // Every e-mail theme (src/lib/hospitalEmail.mjs) has a strip along the top, a corner piece beside the logo and a scene
 // along the bottom, drawn here as SVG and saved as PNG at twice their size in the e-mail (Gmail and Outlook show no SVG).
-// Also makes the small logo from public/images/GETMEDS PHILIPPINES LOGO.png. Re-run after changing a drawing.
+// Also makes the small logo (2MG Inc.) from public/images/2mgsvglogo.svg. Re-run after changing a drawing.
 import sharp from 'sharp';
 import { mkdirSync } from 'node:fs';
 
@@ -307,6 +307,6 @@ await save('newyear-bottom.png', newYearBottom());
 await save('standard-corner.png', standardCorner());
 await save('standard-bottom.png', standardBottom());
 await save('clip.png', clip);
-// The logo at twice its e-mail size (210 x 116)
-await sharp('public/images/GETMEDS PHILIPPINES LOGO.png').resize({ width: 420 }).png({ palette: true, effort: 10 }).toFile(`${OUT}/logo.png`);
-console.log('wrote', `${OUT}/logo.png`);
+// The logo at twice its e-mail size (220 x 69); e-mail programs show no SVG, so it is a PNG
+await sharp('public/images/2mgsvglogo.svg', { density: 72 }).resize({ width: 440 }).png({ palette: true, effort: 10 }).toFile(`${OUT}/logo-2mg.png`);
+console.log('wrote', `${OUT}/logo-2mg.png`);
