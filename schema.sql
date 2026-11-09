@@ -470,6 +470,139 @@ CREATE POLICY "dashboard can read" ON bid_abstracts FOR SELECT TO authenticated
 REVOKE ALL ON bid_abstracts FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON bid_abstracts FROM authenticated;
 
+-- Overall Abstract tracker (Abstract of Bids → Overall Abstract / All Bids tabs, /api/abstracts/tracker): the team's
+-- Overall_Abstract workbook (frontend/src/lib/abstractTracker.mjs reads it and Export Excel writes it back the same).
+-- One year at a time: Import Excel replaces that year's tracker through replace_abstract_tracker (all or nothing).
+-- abstract_tracker: per year, the All Bids bidder columns (in order), the notes of both sheets, the hospitals whose
+-- name is red on the sheet. abstract_tracker_items: Overall Abstract rows (block = the hospital's group 1, 2, …;
+-- position = row order). abstract_tracker_molecules: All Bids rows (prices = { "bidder column": unit price }).
+CREATE TABLE IF NOT EXISTS abstract_tracker (
+    year INT PRIMARY KEY,
+    bidders TEXT[] NOT NULL DEFAULT '{}',
+    overall_notes TEXT[] NOT NULL DEFAULT '{}',
+    bids_notes TEXT[] NOT NULL DEFAULT '{}',
+    highlighted TEXT[] NOT NULL DEFAULT '{}',
+    file_name TEXT,
+    imported_by TEXT,
+    imported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS abstract_tracker_items (
+    id BIGSERIAL PRIMARY KEY,
+    year INT NOT NULL REFERENCES abstract_tracker(year) ON DELETE CASCADE,
+    position DOUBLE PRECISION NOT NULL,
+    hospital TEXT NOT NULL,
+    agency_key TEXT NOT NULL,
+    block INT NOT NULL DEFAULT 1,
+    item_no TEXT NOT NULL DEFAULT '-',
+    description TEXT NOT NULL,
+    quantity NUMERIC,
+    abc_price NUMERIC,
+    lowest_bid NUMERIC,
+    lowest_bidder TEXT,
+    our_price NUMERIC,
+    source TEXT NOT NULL DEFAULT 'tracker',   -- tracker | hospital-abstract | added
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS abstract_tracker_items_year ON abstract_tracker_items (year, position);
+CREATE TABLE IF NOT EXISTS abstract_tracker_molecules (
+    id BIGSERIAL PRIMARY KEY,
+    year INT NOT NULL REFERENCES abstract_tracker(year) ON DELETE CASCADE,
+    position INT NOT NULL,
+    item_no TEXT NOT NULL,
+    molecule TEXT NOT NULL,
+    prices JSONB NOT NULL DEFAULT '{}',
+    our_price NUMERIC,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS abstract_tracker_molecules_year ON abstract_tracker_molecules (year, position);
+ALTER TABLE abstract_tracker ENABLE ROW LEVEL SECURITY;
+ALTER TABLE abstract_tracker_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE abstract_tracker_molecules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dashboard can read" ON abstract_tracker;
+CREATE POLICY "dashboard can read" ON abstract_tracker FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "dashboard can read" ON abstract_tracker_items;
+CREATE POLICY "dashboard can read" ON abstract_tracker_items FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+DROP POLICY IF EXISTS "dashboard can read" ON abstract_tracker_molecules;
+CREATE POLICY "dashboard can read" ON abstract_tracker_molecules FOR SELECT TO authenticated
+    USING (coalesce((auth.jwt() -> 'app_metadata' ->> 'team')::boolean, false));
+REVOKE ALL ON abstract_tracker, abstract_tracker_items, abstract_tracker_molecules FROM anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON abstract_tracker, abstract_tracker_items, abstract_tracker_molecules FROM authenticated;
+
+-- Import Excel: that year's tracker replaced in one transaction (the rows of the old one go with it)
+CREATE OR REPLACE FUNCTION replace_abstract_tracker(p_year INT, p_meta JSONB, p_items JSONB, p_molecules JSONB)
+RETURNS JSONB LANGUAGE plpgsql SET search_path = public AS $$
+DECLARE n_items INT; n_molecules INT;
+BEGIN
+    DELETE FROM abstract_tracker WHERE year = p_year;
+    INSERT INTO abstract_tracker (year, bidders, overall_notes, bids_notes, highlighted, file_name, imported_by)
+    VALUES (
+        p_year,
+        ARRAY(SELECT jsonb_array_elements_text(coalesce(p_meta->'bidders', '[]'))),
+        ARRAY(SELECT jsonb_array_elements_text(coalesce(p_meta->'overall_notes', '[]'))),
+        ARRAY(SELECT jsonb_array_elements_text(coalesce(p_meta->'bids_notes', '[]'))),
+        ARRAY(SELECT jsonb_array_elements_text(coalesce(p_meta->'highlighted', '[]'))),
+        p_meta->>'file_name',
+        p_meta->>'imported_by'
+    );
+    INSERT INTO abstract_tracker_items (year, position, hospital, agency_key, block, item_no, description, quantity,
+        abc_price, lowest_bid, lowest_bidder, our_price, updated_by)
+    SELECT p_year, i.position, i.hospital, i.agency_key, i.block, coalesce(i.item_no, '-'), i.description, i.quantity,
+        i.abc_price, i.lowest_bid, i.lowest_bidder, i.our_price, p_meta->>'imported_by'
+    FROM jsonb_to_recordset(p_items) AS i(position DOUBLE PRECISION, hospital TEXT, agency_key TEXT, block INT,
+        item_no TEXT, description TEXT, quantity NUMERIC, abc_price NUMERIC, lowest_bid NUMERIC, lowest_bidder TEXT,
+        our_price NUMERIC);
+    GET DIAGNOSTICS n_items = ROW_COUNT;
+    INSERT INTO abstract_tracker_molecules (year, position, item_no, molecule, prices, our_price, updated_by)
+    SELECT p_year, m.position, m.item_no, m.molecule, coalesce(m.prices, '{}'), m.our_price, p_meta->>'imported_by'
+    FROM jsonb_to_recordset(p_molecules) AS m(position INT, item_no TEXT, molecule TEXT, prices JSONB, our_price NUMERIC);
+    GET DIAGNOSTICS n_molecules = ROW_COUNT;
+    RETURN jsonb_build_object('items', n_items, 'molecules', n_molecules);
+END $$;
+REVOKE ALL ON FUNCTION replace_abstract_tracker(INT, JSONB, JSONB, JSONB) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION replace_abstract_tracker(INT, JSONB, JSONB, JSONB) TO service_role;
+
+-- Import Excel with a hospital's own Abstract of Bids (lib/abstractTracker.mjs planHospitalMerge), in one transaction:
+-- the All Bids columns and changed prices, that hospital's earlier group from such a file replaced by the new one
+-- (p_block / p_after_position worked out by the API), and other rows' lower Lowest Bid. Creates the year if needed.
+CREATE OR REPLACE FUNCTION merge_hospital_abstract(p_year INT, p_agency_key TEXT, p_hospital TEXT, p_bidders JSONB,
+    p_molecules JSONB, p_items JSONB, p_lowered JSONB, p_user TEXT)
+RETURNS JSONB LANGUAGE plpgsql SET search_path = public AS $$
+DECLARE n_items INT; n_prices INT; n_lowered INT; v_block INT; v_anchor DOUBLE PRECISION; v_next DOUBLE PRECISION; v_step DOUBLE PRECISION;
+BEGIN
+    INSERT INTO abstract_tracker (year, imported_by) VALUES (p_year, p_user) ON CONFLICT (year) DO NOTHING;
+    UPDATE abstract_tracker SET bidders = ARRAY(SELECT jsonb_array_elements_text(p_bidders)) WHERE year = p_year;
+    UPDATE abstract_tracker_molecules m SET prices = c.prices, updated_by = p_user, updated_at = now()
+    FROM jsonb_to_recordset(p_molecules) AS c(id BIGINT, prices JSONB) WHERE m.id = c.id AND m.year = p_year;
+    GET DIAGNOSTICS n_prices = ROW_COUNT;
+    DELETE FROM abstract_tracker_items WHERE year = p_year AND agency_key = p_agency_key AND source = 'hospital-abstract';
+    -- The new group goes after the hospital's last row (a new hospital at the end), before the next hospital's rows
+    SELECT coalesce(max(block), 0) + 1, max(position) INTO v_block, v_anchor FROM abstract_tracker_items WHERE year = p_year AND agency_key = p_agency_key;
+    IF v_anchor IS NULL THEN
+        SELECT coalesce(max(position), 0) INTO v_anchor FROM abstract_tracker_items WHERE year = p_year;
+        v_next := v_anchor + jsonb_array_length(p_items) + 1;
+    ELSE
+        SELECT min(position) INTO v_next FROM abstract_tracker_items WHERE year = p_year AND position > v_anchor;
+        v_next := coalesce(v_next, v_anchor + jsonb_array_length(p_items) + 1);
+    END IF;
+    v_step := (v_next - v_anchor) / (jsonb_array_length(p_items) + 1);
+    INSERT INTO abstract_tracker_items (year, position, hospital, agency_key, block, item_no, description, quantity,
+        abc_price, lowest_bid, lowest_bidder, our_price, source, updated_by)
+    SELECT p_year, v_anchor + v_step * (i.ord + 1), p_hospital, p_agency_key, v_block, coalesce(i.item_no, '-'), i.description,
+        NULL, NULL, i.lowest_bid, i.lowest_bidder, i.our_price, 'hospital-abstract', p_user
+    FROM jsonb_to_recordset(p_items) AS i(ord INT, item_no TEXT, description TEXT, lowest_bid NUMERIC, lowest_bidder TEXT, our_price NUMERIC);
+    GET DIAGNOSTICS n_items = ROW_COUNT;
+    UPDATE abstract_tracker_items t SET lowest_bid = l.lowest_bid, lowest_bidder = l.lowest_bidder, updated_by = p_user, updated_at = now()
+    FROM jsonb_to_recordset(p_lowered) AS l(id BIGINT, lowest_bid NUMERIC, lowest_bidder TEXT) WHERE t.id = l.id AND t.year = p_year;
+    GET DIAGNOSTICS n_lowered = ROW_COUNT;
+    RETURN jsonb_build_object('items', n_items, 'molecules', n_prices, 'lowered', n_lowered);
+END $$;
+REVOKE ALL ON FUNCTION merge_hospital_abstract(INT, TEXT, TEXT, JSONB, JSONB, JSONB, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION merge_hospital_abstract(INT, TEXT, TEXT, JSONB, JSONB, JSONB, JSONB, TEXT) TO service_role;
+
 -- Assigned Persons page (/api/assigned-persons): who handles each hospital on the "2MG Incorporated served list of
 -- hospitals", the list the award notice emails go by (frontend/src/lib/awardRouting.mjs loadRouting). Filled from the
 -- list in awardRouting.mjs the first time the page opens, then edited there (Add Hospital, Edit, Add Person).

@@ -16,6 +16,8 @@ import { plainAction } from '@/components/PageHeader';
  *   ask: details the file doesn't hold, asked in the window before importing (a hospital's own abstract names no
  *   hospital): { fields: [{ key, label, placeholder, options?: string[], defaultValue?, number? }], complete(rows, values) }
  *   format: what the file was read as, shown in place of the WINNING BID TRACKER note
+ *   body(rows, values): the request body to send, in place of { [field]: rows } (the tracker sends several lists)
+ *   A server reply with a `message` is shown as it is, else "N added, N updated".
  * @param {(rows: object[]) => { headline: string, lines: React.ReactNode[] }} props.describe  Summary of the change
  * @param {string} props.endpoint   API route, e.g. "/api/hospitals"
  * @param {string} props.field      Body field for the rows, e.g. "hospitals"
@@ -41,10 +43,10 @@ export default function ImportExcel({ sheet, columns, read, describe, endpoint, 
       const { default: ExcelJS } = await import('exceljs');
       const wb = new ExcelJS.Workbook();
       await wb.xlsx.load(await file.arrayBuffer());
-      const { sheet: name, rows, ask, format } = read(wb);
+      const { sheet: name, rows, ask, format, body } = read(wb, file.name);
       if (!rows.length) throw new Error(`The "${name}" sheet has no rows to import.`);
       setValues(Object.fromEntries((ask?.fields || []).map((f) => [f.key, f.defaultValue ?? ''])));
-      setFound({ file: file.name, sheet: name, rows, ask, format });
+      setFound({ file: file.name, sheet: name, rows, ask, format, body });
     } catch (err) {
       setError(err.message || 'This file could not be read.');
     }
@@ -55,11 +57,11 @@ export default function ImportExcel({ sheet, columns, read, describe, endpoint, 
     setSaving(true);
     setError('');
     try {
-      const res = await authFetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [field]: finalRows }) });
+      const res = await authFetch(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(found.body ? found.body(finalRows, values) : { [field]: finalRows }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
       setFound(null);
-      onDone(`Imported "${found.sheet}" from ${found.file}: ${data.added} added, ${data.updated} updated.`);
+      onDone(data.message || `Imported "${found.sheet}" from ${found.file}: ${data.added} added, ${data.updated} updated.`);
     } catch (err) {
       setError(err.message);
     }

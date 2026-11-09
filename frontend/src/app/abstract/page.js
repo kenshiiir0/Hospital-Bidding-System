@@ -10,10 +10,12 @@ import { ABSTRACT_SHEET, completeHospitalAbstract, readAbstractSheet, readHospit
 import { SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import PageHeader, { KpiRow, blueAction } from '@/components/PageHeader';
+import AbstractTracker from '@/components/AbstractTracker';
 
 // Abstract of Bids (table bid_abstracts, /api/abstracts): who won each item a hospital bid out, at what price, next to
 // our price. From the "ABSTRACT 2026" sheet of the WINNING BID TRACKER (tools/import-abstract.mjs) plus Add Result.
 // Hospitals post on PhilGEPS and PS-PhilGEPS alike; the abstract is the same for both.
+// Tabs Overall Abstract / All Bids: the team's Overall Abstract workbook (components/AbstractTracker.js).
 
 // The winner is us (2MG Incorporated / GetMeds)
 const isUs = (winner) => /\b2\s*MG\b|GET\s*MEDS/i.test(winner || '');
@@ -29,6 +31,7 @@ export default function AbstractPage() {
   const [search, setSearch] = useState('');
   const [added, setAdded] = useState('');
   const [view, setView] = useState('all');
+  const [section, setSection] = useState('results');
   const [archiving, setArchiving] = useState(null);
   const [restoring, setRestoring] = useState(null);
   const [page, setPage] = useState(1);
@@ -171,6 +174,30 @@ export default function AbstractPage() {
     },
   ];
 
+  // Results (this page's own list) | Overall Abstract | All Bids (the tracker workbook)
+  const sectionTabs = (
+    <SegmentedTabs
+      label="Abstract"
+      value={section}
+      onChange={setSection}
+      options={[
+        { value: 'results', label: 'Results' },
+        { value: 'overall', label: 'Overall Abstract' },
+        { value: 'bids', label: 'All Bids' },
+      ]}
+    />
+  );
+
+  if (section !== 'results') {
+    return (
+      <div className="min-h-screen bg-white text-black antialiased">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+          <AbstractTracker section={section} tabs={sectionTabs} hospitalList={hospitalList} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-5">
@@ -232,6 +259,7 @@ export default function AbstractPage() {
             { label: 'Avg. above winner', value: avgGap == null ? '—' : `${avgGap > 0 ? '+' : ''}${avgGap.toFixed(1)}%`, tone: 'docs', note: 'our price vs the winning price' },
           ]}
         />
+        {sectionTabs}
 
         {error && <p className="rounded-[14px] border border-[#B3312C]/25 bg-[#B3312C]/6 px-4 py-3 text-sm text-[#B3312C]">{error}</p>}
         {added && <p className="rounded-[14px] border border-[#61A644]/30 bg-[#61A644]/8 px-4 py-3 text-sm text-[#2F5321]">{added}</p>}
