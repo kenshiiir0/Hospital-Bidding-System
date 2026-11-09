@@ -385,6 +385,8 @@ const BLUE_BID = 'FF9BC2E6';
 const YELLOW = 'FFFFFF00';
 const BLUE_HEAD = 'FFD9E1F2';
 const ORANGE_HEAD = 'FFFCE4D6';
+const BID_FILL = 'FFFFF2CC'; // All Bids: a bidder's price
+const BID_LOWEST = 'FFC6EFCE'; // All Bids: the lowest price of the row
 const PESO = '#,##0.00';
 const asNumber = (s) => (/^\d+(\.\d+)?$/.test(String(s ?? '')) ? Number(s) : s);
 
@@ -522,13 +524,17 @@ export function buildTrackerWorkbook(workbook, { items, molecules, meta }) {
       cell.alignment = alignment;
       cell.border = BORDER;
       if (extra.numFmt) cell.numFmt = extra.numFmt;
+      if (extra.fill) cell.fill = fill(extra.fill);
     };
     const center = { horizontal: 'center', vertical: 'middle' };
     set(1, asNumber(m.item_no), center);
     set(2, m.molecule, { horizontal: 'left', vertical: 'middle' });
+    // Every bid highlighted (light yellow); the row's lowest in green, bold, so the "No Bid" cells fall back
     bidders.forEach((b, i) => {
       const p = m.prices?.[b];
-      set(firstBid + i, typeof p === 'number' ? p : 'No Bid', center, typeof p === 'number' ? { numFmt: PESO } : {});
+      if (typeof p !== 'number') return set(firstBid + i, 'No Bid', center);
+      const lowest = p === stats.lowest;
+      set(firstBid + i, p, center, { numFmt: PESO, fill: lowest ? BID_LOWEST : BID_FILL, font: lowest ? { bold: true } : undefined });
     });
     set(cCount, { formula: `COUNT(${range(br)})`, result: stats.count }, center);
     set(cLow, { formula: `IF(COUNT(${range(br)})=0,"-",MIN(${range(br)}))`, result: stats.lowest ?? '-' }, center, { font: { bold: true }, numFmt: PESO });
