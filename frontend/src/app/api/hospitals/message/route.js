@@ -37,7 +37,7 @@ export async function POST(request) {
     keys = JSON.parse(String(form.get('keys') || '[]'));
   } catch {}
   if (!subject || !message) return Response.json({ ok: false, error: 'Please fill in the subject and the message.' }, { status: 400 });
-  if (!Array.isArray(keys) || !keys.length || keys.length > 200 || keys.some((k) => typeof k !== 'string')) {
+  if (!MESSAGE_TEST_TO && (!Array.isArray(keys) || !keys.length || keys.length > 200 || keys.some((k) => typeof k !== 'string'))) {
     return Response.json({ ok: false, error: 'Please choose at least one hospital.' }, { status: 400 });
   }
 
@@ -49,29 +49,37 @@ export async function POST(request) {
   // Read once, attached to every e-mail
   const attachments = await Promise.all(files.map(async (f) => ({ filename: f.name, contentType: f.type, content: Buffer.from(await f.arrayBuffer()) })));
 
-  const { data: hospitals, error } = await admin().from('hospitals').select('agency_key, name, emails').in('agency_key', keys).not('status', 'is', null).is('archived_at', null);
-  if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
-
+  const body = (text) => `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111">${esc(text).replace(/\n/g, '<br>')}</div>`;
   const results = [];
-  for (const h of hospitals) {
-    if (!MESSAGE_TEST_TO && !h.emails?.length) {
-      results.push({ name: h.name, status: 'skipped', error: 'No e-mail address' });
-      continue;
-    }
-    const fill = (s) => s.replaceAll('{hospital}', titleCase(h.name));
+
+  if (MESSAGE_TEST_TO) {
+    // Test mode: hospitals are deactivated. The chosen keys are ignored and no hospital row is read;
+    // exactly one e-mail goes to the test address, with {hospital} shown as "Sample Hospital".
+    const fill = (s) => s.replaceAll('{hospital}', 'Sample Hospital');
     const text = fill(message);
-    let html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111">${esc(text).replace(/\n/g, '<br>')}</div>`;
-    // Test mode: the e-mail goes only to the test address, with a note of who would have received it
-    const to = MESSAGE_TEST_TO ? [MESSAGE_TEST_TO] : h.emails;
-    if (MESSAGE_TEST_TO) {
-      const would = h.emails?.length ? h.emails.join(', ') : 'no e-mail address on the Hospital List';
-      html = `<div style="font-family:Arial,sans-serif;font-size:12px;color:#7A4B00;background:#FFF4DB;border:1px solid #F0D58C;border-radius:8px;padding:8px 12px;margin-bottom:12px">TEST — not sent to the hospital. Would go to ${esc(titleCase(h.name))}: ${esc(would)}</div>${html}`;
-    }
+    const html = `<div style="font-family:Arial,sans-serif;font-size:12px;color:#7A4B00;background:#FFF4DB;border:1px solid #F0D58C;border-radius:8px;padding:8px 12px;margin-bottom:12px">TEST — Message Hospitals is routed only to ${esc(MESSAGE_TEST_TO)} for testing. No hospital received this e-mail.</div>${body(text)}`;
     try {
-      await sendMail({ to: to.join(', '), subject: fill(subject), text, html, attachments });
-      results.push({ name: h.name, status: 'sent', to, test: !!MESSAGE_TEST_TO });
+      await sendMail({ to: MESSAGE_TEST_TO, subject: fill(subject), text, html, attachments });
+      results.push({ name: 'Test e-mail', status: 'sent', to: [MESSAGE_TEST_TO], test: true });
     } catch (e) {
-      results.push({ name: h.name, status: 'failed', to, error: e.message });
+      results.push({ name: 'Test e-mail', status: 'failed', to: [MESSAGE_TEST_TO], error: e.message });
+    }
+  } else {
+    const { data: hospitals, error } = await admin().from('hospitals').select('agency_key, name, emails').in('agency_key', keys).not('status', 'is', null).is('archived_at', null);
+    if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
+    for (const h of hospitals) {
+      if (!h.emails?.length) {
+        results.push({ name: h.name, status: 'skipped', error: 'No e-mail address' });
+        continue;
+      }
+      const fill = (s) => s.replaceAll('{hospital}', titleCase(h.name));
+      const text = fill(message);
+      try {
+        await sendMail({ to: h.emails.join(', '), subject: fill(subject), text, html: body(text), attachments });
+        results.push({ name: h.name, status: 'sent', to: h.emails });
+      } catch (e) {
+        results.push({ name: h.name, status: 'failed', to: h.emails, error: e.message });
+      }
     }
   }
 
@@ -81,7 +89,9 @@ export async function POST(request) {
     event: 'hospital-message',
     status: !sent ? 'failed' : failed.length ? 'partial' : 'success',
     by: user.email,
-    summary: `${MESSAGE_TEST_TO ? `TEST (to ${MESSAGE_TEST_TO}) ` : ''}Message "${subject}" e-mailed to ${sent} of ${results.length} hospital${results.length === 1 ? '' : 's'}`,
+    summary: MESSAGE_TEST_TO
+      ? `TEST message "${subject}" ${sent ? 'e-mailed' : 'not sent'} to ${MESSAGE_TEST_TO} (no hospital)`
+      : `Message "${subject}" e-mailed to ${sent} of ${results.length} hospital${results.length === 1 ? '' : 's'}`,
     details: { subject, message, attachments: files.map((f) => f.name), results },
   });
   return Response.json({ ok: sent > 0, sent, results });
