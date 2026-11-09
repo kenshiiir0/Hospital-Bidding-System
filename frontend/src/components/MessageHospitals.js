@@ -146,6 +146,24 @@ export default function MessageHospitals({ hospitals, onClose }) {
                   {name} ({group(status).length})
                 </button>
               ))}
+              <span className="ml-auto flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setChosen(new Set(reachable.map((h) => h.agency_key)))}
+                  disabled={picked.length === reachable.length}
+                  className="rounded-full px-2.5 py-1 text-xs font-medium text-[#12769F] transition hover:bg-[#1EA0DA]/6 disabled:opacity-40"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChosen(new Set())}
+                  disabled={!picked.length}
+                  className="rounded-full px-2.5 py-1 text-xs font-medium text-[#12769F] transition hover:bg-[#1EA0DA]/6 disabled:opacity-40"
+                >
+                  Clear all
+                </button>
+              </span>
             </div>
             <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-[14px] border border-[#E2E8F0] p-2">
               {reachable.map((h) => (
