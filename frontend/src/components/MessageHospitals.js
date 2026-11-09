@@ -302,7 +302,8 @@ export default function MessageHospitals({ hospitals, onClose }) {
 
           <section>
             <span className={label}>Attachments</span>
-            <label className="mt-1.5 flex cursor-pointer items-center justify-center rounded-[14px] border border-dashed border-[#CBD5E1] px-4 py-3 text-xs font-medium text-[#12769F] transition hover:bg-[#1EA0DA]/6">
+            {/* relative: keeps the hidden file input inside this box, otherwise focusing it after a pick scrolls the whole dialog */}
+            <label className="relative mt-1.5 flex cursor-pointer items-center justify-center rounded-[14px] border border-dashed border-[#CBD5E1] px-4 py-3 text-xs font-medium text-[#12769F] transition hover:bg-[#1EA0DA]/6">
               + Add images or files
               <input
                 type="file"
