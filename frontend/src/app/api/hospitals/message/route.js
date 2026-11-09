@@ -7,6 +7,9 @@ import { buildHospitalEmail, themeImages, titleCase, SETTINGS, THEMES } from '@/
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+// Sender name the hospitals see (the address stays the SMTP mailbox); award e-mails to the team keep their own name
+const HOSPITAL_FROM = () => `"2MG Incorporated" <${process.env.SMTP_USER}>`;
+
 export const maxDuration = 120;
 
 // Vercel refuses request bodies over 4.5 MB, so the attachments together stay under 4 MB
@@ -88,7 +91,7 @@ export async function POST(request) {
     const text = email.text;
     const html = `<div style="font-family:Arial,sans-serif;font-size:12px;color:#7A4B00;background:#FFF4DB;border:1px solid #F0D58C;border-radius:8px;padding:8px 12px;margin-bottom:12px">TEST — Message Hospitals is routed only to ${esc(MESSAGE_TEST_TO)} for testing. No hospital received this e-mail.</div>${email.html}`;
     try {
-      await sendMail({ to: MESSAGE_TEST_TO, subject: fill(subject), text, html, attachments: [...pictures, ...attachments] });
+      await sendMail({ from: HOSPITAL_FROM(), to: MESSAGE_TEST_TO, subject: fill(subject), text, html, attachments: [...pictures, ...attachments] });
       results.push({ name: 'Test e-mail', status: 'sent', to: [MESSAGE_TEST_TO], test: true });
     } catch (e) {
       results.push({ name: 'Test e-mail', status: 'failed', to: [MESSAGE_TEST_TO], error: e.message });
@@ -104,7 +107,7 @@ export async function POST(request) {
       const fill = (s) => s.replaceAll('{hospital}', titleCase(h.name));
       const { html, text } = branded(fill, h.name);
       try {
-        await sendMail({ to: h.emails.join(', '), subject: fill(subject), text, html, attachments: [...pictures, ...attachments] });
+        await sendMail({ from: HOSPITAL_FROM(), to: h.emails.join(', '), subject: fill(subject), text, html, attachments: [...pictures, ...attachments] });
         results.push({ name: h.name, status: 'sent', to: h.emails });
       } catch (e) {
         results.push({ name: h.name, status: 'failed', to: h.emails, error: e.message });
