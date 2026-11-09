@@ -3,6 +3,9 @@ import { mailConfigured, sendMail } from '@/lib/awardNotify.mjs';
 import { logActivity } from '@/lib/activityLog.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { MESSAGE_TEST_TO } from '@/lib/messageTestMode';
+import { buildHospitalEmail, themeImages, titleCase, SETTINGS, THEMES } from '@/lib/hospitalEmail.mjs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 export const maxDuration = 120;
 
@@ -16,11 +19,29 @@ function admin() {
 }
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const titleCase = (name) => name.toLowerCase().replace(/(^|[\s(.-])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+
+// The design's pictures (public/email/, shipped with this route by next.config.mjs) go inside every e-mail,
+// shown in place by their cid, so they appear without being hosted anywhere
+async function inlineImages(theme, withClip, origin) {
+  return Promise.all(
+    [...themeImages(theme), ...(withClip ? [SETTINGS.clipIcon] : [])].map(async (file) => {
+      let content;
+      try {
+        content = await readFile(path.join(process.cwd(), 'public', 'email', file));
+      } catch {
+        const res = await fetch(`${origin}/email/${file}`);
+        if (!res.ok) throw new Error(`The e-mail picture ${file} could not be loaded.`);
+        content = Buffer.from(await res.arrayBuffer());
+      }
+      return { filename: file, content, contentType: 'image/png', cid: file, contentDisposition: 'inline' };
+    })
+  );
+}
 
 // Message Hospitals (Hospital List): one e-mail per chosen hospital, to that hospital's own addresses, with the
 // same subject, message and attachments. {hospital} in the subject or message becomes the hospital's name.
-// multipart form: subject, message, keys (JSON array of agency_key), files (0+). Sent from the award e-mails' mailbox.
+// multipart form: subject, message, theme (lib/hospitalEmail.mjs THEMES), keys (JSON array of agency_key), files (0+).
+// Sent from the award e-mails' mailbox in the branded design the dialog previews.
 export async function POST(request) {
   const { user, response } = await requireUser(request);
   if (response) return response;
@@ -32,6 +53,7 @@ export async function POST(request) {
 
   const subject = String(form.get('subject') || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   const message = String(form.get('message') || '').replace(/\r\n/g, '\n').trim().slice(0, 10000);
+  const theme = THEMES[String(form.get('theme'))] ? String(form.get('theme')) : 'standard';
   let keys = [];
   try {
     keys = JSON.parse(String(form.get('keys') || '[]'));
@@ -48,6 +70,12 @@ export async function POST(request) {
   if (refused) return Response.json({ ok: false, error: `${refused.name} cannot be attached (images, PDF, Word, Excel, PowerPoint, text or CSV only).` }, { status: 400 });
   // Read once, attached to every e-mail
   const attachments = await Promise.all(files.map(async (f) => ({ filename: f.name, contentType: f.type, content: Buffer.from(await f.arrayBuffer()) })));
+  let pictures;
+  try {
+    pictures = await inlineImages(theme, files.length > 0, new URL(request.url).origin);
+  } catch (e) {
+    return Response.json({ ok: false, error: e.message }, { status: 500 });
+  }
 
   const { data: hospitals, error } = await admin().from('hospitals').select('agency_key, name, emails').in('agency_key', keys).not('status', 'is', null).is('archived_at', null);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
@@ -59,8 +87,9 @@ export async function POST(request) {
       continue;
     }
     const fill = (s) => s.replaceAll('{hospital}', titleCase(h.name));
-    const text = fill(message);
-    let html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111">${esc(text).replace(/\n/g, '<br>')}</div>`;
+    const email = buildHospitalEmail({ subject: fill(subject), message: fill(message), hospital: h.name, files, theme, src: (file) => `cid:${file}` });
+    const text = email.text;
+    let html = email.html;
     // Test mode: the e-mail goes only to the test address, with a note of who would have received it
     const to = MESSAGE_TEST_TO ? [MESSAGE_TEST_TO] : h.emails;
     if (MESSAGE_TEST_TO) {
@@ -68,7 +97,7 @@ export async function POST(request) {
       html = `<div style="font-family:Arial,sans-serif;font-size:12px;color:#7A4B00;background:#FFF4DB;border:1px solid #F0D58C;border-radius:8px;padding:8px 12px;margin-bottom:12px">TEST — not sent to the hospital. Would go to ${esc(titleCase(h.name))}: ${esc(would)}</div>${html}`;
     }
     try {
-      await sendMail({ to: to.join(', '), subject: fill(subject), text, html, attachments });
+      await sendMail({ to: to.join(', '), subject: fill(subject), text, html, attachments: [...pictures, ...attachments] });
       results.push({ name: h.name, status: 'sent', to, test: !!MESSAGE_TEST_TO });
     } catch (e) {
       results.push({ name: h.name, status: 'failed', to, error: e.message });
@@ -82,7 +111,7 @@ export async function POST(request) {
     status: !sent ? 'failed' : failed.length ? 'partial' : 'success',
     by: user.email,
     summary: `${MESSAGE_TEST_TO ? `TEST (to ${MESSAGE_TEST_TO}) ` : ''}Message "${subject}" e-mailed to ${sent} of ${results.length} hospital${results.length === 1 ? '' : 's'}`,
-    details: { subject, message, attachments: files.map((f) => f.name), results },
+    details: { subject, message, theme, attachments: files.map((f) => f.name), results },
   });
   return Response.json({ ok: sent > 0, sent, results });
 }

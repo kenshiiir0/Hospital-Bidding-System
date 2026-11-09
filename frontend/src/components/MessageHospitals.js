@@ -1,12 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import Modal from '@/components/Modal';
 import { MESSAGE_TEST_TO } from '@/lib/messageTestMode';
+import { buildHospitalEmail, SEASONS, THEMES, themeFor, titleCase } from '@/lib/hospitalEmail.mjs';
 
 // Message Hospitals (Hospital List): one message, with images or files attached, e-mailed to every chosen hospital
 // (api/hospitals/message, one e-mail per hospital to its own addresses). Two steps: write, then confirm.
+// A season card (Diwali, Christmas, New Year) picks the e-mail's design; beside the form, the preview shows the
+// e-mail exactly as the chosen hospital will receive it (lib/hospitalEmail.mjs builds both).
 const MAX_BYTES = 4 * 1024 * 1024; // same limit as the server (Vercel takes at most 4.5 MB per request)
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv';
 const GROUPS = [
@@ -25,9 +28,12 @@ export default function MessageHospitals({ hospitals, onClose }) {
   const reachable = hospitals.filter((h) => !h.archived_at && h.emails.length);
   const noEmail = hospitals.filter((h) => !h.archived_at && !h.emails.length).length;
   const [chosen, setChosen] = useState(() => new Set(reachable.filter((h) => h.status !== 'prospect').map((h) => h.agency_key)));
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
+  // Opens with this month's season and its greeting (the standard design, empty, outside the season months)
+  const [subject, setSubject] = useState(() => THEMES[themeFor()].sample?.subject || '');
+  const [message, setMessage] = useState(() => THEMES[themeFor()].sample?.message || '');
   const [files, setFiles] = useState([]);
+  const [theme, setTheme] = useState(() => themeFor());
+  const [previewKey, setPreviewKey] = useState('');
   const [step, setStep] = useState('write'); // write | confirm | sending | done
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -36,6 +42,31 @@ export default function MessageHospitals({ hospitals, onClose }) {
   const picked = reachable.filter((h) => chosen.has(h.agency_key));
   const addresses = picked.reduce((n, h) => n + h.emails.length, 0);
   const ready = picked.length && subject.trim() && message.trim() && total <= MAX_BYTES;
+  const thisMonth = themeFor();
+  // Preview "All selected hospitals" (the default), with (Hospital Name) where each hospital's own name goes, or one of them
+  const previewHospital = picked.length === 1 ? picked[0] : picked.find((h) => h.agency_key === previewKey) || null;
+  const placeholderName = '(Hospital Name)';
+  const fill = (s) => s.replaceAll('{hospital}', previewHospital ? titleCase(previewHospital.name) : placeholderName);
+  const preview = buildHospitalEmail({
+    subject: fill(subject),
+    message: fill(message),
+    hospital: previewHospital?.name || placeholderName,
+    files,
+    theme,
+    src: (file) => `/email/${file}`,
+    includeFont: false, // Gmail shows Arial, so the preview does too
+  });
+
+  // A season card picks its design (again: back to the standard design). The subject and message follow the season's
+  // greeting while they are empty or still another season's untouched greeting; anything typed is kept.
+  const pickSeason = (key) => {
+    const next = theme === key ? 'standard' : key;
+    setTheme(next);
+    const greeting = THEMES[next].sample || { subject: '', message: '' };
+    const untouched = (value, part) => !value.trim() || SEASONS.some((k) => value === THEMES[k].sample[part]);
+    if (untouched(subject, 'subject')) setSubject(greeting.subject);
+    if (untouched(message, 'message')) setMessage(greeting.message);
+  };
 
   const toggle = (key) => {
     const next = new Set(chosen);
@@ -62,6 +93,7 @@ export default function MessageHospitals({ hospitals, onClose }) {
       const body = new FormData();
       body.append('subject', subject);
       body.append('message', message);
+      body.append('theme', theme);
       body.append('keys', JSON.stringify(picked.map((h) => h.agency_key)));
       for (const f of files) body.append('files', f);
       const res = await authFetch('/api/hospitals/message', { method: 'POST', body });
@@ -88,7 +120,7 @@ export default function MessageHospitals({ hospitals, onClose }) {
       }
       busy={busy}
       onClose={onClose}
-      width="sm:max-w-2xl"
+      width="sm:max-w-6xl"
       icon={
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden>
           <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -121,6 +153,8 @@ export default function MessageHospitals({ hospitals, onClose }) {
         )
       }
     >
+      <div className={step === 'done' ? '' : 'grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'}>
+      <div className="min-w-0">
       {step === 'write' && (
         <div className="space-y-4">
           <section>
@@ -181,11 +215,54 @@ export default function MessageHospitals({ hospitals, onClose }) {
             {noEmail > 0 && <p className="mt-1.5 text-xs text-black/46">{noEmail} hospital{noEmail === 1 ? ' has' : 's have'} no e-mail address yet and cannot be messaged here.</p>}
           </section>
 
+          <section>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className={label}>Season design</span>
+              <span className="text-xs text-black/46">{theme === 'standard' ? 'Standard Getmeds design' : `${THEMES[theme].name} border and greeting`}</span>
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {SEASONS.map((key) => {
+                const t = THEMES[key];
+                const on = theme === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => pickSeason(key)}
+                    aria-pressed={on}
+                    className={`overflow-hidden rounded-[14px] border text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30 ${
+                      on ? 'shadow-md' : 'border-[#E2E8F0] hover:border-[#CBD5E1] hover:shadow-sm'
+                    }`}
+                    style={on ? { borderColor: t.frame, boxShadow: `0 0 0 1px ${t.frame}` } : undefined}
+                  >
+                    <span className="relative block h-16 overflow-hidden" style={{ backgroundColor: t.backdrop }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/email/${t.images.corner}`} alt="" className="absolute -top-2 right-0 h-24 w-auto" />
+                      {key === thisMonth && (
+                        <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide shadow-sm" style={{ color: t.accent }}>
+                          This month
+                        </span>
+                      )}
+                    </span>
+                    <span className="block px-3 py-2" style={on ? { backgroundImage: t.headerGradient, color: '#fff' } : undefined}>
+                      <span className={`block text-sm font-semibold ${on ? '' : 'text-black'}`}>
+                        {on ? '✓ ' : ''}
+                        {t.name}
+                      </span>
+                      <span className={`block text-xs ${on ? 'text-white/85' : 'text-black/46'}`}>{t.month}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 px-1 text-xs text-black/46">Click the chosen card again for the standard design. The subject and message follow the chosen season&apos;s greeting until you change them.</p>
+          </section>
+
           <label className="block">
             <span className={label}>
               Subject <span className="text-[#B3312C]">*</span>
             </span>
-            <input value={subject} maxLength={200} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. GetMeds product offer for {hospital}" className={`${field} rounded-full`} />
+            <input value={subject} maxLength={200} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Getmeds product offer for {hospital}" className={`${field} rounded-full`} />
           </label>
           <label className="block">
             <span className={label}>
@@ -196,10 +273,12 @@ export default function MessageHospitals({ hospitals, onClose }) {
               maxLength={10000}
               rows={8}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder={'Good day, {hospital}!\n\n…'}
+              placeholder={'We would like to share our latest offer with {hospital}…'}
               className={`${field} resize-y rounded-[14px]`}
             />
-            <span className="mt-1 block px-1 text-xs text-black/46">Write {'{hospital}'} where each hospital&apos;s own name should go.</span>
+            <span className="mt-1 block px-1 text-xs text-black/46">
+              The e-mail already opens with &ldquo;Dear (hospital),&rdquo;. Write {'{hospital}'} where each hospital&apos;s own name should go.
+            </span>
           </label>
 
           <section>
@@ -260,6 +339,59 @@ export default function MessageHospitals({ hospitals, onClose }) {
         </div>
       )}
 
+      </div>
+
+      {step !== 'done' && (
+        <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className={label}>Preview</span>
+            {picked.length > 1 ? (
+              <label className="flex min-w-0 items-center gap-1.5 text-xs text-black/62">
+                As
+                <select
+                  value={previewHospital?.agency_key || ''}
+                  onChange={(e) => setPreviewKey(e.target.value)}
+                  className="min-w-0 max-w-[16rem] truncate rounded-full border border-[#CBD5E1] bg-white px-2.5 py-1 text-xs text-black focus:border-[#1EA0DA] focus:outline-none"
+                >
+                  <option value="">All selected hospitals ({picked.length})</option>
+                  {picked.map((h) => (
+                    <option key={h.agency_key} value={h.agency_key}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+                will see it
+              </label>
+            ) : (
+              <span className="text-xs text-black/46">{previewHospital ? `As ${previewHospital.name} will see it` : ''}</span>
+            )}
+          </div>
+          <div className="mt-2 overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC]">
+            <div className="space-y-0.5 border-b border-[#E2E8F0] bg-white px-4 py-2.5 text-xs">
+              <p className="truncate">
+                <span className="text-black/46">To: </span>
+                <span className="text-black">
+                  {previewHospital
+                    ? previewHospital.emails.join(', ')
+                    : picked.length
+                      ? `${picked.length} hospitals, each at its own address: ${picked.flatMap((h) => h.emails).join(', ')}`
+                      : '—'}
+                </span>
+              </p>
+              {!previewHospital && picked.length > 1 && (
+                <p className="text-black/46">Each hospital gets its own e-mail, with its name where {placeholderName} is shown.</p>
+              )}
+              <p className="truncate">
+                <span className="text-black/46">Subject: </span>
+                <span className="font-semibold text-black">{fill(subject) || '(no subject yet)'}</span>
+              </p>
+            </div>
+            <EmailFrame html={preview.html} />
+          </div>
+        </aside>
+      )}
+      </div>
+
       {step === 'done' && result && (
         <div className="space-y-3">
           <p className={`rounded-[14px] border px-4 py-3 text-sm ${result.sent ? 'border-[#61A644]/30 bg-[#61A644]/8 text-[#2F5321]' : 'border-[#B3312C]/25 bg-[#B3312C]/6 text-[#B3312C]'}`}>
@@ -280,5 +412,44 @@ export default function MessageHospitals({ hospitals, onClose }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+// The e-mail drawn at its real 640px width and scaled down to fit the preview column
+const EMAIL_WIDTH = 640;
+function EmailFrame({ html }) {
+  const box = useRef(null);
+  const frame = useRef(null);
+  const [scale, setScale] = useState(1);
+  const [height, setHeight] = useState(900);
+
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setScale(Math.min(1, el.clientWidth / EMAIL_WIDTH));
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+
+  const measure = () => {
+    const doc = frame.current?.contentDocument;
+    if (doc) setHeight(doc.documentElement.scrollHeight);
+  };
+
+  return (
+    <div ref={box} className="max-h-[62dvh] overflow-y-auto overscroll-contain">
+      <div style={{ height: height * scale }}>
+        <iframe
+          ref={frame}
+          title="E-mail preview"
+          sandbox="allow-same-origin"
+          onLoad={measure}
+          srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff">${html}</body></html>`}
+          style={{ width: EMAIL_WIDTH, height, transform: `scale(${scale})`, transformOrigin: '0 0', border: 0, display: 'block' }}
+        />
+      </div>
+    </div>
   );
 }

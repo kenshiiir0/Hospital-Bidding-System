@@ -38,6 +38,8 @@ const nextConfig = {
       "./node_modules/@tesseract.js-data/eng/package.json",
       "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*",
     ],
+    // Message Hospitals puts the e-mail design's pictures inside every e-mail it sends
+    "/api/hospitals/message": ["./public/email/*"],
   },
   // PS-PhilGEPS Bid Match is part of the merged Bid Match at / (user, 2026-11-06): old links and bookmarks go there
   async redirects() {
