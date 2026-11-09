@@ -2,6 +2,7 @@ import { requireUser } from '@/lib/auth';
 import { mailConfigured, sendMail } from '@/lib/awardNotify.mjs';
 import { logActivity } from '@/lib/activityLog.mjs';
 import { createClient } from '@supabase/supabase-js';
+import { MESSAGE_TEST_TO } from '@/lib/messageTestMode';
 
 export const maxDuration = 120;
 
@@ -53,18 +54,24 @@ export async function POST(request) {
 
   const results = [];
   for (const h of hospitals) {
-    if (!h.emails?.length) {
+    if (!MESSAGE_TEST_TO && !h.emails?.length) {
       results.push({ name: h.name, status: 'skipped', error: 'No e-mail address' });
       continue;
     }
     const fill = (s) => s.replaceAll('{hospital}', titleCase(h.name));
     const text = fill(message);
-    const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111">${esc(text).replace(/\n/g, '<br>')}</div>`;
+    let html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111">${esc(text).replace(/\n/g, '<br>')}</div>`;
+    // Test mode: the e-mail goes only to the test address, with a note of who would have received it
+    const to = MESSAGE_TEST_TO ? [MESSAGE_TEST_TO] : h.emails;
+    if (MESSAGE_TEST_TO) {
+      const would = h.emails?.length ? h.emails.join(', ') : 'no e-mail address on the Hospital List';
+      html = `<div style="font-family:Arial,sans-serif;font-size:12px;color:#7A4B00;background:#FFF4DB;border:1px solid #F0D58C;border-radius:8px;padding:8px 12px;margin-bottom:12px">TEST — not sent to the hospital. Would go to ${esc(titleCase(h.name))}: ${esc(would)}</div>${html}`;
+    }
     try {
-      await sendMail({ to: h.emails.join(', '), subject: fill(subject), text, html, attachments });
-      results.push({ name: h.name, status: 'sent', to: h.emails });
+      await sendMail({ to: to.join(', '), subject: fill(subject), text, html, attachments });
+      results.push({ name: h.name, status: 'sent', to, test: !!MESSAGE_TEST_TO });
     } catch (e) {
-      results.push({ name: h.name, status: 'failed', to: h.emails, error: e.message });
+      results.push({ name: h.name, status: 'failed', to, error: e.message });
     }
   }
 
@@ -74,7 +81,7 @@ export async function POST(request) {
     event: 'hospital-message',
     status: !sent ? 'failed' : failed.length ? 'partial' : 'success',
     by: user.email,
-    summary: `Message "${subject}" e-mailed to ${sent} of ${results.length} hospital${results.length === 1 ? '' : 's'}`,
+    summary: `${MESSAGE_TEST_TO ? `TEST (to ${MESSAGE_TEST_TO}) ` : ''}Message "${subject}" e-mailed to ${sent} of ${results.length} hospital${results.length === 1 ? '' : 's'}`,
     details: { subject, message, attachments: files.map((f) => f.name), results },
   });
   return Response.json({ ok: sent > 0, sent, results });

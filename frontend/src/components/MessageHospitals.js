@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import Modal from '@/components/Modal';
+import { MESSAGE_TEST_TO } from '@/lib/messageTestMode';
 
 // Message Hospitals (Hospital List): one message, with images or files attached, e-mailed to every chosen hospital
 // (api/hospitals/message, one e-mail per hospital to its own addresses). Two steps: write, then confirm.
@@ -80,7 +81,11 @@ export default function MessageHospitals({ hospitals, onClose }) {
   return (
     <Modal
       title="Message Hospitals"
-      subtitle="One message, e-mailed to each chosen hospital at its own address."
+      subtitle={
+        MESSAGE_TEST_TO
+          ? `Test mode: every e-mail goes to ${MESSAGE_TEST_TO} only, not to the hospitals.`
+          : 'One message, e-mailed to each chosen hospital at its own address.'
+      }
       busy={busy}
       onClose={onClose}
       width="sm:max-w-2xl"
@@ -240,7 +245,9 @@ export default function MessageHospitals({ hospitals, onClose }) {
       {step === 'done' && result && (
         <div className="space-y-3">
           <p className={`rounded-[14px] border px-4 py-3 text-sm ${result.sent ? 'border-[#61A644]/30 bg-[#61A644]/8 text-[#2F5321]' : 'border-[#B3312C]/25 bg-[#B3312C]/6 text-[#B3312C]'}`}>
-            Sent to {result.sent} of {result.results.length} hospital{result.results.length === 1 ? '' : 's'}.
+            {MESSAGE_TEST_TO
+              ? `Test: ${result.sent} of ${result.results.length} e-mail${result.results.length === 1 ? '' : 's'} sent to ${MESSAGE_TEST_TO}. No hospital received it.`
+              : `Sent to ${result.sent} of ${result.results.length} hospital${result.results.length === 1 ? '' : 's'}.`}
           </p>
           {failed.length > 0 && (
             <ul className="space-y-1 rounded-[14px] border border-[#E2E8F0] p-3 text-xs">
