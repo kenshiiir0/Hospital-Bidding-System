@@ -24,10 +24,13 @@ const saveButton = 'rounded-lg bg-[#1EA0DA] px-4 py-2 text-xs font-semibold text
 const label = 'text-xs font-semibold uppercase tracking-wider text-black/62';
 const field = 'mt-1.5 w-full border border-[#CBD5E1] bg-white px-4 py-2.5 text-sm text-black placeholder:text-black/46 transition focus:border-[#1EA0DA] focus:outline-none focus:ring-2 focus:ring-[#1EA0DA]/25';
 
+// Test mode: the hospitals are deactivated (none ticked, none can be ticked); one test e-mail goes to MESSAGE_TEST_TO
+const TEST = !!MESSAGE_TEST_TO;
+
 export default function MessageHospitals({ hospitals, onClose }) {
   const reachable = hospitals.filter((h) => !h.archived_at && h.emails.length);
   const noEmail = hospitals.filter((h) => !h.archived_at && !h.emails.length).length;
-  const [chosen, setChosen] = useState(() => new Set(reachable.filter((h) => h.status !== 'prospect').map((h) => h.agency_key)));
+  const [chosen, setChosen] = useState(() => (TEST ? new Set() : new Set(reachable.filter((h) => h.status !== 'prospect').map((h) => h.agency_key))));
   // Opens with this month's season and its greeting (the standard design, empty, outside the season months)
   const [subject, setSubject] = useState(() => THEMES[themeFor()].sample?.subject || '');
   const [message, setMessage] = useState(() => THEMES[themeFor()].sample?.message || '');
@@ -41,16 +44,18 @@ export default function MessageHospitals({ hospitals, onClose }) {
   const total = files.reduce((sum, f) => sum + f.size, 0);
   const picked = reachable.filter((h) => chosen.has(h.agency_key));
   const addresses = picked.reduce((n, h) => n + h.emails.length, 0);
-  const ready = picked.length && subject.trim() && message.trim() && total <= MAX_BYTES;
+  const ready = (TEST || picked.length) && subject.trim() && message.trim() && total <= MAX_BYTES;
   const thisMonth = themeFor();
-  // Preview "All selected hospitals" (the default), with (Hospital Name) where each hospital's own name goes, or one of them
-  const previewHospital = picked.length === 1 ? picked[0] : picked.find((h) => h.agency_key === previewKey) || null;
+  // Preview "All selected hospitals" (the default), with (Hospital Name) where each hospital's own name goes, or one of
+  // them. In test mode it is the one test e-mail, with {hospital} as "Sample Hospital" like the server sends it.
+  const previewHospital = TEST ? null : picked.length === 1 ? picked[0] : picked.find((h) => h.agency_key === previewKey) || null;
   const placeholderName = '(Hospital Name)';
-  const fill = (s) => s.replaceAll('{hospital}', previewHospital ? titleCase(previewHospital.name) : placeholderName);
+  const previewName = TEST ? 'Sample Hospital' : previewHospital?.name || placeholderName;
+  const fill = (s) => s.replaceAll('{hospital}', titleCase(previewName));
   const preview = buildHospitalEmail({
     subject: fill(subject),
     message: fill(message),
-    hospital: previewHospital?.name || placeholderName,
+    hospital: previewName,
     files,
     theme,
     src: (file) => `/email/${file}`,
@@ -94,7 +99,7 @@ export default function MessageHospitals({ hospitals, onClose }) {
       body.append('subject', subject);
       body.append('message', message);
       body.append('theme', theme);
-      body.append('keys', JSON.stringify(picked.map((h) => h.agency_key)));
+      body.append('keys', JSON.stringify(TEST ? [] : picked.map((h) => h.agency_key)));
       for (const f of files) body.append('files', f);
       const res = await authFetch('/api/hospitals/message', { method: 'POST', body });
       const data = await res.json().catch(() => ({}));
@@ -114,8 +119,8 @@ export default function MessageHospitals({ hospitals, onClose }) {
     <Modal
       title="Message Hospitals"
       subtitle={
-        MESSAGE_TEST_TO
-          ? `Test mode: every e-mail goes to ${MESSAGE_TEST_TO} only, not to the hospitals.`
+        TEST
+          ? `Test mode: messages go only to ${MESSAGE_TEST_TO}, not to the hospitals.`
           : 'One message, e-mailed to each chosen hospital at its own address.'
       }
       busy={busy}
@@ -147,7 +152,13 @@ export default function MessageHospitals({ hospitals, onClose }) {
               Back
             </button>
             <button type="button" onClick={send} disabled={busy} className={saveButton}>
-              {busy ? `Sending to ${picked.length} hospitals…` : `Send to ${picked.length} hospital${picked.length === 1 ? '' : 's'}`}
+              {TEST
+                ? busy
+                  ? `Sending test to ${MESSAGE_TEST_TO}…`
+                  : `Send test to ${MESSAGE_TEST_TO}`
+                : busy
+                  ? `Sending to ${picked.length} hospitals…`
+                  : `Send to ${picked.length} hospital${picked.length === 1 ? '' : 's'}`}
             </button>
           </>
         )
@@ -157,13 +168,20 @@ export default function MessageHospitals({ hospitals, onClose }) {
       <div className="min-w-0">
       {step === 'write' && (
         <div className="space-y-4">
+          {TEST && (
+            <p role="status" className="rounded-[14px] border border-[#F0D58C] bg-[#FFF4DB] px-4 py-3 text-xs leading-relaxed text-[#7A4B00]">
+              <span className="font-semibold">Testing only.</span> Messaging is routed only to <span className="font-semibold">{MESSAGE_TEST_TO}</span>. The hospitals below are
+              deactivated for now: no hospital will receive this message. {'{hospital}'} is shown as &ldquo;Sample Hospital&rdquo; in the test e-mail.
+            </p>
+          )}
           <section>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className={label}>Send to</span>
               <span className="text-xs text-black/62">
-                {picked.length} hospital{picked.length === 1 ? '' : 's'} · {addresses} e-mail address{addresses === 1 ? '' : 'es'}
+                {TEST ? `${MESSAGE_TEST_TO} only` : `${picked.length} hospital${picked.length === 1 ? '' : 's'} · ${addresses} e-mail address${addresses === 1 ? '' : 'es'}`}
               </span>
             </div>
+            <fieldset disabled={TEST} className={TEST ? 'opacity-50' : ''}>
             <div className="mt-2 flex flex-wrap gap-2">
               {GROUPS.map(([status, name]) => (
                 <button
@@ -202,7 +220,7 @@ export default function MessageHospitals({ hospitals, onClose }) {
             <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-[14px] border border-[#E2E8F0] p-2">
               {reachable.map((h) => (
                 <li key={h.agency_key}>
-                  <label className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1 text-xs hover:bg-[#1EA0DA]/4">
+                  <label className={`flex items-start gap-2 rounded-lg px-2 py-1 text-xs ${TEST ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-[#1EA0DA]/4'}`}>
                     <input type="checkbox" checked={chosen.has(h.agency_key)} onChange={() => toggle(h.agency_key)} className="mt-0.5 accent-[#1EA0DA]" />
                     <span>
                       <span className="text-black">{h.name}</span>
@@ -212,7 +230,8 @@ export default function MessageHospitals({ hospitals, onClose }) {
                 </li>
               ))}
             </ul>
-            {noEmail > 0 && <p className="mt-1.5 text-xs text-black/46">{noEmail} hospital{noEmail === 1 ? ' has' : 's have'} no e-mail address yet and cannot be messaged here.</p>}
+            </fieldset>
+            {!TEST && noEmail > 0 && <p className="mt-1.5 text-xs text-black/46">{noEmail} hospital{noEmail === 1 ? ' has' : 's have'} no e-mail address yet and cannot be messaged here.</p>}
           </section>
 
           <section>
@@ -322,12 +341,20 @@ export default function MessageHospitals({ hospitals, onClose }) {
         <div className="space-y-3">
           <section className="rounded-[14px] border border-[#E2E8F0] p-4 text-sm">
             <p className="text-black">
-              <span className="font-semibold">{picked.length}</span> hospital{picked.length === 1 ? '' : 's'} will each get their own e-mail ({addresses} address{addresses === 1 ? '' : 'es'}). This cannot be undone.
+              {TEST ? (
+                <>
+                  One test e-mail goes to <span className="font-semibold">{MESSAGE_TEST_TO}</span> only. No hospital will receive it.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold">{picked.length}</span> hospital{picked.length === 1 ? '' : 's'} will each get their own e-mail ({addresses} address{addresses === 1 ? '' : 'es'}). This cannot be undone.
+                </>
+              )}
             </p>
             <p className="mt-3 text-xs text-black/46">Subject</p>
-            <p className="text-black">{subject.replaceAll('{hospital}', picked[0]?.name || '')}</p>
-            <p className="mt-3 text-xs text-black/46">Message (as {picked[0]?.name} will see it)</p>
-            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-black/85">{message.replaceAll('{hospital}', picked[0]?.name || '')}</p>
+            <p className="text-black">{subject.replaceAll('{hospital}', previewName)}</p>
+            <p className="mt-3 text-xs text-black/46">Message (as {previewName} will see it)</p>
+            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-black/85">{message.replaceAll('{hospital}', previewName)}</p>
             {files.length > 0 && (
               <>
                 <p className="mt-3 text-xs text-black/46">Attachments</p>
@@ -363,7 +390,7 @@ export default function MessageHospitals({ hospitals, onClose }) {
                 will see it
               </label>
             ) : (
-              <span className="text-xs text-black/46">{previewHospital ? `As ${previewHospital.name} will see it` : ''}</span>
+              <span className="text-xs text-black/46">{TEST ? `The test e-mail, as ${MESSAGE_TEST_TO} will see it` : previewHospital ? `As ${previewHospital.name} will see it` : ''}</span>
             )}
           </div>
           <div className="mt-2 overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-[#F8FAFC]">
@@ -371,7 +398,9 @@ export default function MessageHospitals({ hospitals, onClose }) {
               <p className="truncate">
                 <span className="text-black/46">To: </span>
                 <span className="text-black">
-                  {previewHospital
+                  {TEST
+                    ? MESSAGE_TEST_TO
+                    : previewHospital
                     ? previewHospital.emails.join(', ')
                     : picked.length
                       ? `${picked.length} hospitals, each at its own address: ${picked.flatMap((h) => h.emails).join(', ')}`
@@ -395,8 +424,10 @@ export default function MessageHospitals({ hospitals, onClose }) {
       {step === 'done' && result && (
         <div className="space-y-3">
           <p className={`rounded-[14px] border px-4 py-3 text-sm ${result.sent ? 'border-[#61A644]/30 bg-[#61A644]/8 text-[#2F5321]' : 'border-[#B3312C]/25 bg-[#B3312C]/6 text-[#B3312C]'}`}>
-            {MESSAGE_TEST_TO
-              ? `Test: ${result.sent} of ${result.results.length} e-mail${result.results.length === 1 ? '' : 's'} sent to ${MESSAGE_TEST_TO}. No hospital received it.`
+            {TEST
+              ? result.sent
+                ? `Test e-mail sent to ${MESSAGE_TEST_TO}. No hospital received it.`
+                : `The test e-mail to ${MESSAGE_TEST_TO} was not sent.`
               : `Sent to ${result.sent} of ${result.results.length} hospital${result.results.length === 1 ? '' : 's'}.`}
           </p>
           {failed.length > 0 && (
