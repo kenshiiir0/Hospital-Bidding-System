@@ -278,6 +278,36 @@ export function readHospitalAbstract(wb) {
   return { sheet: sheets.join(', '), results, skippedNoBids };
 }
 
+/**
+ * A hospital's own abstract with every bidder's price (for the Overall Abstract tracker, lib/abstractTracker.mjs):
+ * one row per item, items nobody bid on included. Returns null when no sheet is in this format, else
+ * { sheet, rows: [{ sheet, item_no, description, bids: [{ no, name, price }], ourColumn, sheetBidders }] } (ourColumn:
+ * 2MG is a column on that sheet, so "no price" there means we did not bid; sheetBidders: every bidder on that sheet).
+ */
+export function readHospitalBidRows(wb) {
+  const rows = [];
+  const sheets = [];
+  for (const ws of wb.worksheets.filter((s) => s.state !== 'veryHidden')) {
+    const head = abstractHeader(ws);
+    if (!head) continue;
+    sheets.push(ws.name.trim());
+    const ourColumn = head.bidders.some((b) => isOurBidder(b.name));
+    ws.eachRow((row, n) => {
+      if (n <= head.row) return;
+      const value = (c) => cellText(row.getCell(c).value);
+      const description = clean(value(head.item));
+      if (!description) return;
+      const bids = head.bidders
+        .map((b) => ({ no: b.no, name: b.name, price: typeof value(b.c) === 'number' ? value(b.c) : amount(/\d/.test(String(value(b.c) ?? '')) ? value(b.c) : null) }))
+        .filter((b) => b.price != null && b.price > 0)
+        .map((b) => ({ ...b, price: Math.round(b.price * 10000) / 10000 }));
+      rows.push({ sheet: ws.name.trim(), item_no: head.no ? clean(value(head.no)) : '', description, bids, ourColumn, sheetBidders: head.bidders.map((b) => b.name) });
+    });
+  }
+  if (!sheets.length) return null;
+  return { sheet: sheets.join(', '), rows };
+}
+
 /** The hospital and year chosen when importing, added to every result of readHospitalAbstract. */
 export const completeHospitalAbstract = (results, { hospital, year }) => {
   const name = clean(hospital).toUpperCase();
