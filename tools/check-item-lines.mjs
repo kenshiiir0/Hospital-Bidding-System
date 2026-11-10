@@ -8,7 +8,7 @@ import { withOcrUnits } from '../frontend/src/lib/products.mjs';
 import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
 import { needsDocuments, supplementNos } from '../frontend/src/lib/philgepsSync.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -585,5 +585,8 @@ assert.equal(fullyRead('done', [{ kind: 'text' }]), true, 'read to the end');
 assert.equal(fullyRead('done', [{ kind: 'scanned' }]), false, 'a scan waiting for OCR is kept');
 assert.equal(fullyRead('done', [{ kind: 'text', ocr_waiting: true }]), false, 'scanned pages waiting for OCR are kept');
 assert.equal(fullyRead('failed', [{ kind: 'text' }]), false, 'a failed reading keeps its files');
+// Scanned pages waiting for OCR are queued for the GitHub OCR job (they waited for ever, 2026-11-10); a tried one isn't
+assert.equal(ocrPending([{ kind: 'text', ocr_waiting: true }]), true, 'pages waiting for OCR are read where OCR runs');
+assert.equal(ocrPending([{ kind: 'text', ocr_error: 'OCR failed' }]), false, 'a file OCR failed on where it runs is not queued every hour');
 
 console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4} rows).`);

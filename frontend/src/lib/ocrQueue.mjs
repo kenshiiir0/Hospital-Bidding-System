@@ -15,10 +15,12 @@ export function admin() {
 
 // Scanned documents of a reading: tried = the current OCR (tesseract) already ran and found no readable text.
 // One an older OCR found nothing in counts as waiting: the current one reads more (OCR_VERSION in ocr.mjs).
-// So does one an older OCR read (ocr_pages, kind 'text'): the current one reads it better.
+// So does one an older OCR read (ocr_pages, kind 'text'): the current one reads it better. And a text file with
+// scanned pages OCR couldn't run on where it was read (ocr_waiting, psDocs.mjs): until OCR reads them its file is
+// kept (documentKeep.mjs fullyRead), so one left out here waited for ever (64 PS files, 113 MB, 2026-11-10).
 const scannedIn = (read) =>
   (read || [])
-    .filter((d) => d.kind === 'scanned' || (d.ocr_pages && d.ocr !== OCR_VERSION))
+    .filter((d) => d.kind === 'scanned' || d.ocr_waiting || (d.ocr_pages && d.ocr !== OCR_VERSION))
     .map((d) => ({ name: d.name, tried: d.kind === 'scanned' && d.ocr === OCR_VERSION }));
 
 // [{ side: 'ps' | 'philgeps', ref, bucket, doc: { name, path, size }, since, tried }] oldest first.

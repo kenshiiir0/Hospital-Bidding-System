@@ -1333,7 +1333,8 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
 
 // Documents read before OCR, or by an older OCR, that were scanned: read them again
 // (never while OCR is off here: they would be queued again every few minutes)
-export const ocrPending = (read) => OCR_ENABLED && (read || []).some((d) => (d.kind === 'scanned' || d.ocr_pages) && d.ocr !== OCR_VERSION);
+// (ocr_waiting: a text file with scanned pages OCR couldn't run on where it was read, e.g. the deployed server)
+export const ocrPending = (read) => OCR_ENABLED && (read || []).some((d) => d.ocr_waiting || ((d.kind === 'scanned' || d.ocr_pages) && d.ocr !== OCR_VERSION));
 
 // ---------- one tender ----------
 
@@ -1531,8 +1532,11 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       continue;
     }
     // ocr: which OCR read its scanned pages (an older one's are read again where OCR runs, ocrPending)
-    // ocr_waiting: scanned pages left for OCR where it runs (the file must be kept until then, lib/documentKeep.mjs)
-    read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }), ...(ocrError && { ocr_waiting: true }) });
+    // ocr_waiting: scanned pages left for OCR where it runs (the file must be kept until then, lib/documentKeep.mjs).
+    // Where OCR runs and still failed, it is marked tried (ocr_error + this OCR's version) and not queued again: a
+    // waiting mark there would download the same files every hour.
+    const ocrMark = ocrError && (OCR_ENABLED ? { ocr_error: ocrError.slice(0, 200), ocr: OCR_VERSION } : { ocr_waiting: true });
+    read.push({ name: doc.name, kind: 'text', pages: pages.length, ...(ocrPages && { ocr_pages: ocrPages, ocr: ocrVersion }), ...ocrMark });
     const marked = pages.map(quantityColumnOf);
     texts.push(marked.map((m) => m.text).join('\n'));
     // A long table's header carried on to the pages it goes on to (carryHeader)
