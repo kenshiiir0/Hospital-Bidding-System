@@ -24,6 +24,16 @@ const sizeText = (bytes) =>
 
 // A bid bulletin / supplement: fetched from the bulletin's page (PhilGEPS, philgepsSync.mjs fetchBulletins), a
 // PS-PhilGEPS corrigendum file, or named so. Shown apart from the bidding documents (user, 2026-11-05)
+// When a bid bulletin was published on the portal: PS-PhilGEPS gives the time (published_at, psSync.mjs), PhilGEPS
+// the day (published "YYYY-MM-DD", from its Bid Supplements list). Shown on its card and in the line below (user, 2026-11-11)
+export const bulletinPublished = (b) =>
+  b.published_at
+    ? formatInstant(b.published_at)
+    : b.published
+      ? new Date(`${b.published}T00:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+const publishedTime = (b) => (b.published_at ? Date.parse(b.published_at) : b.published ? Date.parse(`${b.published}T00:00:00+08:00`) : Infinity);
+
 export const isBulletin = (doc) =>
   doc.source === 'bulletin' ||
   Boolean(doc.supplement_no) ||
@@ -90,9 +100,21 @@ export default function DocumentsPanel({ documents = [], pendingBulletins = [], 
         <p className="text-xs text-black/46">{empty}</p>
       )}
       {footer && <p className="mt-2 px-1 text-[11px] leading-relaxed text-black/46">{footer}</p>}
+      <BulletinDates bulletins={[...bulletins, ...pendingBulletins]} />
       {children}
     </PanelSection>
   );
+}
+
+// "Bid bulletins published: No. 1 on Oct 29, 2026, 10:30 AM · No. 2 on Nov 4, 2026", oldest first
+function BulletinDates({ bulletins }) {
+  const dated = bulletins.filter(bulletinPublished).sort((a, b) => publishedTime(a) - publishedTime(b));
+  if (!dated.length) return null;
+  const text =
+    dated.length === 1
+      ? `Bid bulletin published ${bulletinPublished(dated[0])}.`
+      : `Bid bulletins published: ${dated.map((b, i) => `No. ${i + 1} on ${bulletinPublished(b)}`).join(' · ')}.`;
+  return <p className="mt-1 px-1 text-[11px] leading-relaxed text-black/46">{text}</p>;
 }
 
 function GroupTitle({ label, count }) {
@@ -105,13 +127,13 @@ function GroupTitle({ label, count }) {
 
 // A bulletin PhilGEPS lists whose file isn't here yet: its title and number, why, and the PhilGEPS list
 function PendingBulletin({ bulletin, link }) {
-  const date = bulletin.published ? new Date(`${bulletin.published}T00:00:00+08:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+  const date = bulletinPublished(bulletin);
   return (
     <li className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-3 sm:flex-nowrap">
       <div className="min-w-0 flex-1 basis-56">
         <div className="break-words text-xs font-semibold text-black">{bulletin.title}</div>
         <div className="mt-0.5 text-[11px] text-black/46">
-          {[bulletin.no, bulletin.type, date, bulletin.noFile ? 'No file attached on PhilGEPS' : 'File comes with the next documents Sync'].filter(Boolean).join(' • ')}
+          {[bulletin.no, bulletin.type, date && `Published ${date}`, bulletin.noFile ? 'No file attached on PhilGEPS' : 'File comes with the next documents Sync'].filter(Boolean).join(' • ')}
         </div>
       </div>
       {link && (
@@ -128,6 +150,7 @@ function FileRow({ doc, bucket, tenderRef, source, canOpen }) {
   const meta = [
     `${KINDS[ext] || ext.toUpperCase() || 'File'} document`,
     sizeText(doc.size),
+    bulletinPublished(doc) && `Published ${bulletinPublished(doc)}`,
     doc.downloaded_at && `Downloaded ${formatInstant(doc.downloaded_at)}`,
     // Read, then not kept: none of our products (lib/documentKeep.mjs)
     doc.removed && 'Not kept: none of our products',

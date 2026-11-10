@@ -109,7 +109,11 @@ export default function TenderDetails({ bid, onClose }) {
             .map((item) => ({ ...item, where: 'Description' })),
         ];
   const supplements = d.supplements || [];
-  const documents = d.documents || [];
+  // A bulletin file carries its publish date from the Bid Supplements list (shown on its card, DocumentsPanel)
+  const documents = (d.documents || []).map((doc) => {
+    const supplement = doc.supplement_no && supplements.find((s) => s.no === doc.supplement_no);
+    return supplement?.published && !doc.published ? { ...doc, published: supplement.published } : doc;
+  });
   const remark = documentsRemark(bid);
   const validRef = /^\d+$/.test(bid.ref_no || '');
 

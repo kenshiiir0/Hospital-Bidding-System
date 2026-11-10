@@ -122,6 +122,15 @@ export async function getPage(session, url, options) {
 // ---------- reading pages ----------
 
 const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+// "29-Oct-2026 10:30 AM" (Philippine time, as PS-PhilGEPS shows it) -> ISO instant; null when not a date
+const MONTH_NO = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+export function psInstant(text) {
+  const m = /(\d{1,2})-([A-Za-z]{3})-(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*([AP]M))?/i.exec(String(text || ''));
+  if (!m || !(m[2].toLowerCase() in MONTH_NO)) return null;
+  const hour = m[4] ? (Number(m[4]) % 12) + (/p/i.test(m[6]) ? 12 : 0) : 0;
+  return new Date(Date.UTC(Number(m[3]), MONTH_NO[m[2].toLowerCase()], Number(m[1]), hour - 8, Number(m[5] || 0))).toISOString();
+}
+
 const absolute = (href) => {
   try {
     return new URL(href, HOST).href;
@@ -385,11 +394,20 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
   }
   // Bid bulletins / supplements ("Bid Supplements: 2" -> tender_corr_details): their files are read with the rest;
   // a bulletin often replaces the Price Schedule (user, 2026-11-05: Davao Regional Medical Center's Bid Bulletin No. 1)
+  // Each bulletin file's row ends with its "Supplement Publish Date" (29-Oct-2026 10:30 AM), shown on its card
+  // (published_at, user 2026-11-11)
+  const bulletinDates = new Map();
   for (const supplements of root.querySelectorAll('a[href*="tender_corr_details"]')) {
     if (!/[1-9]/.test(supplements.text)) continue;
     try {
       const list = parse(await getPage(session, absolute(supplements.getAttribute('href')), { ajax: true }));
-      for (const a of list.querySelectorAll('a[href*="/portal_documents/"]')) links.add(absolute(a.getAttribute('href')));
+      for (const a of list.querySelectorAll('a[href*="/portal_documents/"]')) {
+        const url = absolute(a.getAttribute('href'));
+        links.add(url);
+        const cells = a.closest('tr')?.querySelectorAll('td') || [];
+        const published = psInstant(cells[cells.length - 1]?.text);
+        if (published) bulletinDates.set(url, published);
+      }
     } catch (e) {
       errors.push(`Bid supplements not read (${e.message}); the next Sync asks again.`);
     }
@@ -401,17 +419,18 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
   // One entry per file: the same bulletin is linked from the Document Preview and the Bid Supplements list, at two
   // addresses (PS 112434's "Supplemental_Bid_Bulletin_No._2026_003.pdf" was listed and read twice)
   const named = new Set();
+  const dated = (url) => (bulletinDates.has(url) ? { published_at: bulletinDates.get(url) } : {});
   for (const url of links) {
     const name = decodeURIComponent(new URL(url).pathname.split('/').pop()).replace(/[<>:"/\\|?*]/g, '_');
     const key = storageName(name);
     if (named.has(key)) continue;
     named.add(key);
     if (have.has(key)) {
-      documents.push({ name, size: have.get(key), url, path: `${ref}/${key}` });
+      documents.push({ name, size: have.get(key), url, path: `${ref}/${key}`, ...dated(url) });
       continue;
     }
     if (notKept.has(name)) {
-      documents.push({ ...notKept.get(name), url, removed: 'not ours' });
+      documents.push({ ...notKept.get(name), url, removed: 'not ours', ...dated(url) });
       continue;
     }
     try {
@@ -425,7 +444,7 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
       if (error && !/exists/i.test(error.message)) throw new Error(error.message);
       // Read from memory by this Sync's reading, not downloaded back out of Storage (psDocs.mjs rememberDownload)
       rememberDownload(BUCKET, `${ref}/${key}`, body);
-      documents.push({ name, size: body.length, url, path: `${ref}/${key}` });
+      documents.push({ name, size: body.length, url, path: `${ref}/${key}`, ...dated(url) });
     } catch (e) {
       errors.push(`${name}: ${e.message}`);
     }
