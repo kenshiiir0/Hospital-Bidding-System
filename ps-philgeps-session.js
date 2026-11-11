@@ -167,14 +167,15 @@ const LIVE_FRAME_MS = Number(process.env.PS_LIVE_FRAME_MS) || 500;
 async function launchLive() {
     const puppeteer = require('puppeteer');
     // PS_LIVE_HEADFUL=1: a normal Chrome on a virtual screen (the cloud log-in, tools/ps-connect-cloud.mjs under
-    // xvfb), which Google's captcha trusts more than a hidden browser
+    // xvfb) or on the office log-in laptop's own screen, which Google's captcha trusts more than a hidden browser
     const headful = process.env.PS_LIVE_HEADFUL === '1';
     // Started like a normal program and attached to, as the log-in window here is (launchLoginWindow): Chrome
     // launched by Puppeteer is marked as automated, and the captcha then asked for picture after picture (about 20
     // on the cloud log-in, user 2026-11-03)
     if (headful) {
         try {
-            return await startChromeAndAttach(LINUX_CHROME.find((p) => fs.existsSync(p)) || puppeteer.executablePath(), [
+            // Linux on GitHub's computer, Windows on the office log-in laptop (tools/ps-connect-host.js)
+            return await startChromeAndAttach([...LINUX_CHROME, ...CHROME_PATHS].find((p) => fs.existsSync(p)) || puppeteer.executablePath(), [
                 `--window-size=${LIVE_VIEWPORT.width},${LIVE_VIEWPORT.height + 140}`,
                 'about:blank'
             ], LIVE_VIEWPORT);

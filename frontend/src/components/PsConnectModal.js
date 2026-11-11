@@ -36,7 +36,9 @@ export default function PsConnectModal({ connect, onHide, onCancel, onPopup, onS
       }
       footer={
         <>
-          <p className="mr-auto text-xs text-black/46">Runs on a secure cloud computer; nothing is installed on this device.</p>
+          <p className="mr-auto text-xs text-black/46">
+            {connect?.host ? 'Runs on the office log-in laptop' : 'Runs on a secure cloud computer'}; nothing is installed on this device.
+          </p>
           {onSetup && (
             <button
               type="button"
