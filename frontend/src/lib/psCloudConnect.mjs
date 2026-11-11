@@ -25,17 +25,19 @@ const HOST_TAKE_MS = 60 * 1000;
 const hostMissed = (row) => Boolean(row.job?.host) && row.job.status === 'starting' && Date.now() - Date.parse(row.updated_at || 0) > HOST_TAKE_MS;
 const live = (row) => ['starting', 'connecting'].includes(row.job?.status) && Date.now() - Date.parse(row.updated_at || 0) < STALE_MS && !hostMissed(row);
 
-/** The cloud connect's status as the dashboard shows it ({ job: { status, view, error, by } }), without the picture */
+/** The cloud connect's status as the dashboard shows it ({ job: { status, view, error, by, hostOnline } }), without
+ * the picture. hostOnline: the office log-in laptop is on, so every device's Sync uses it (even a browser that chose
+ * the pop-up, which on a laptop not set up opened nothing, user 2026-11-12) */
 export async function cloudConnectStatus() {
-  const row = await readRow('ps-connect');
-  if (!row.job) return { job: { status: 'idle' } };
+  const [row, hostOn] = await Promise.all([readRow('ps-connect'), hostOnline().catch(() => false)]);
+  if (!row.job) return { job: { status: 'idle', hostOnline: hostOn } };
   const { frame, ...job } = row.job;
   if (hostMissed(row)) {
-    return { job: { ...job, status: 'failed', error: 'The office log-in laptop did not answer. Press Sync PS-PhilGEPS again.' } };
+    return { job: { ...job, hostOnline: hostOn, status: 'failed', error: 'The office log-in laptop did not answer. Press Sync PS-PhilGEPS again.' } };
   }
   // A job GitHub stopped without a word (time limit, cancelled) is not "connecting" for ever
-  if (['starting', 'connecting'].includes(job.status) && !live(row)) return { job: { ...job, status: 'failed', error: 'The log-in browser stopped. Press Sync PS-PhilGEPS to try again.' } };
-  return { job: { ...job, hasFrame: Boolean(frame) } };
+  if (['starting', 'connecting'].includes(job.status) && !live(row)) return { job: { ...job, hostOnline: hostOn, status: 'failed', error: 'The log-in browser stopped. Press Sync PS-PhilGEPS to try again.' } };
+  return { job: { ...job, hostOnline: hostOn, hasFrame: Boolean(frame) } };
 }
 
 // The office log-in laptop (tools/ps-connect-host.js) checked in this recently: the log-in opens there, in its own

@@ -217,7 +217,8 @@ export function PsPortalProvider({ children }) {
   const pressSync = () => {
     if (connected) return runSync();
     setSyncAfterConnect(true);
-    if (connect && !popupHere()) post('/api/ps-philgeps', loadConnect);
+    // The office log-in laptop, when it is on, serves every device (lib/psCloudConnect.mjs), pop-up choice or not
+    if (connect && (connect.hostOnline || !popupHere())) post('/api/ps-philgeps', loadConnect);
     else openPopupLogin().catch((err) => setRequestError(`The log-in could not be opened: ${err.message}`));
   };
 
@@ -391,7 +392,7 @@ function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
   const inDialog = connect?.status === 'starting' || (connect?.status === 'connecting' && connect.view === 'live');
   if (inDialog) {
     const key = connect.id || connect.startedAt || 'live';
-    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={() => { setHidden(key); switchToPopup(); }} onSetup={downloadLaptopSetup} />;
+    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={connect.hostOnline ? null : () => { setHidden(key); switchToPopup(); }} onSetup={connect.hostOnline ? null : downloadLaptopSetup} />;
     return (
       <Notice>
         The PS-PhilGEPS log-in is waiting for you to confirm you are not a robot.{' '}
