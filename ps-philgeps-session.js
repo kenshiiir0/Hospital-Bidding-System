@@ -138,6 +138,8 @@ async function startChromeAndAttach(chrome, extraArgs, viewport) {
         `--remote-debugging-port=${port}`,
         '--no-first-run',
         '--no-default-browser-check',
+        // A log-in window closed by the script is not a crash: no "Restore pages?" bubble on the next one
+        '--hide-crash-restore-bubble',
         ...extraArgs
     ], { stdio: 'ignore' });
     let exited = null;
@@ -175,7 +177,13 @@ async function launchLive() {
     if (headful) {
         try {
             // Linux on GitHub's computer, Windows on the office log-in laptop (tools/ps-connect-host.js)
+            // On the office laptop the window opens off the screen (out of the way of whoever uses the laptop) and keeps
+            // drawing there: Windows otherwise counts it as hidden and Chrome stops painting it (no picture to show)
+            const offScreen = process.platform === 'win32'
+                ? ['--window-position=-2400,0', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding']
+                : [];
             return await startChromeAndAttach([...LINUX_CHROME, ...CHROME_PATHS].find((p) => fs.existsSync(p)) || puppeteer.executablePath(), [
+                ...offScreen,
                 `--window-size=${LIVE_VIEWPORT.width},${LIVE_VIEWPORT.height + 140}`,
                 'about:blank'
             ], LIVE_VIEWPORT);
@@ -250,6 +258,33 @@ async function openLoginForm(page) {
     }
 }
 
+// User type, username and password into the log-in form, checked afterwards. The log-in window keeps its Chrome
+// profile between connects, so Chrome may already have filled the fields (saved password / autofill); typing
+// would add to that ("namename"), so they are emptied first. If typing didn't stick (a window without focus, a
+// page script resetting the form), the values are set directly, with the events the page's checks listen to.
+async function fillCredentials(page) {
+    const values = { username: process.env.PS_PHILGEPS_USERNAME, password: process.env.PS_PHILGEPS_PASSWORD };
+    await page.select('select[name=type]', USER_TYPE);
+    for (const name of Object.keys(values)) {
+        await page.$eval(`input[name=${name}]`, (el) => {
+            el.value = '';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.type(`input[name=${name}]`, values[name]);
+    }
+    const ok = () => page.evaluate((v) => Object.keys(v).every((n) => document.querySelector(`input[name=${n}]`)?.value === v[n]), values);
+    if (await ok()) return;
+    await page.evaluate((v) => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        for (const [name, value] of Object.entries(v)) {
+            const el = document.querySelector(`input[name=${name}]`);
+            setter.call(el, value);
+            for (const type of ['input', 'change', 'blur']) el.dispatchEvent(new Event(type, { bubbles: true }));
+        }
+    }, values);
+    sessionLog(`Connect: typing did not stick; username and password set directly (${(await ok()) ? 'ok' : 'still empty'})`);
+}
+
 // Fills user type, username and password, waits for a person to tick the reCAPTCHA (in a visible Chrome
 // window, or with live: on the dashboard's picture), then submits and saves the session. Never solves the
 // captcha itself.
@@ -296,17 +331,10 @@ async function connectWindow({ live, onRefused, share = shareSession }) {
         if (!live) await page.bringToFront();
         sessionLog(`Connect${live ? ' (live view)' : ''}: opening the log-in page`);
         await openLoginForm(page);
-        await page.select('select[name=type]', USER_TYPE);
-        // The log-in window keeps its Chrome profile between connects, so Chrome may already have filled
-        // the fields (saved password / autofill); typing would add to that ("namename"). Empty them first.
-        for (const field of ['input[name=username]', 'input[name=password]']) {
-            await page.$eval(field, (el) => {
-                el.value = '';
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-            });
-        }
-        await page.type('input[name=username]', process.env.PS_PHILGEPS_USERNAME);
-        await page.type('input[name=password]', process.env.PS_PHILGEPS_PASSWORD);
+        // The page may still be loading (after PS-PhilGEPS's 500 page and a retry it cleared the fields typed
+        // into, and the person saw an empty form, user 2026-11-12): wait for it, then fill and check
+        await page.waitForNetworkIdle({ idleTime: 500, timeout: 10000 }).catch(() => {});
+        await fillCredentials(page);
         if (live) {
             // Captcha in the middle of the picture
             await page.evaluate(() => document.querySelector('.g-recaptcha')?.scrollIntoView({ block: 'center' }));
@@ -333,9 +361,12 @@ async function connectWindow({ live, onRefused, share = shareSession }) {
             const state = await page.evaluate(() => ({
                 form: Boolean(document.querySelector('form[action*="users/login"]')),
                 solved: Boolean(document.querySelector('#g-recaptcha-response')?.value),
+                filled: Boolean(document.querySelector('input[name=username]')?.value && document.querySelector('input[name=password]')?.value),
                 alert: document.querySelector('.alert, .message.error, .error-message')?.innerText.trim() || ''
             })).catch(() => null); // page is navigating
             if (state && !state.form && !(await onLoginPage(page))) break;
+            // The form came back empty (the page reloaded, or a failed log-in cleared it): fill it again
+            if (state?.form && !state.filled && !submitted) await fillCredentials(page).catch(() => {});
             if (state?.solved && !submitted) {
                 submitted = true;
                 await Promise.all([
