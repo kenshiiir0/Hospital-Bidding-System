@@ -155,7 +155,7 @@ export async function readTenderList(onPage) {
       page = await getPage(session, OPEN_OPPORTUNITIES_URL);
       break;
     } catch (e) {
-      if (attempt >= OPEN_TRIES) throw new Error(`PhilGEPS is not responding right now, try again later (${e.message})`);
+      if (attempt >= OPEN_TRIES) throw new Error(`The PhilGEPS website is down right now (${e.message}). This is on PhilGEPS's side, not ours. Try again in 5–10 minutes.`);
       await new Promise((r) => setTimeout(r, 3000));
     }
   }

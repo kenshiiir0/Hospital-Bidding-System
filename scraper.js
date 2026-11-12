@@ -442,7 +442,7 @@ async function runScrape() {
             await page.goto(OPEN_OPPORTUNITIES_URL, { waitUntil: 'networkidle2', timeout: 45000 });
             break;
         } catch (err) {
-            if (attempt >= OPEN_TRIES) throw new Error(`PhilGEPS is not responding right now, try again later (${err.message.split(' at ')[0]})`);
+            if (attempt >= OPEN_TRIES) throw new Error(`The PhilGEPS website is down right now (${err.message.split(' at ')[0]}). This is on PhilGEPS's side, not ours. Try again in 5–10 minutes.`);
             console.warn(`PhilGEPS did not open (${err.message.split(' at ')[0]}); retrying in 3 s`);
             progress(4, `Connecting to PhilGEPS (try ${attempt + 1} of ${OPEN_TRIES})`);
             await new Promise((resolve) => setTimeout(resolve, 3000));

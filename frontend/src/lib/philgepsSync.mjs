@@ -132,7 +132,7 @@ async function request(session, url, { method = 'GET', form, timeout = 45000, fo
       },
       signal: AbortSignal.timeout(timeout),
     }).catch((e) => {
-      throw new PhilgepsSyncError('SITE_DOWN', `PhilGEPS is not responding (${e.message}).`);
+      throw new PhilgepsSyncError('SITE_DOWN', `The PhilGEPS website is down right now (${/timeout|aborted/i.test(e.message) ? 'it did not answer in time' : `it could not be reached: ${e.message}`}). This is on PhilGEPS's side, not ours. Press Sync again in 5–10 minutes.`);
     });
     session.update(res);
     const location = res.headers.get('location');
@@ -142,7 +142,7 @@ async function request(session, url, { method = 'GET', form, timeout = 45000, fo
       options = { method: 'GET' };
       continue;
     }
-    if (/ErrorPage/i.test(current)) throw new PhilgepsSyncError('SITE_DOWN', 'PhilGEPS showed its error page.');
+    if (/ErrorPage/i.test(current)) throw new PhilgepsSyncError('SITE_DOWN', "The PhilGEPS website is down right now (it showed its error page). This is on PhilGEPS's side, not ours. Press Sync again in 5–10 minutes.");
     return { res, url: current };
   }
   throw new PhilgepsSyncError('SITE_DOWN', 'PhilGEPS kept redirecting.');

@@ -17,6 +17,8 @@ const LOOK = {
   // Finished, but something was left for later (e.g. the session time limit); blue, as amber is off-brand
   warning: { ring: 'stroke-[#1EA0DA]', text: 'text-[#12769F]', title: (n) => `${n} synced with a warning` },
   failed: { ring: 'stroke-[#B3312C]', text: 'text-[#B3312C]', title: (n) => `${n} Sync failed` },
+  // Failed because the portal's website did not answer (message starts "The <portal> website is down")
+  down: { ring: 'stroke-[#B3312C]', text: 'text-[#B3312C]', title: (n) => `${n} website is down` },
   // Stopped with the Cancel button (PhilGEPS: after a confirmed log-out)
   cancelling: { ring: 'stroke-[#94A3B8]', text: 'text-[#12769F]', title: (n) => `Cancelling ${n} Sync` },
   cancelled: { ring: 'stroke-[#94A3B8]', text: 'text-black/80', title: (n) => `${n} Sync cancelled` },
@@ -30,7 +32,8 @@ const LOOK = {
 // onCancel: shows a Cancel button while the Sync runs (it stops the Sync; on PhilGEPS it also logs out).
 export default function ScrapeProgress({ job, onDismiss, onCancel, raised = false, name = 'PhilGEPS', inline = false }) {
   const cancelling = job?.status === 'running' && job.cancelling;
-  const look = LOOK[cancelling ? 'cancelling' : job?.status === 'success' && job.warning ? 'warning' : job?.status];
+  const siteDown = job?.status === 'failed' && /website is down/i.test(job.error || '');
+  const look = LOOK[cancelling ? 'cancelling' : siteDown ? 'down' : job?.status === 'success' && job.warning ? 'warning' : job?.status];
   if (!look) return null;
 
   const percent = Math.min(100, Math.max(0, job.percent || 0));

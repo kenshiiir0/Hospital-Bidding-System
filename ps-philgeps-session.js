@@ -270,7 +270,7 @@ async function openLoginForm(page) {
         } catch (e) {
             sessionLog(`Connect: log-in page try ${attempt} failed (${e.message.split('\n')[0]})`);
             if (attempt >= LOGIN_TRIES) {
-                throw new PsPhilgepsSessionError('SITE_DOWN', 'PS-PhilGEPS (philgeps.gov.ph) is not responding right now. Try again in a few minutes.');
+                throw new PsPhilgepsSessionError('SITE_DOWN', "The PS-PhilGEPS website is down right now (its log-in page did not open, 3 tries). This is on PS-PhilGEPS's side, not ours. Press Sync again in 5–10 minutes.");
             }
             await new Promise((r) => setTimeout(r, 5000));
         }
@@ -406,7 +406,7 @@ async function connectWindow({ live, onRefused, onSubmit = async () => {}, share
             if (state?.errorPage && !state.form) {
                 if (submitted && (await loggedInNow(page))) break;
                 if (++siteErrors > MAX_SITE_ERRORS) {
-                    throw new PsPhilgepsSessionError('SITE_DOWN', `PS-PhilGEPS kept showing its 500 error page${submitted ? ' after Log In' : ''}. Try again in a few minutes.`);
+                    throw new PsPhilgepsSessionError('SITE_DOWN', `The PS-PhilGEPS website is down right now (it kept showing its 500 error page${submitted ? ' after Log In' : ''}). This is on PS-PhilGEPS's side, not ours. Press Sync again in 5–10 minutes.`);
                 }
                 sessionLog(`Connect: PS-PhilGEPS showed its 500 page${submitted ? ' after Log In' : ''}; opening the log-in page again (${siteErrors} of ${MAX_SITE_ERRORS})`);
                 await openLoginForm(page);

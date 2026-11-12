@@ -84,6 +84,13 @@ export class Session {
   }
 }
 
+// The website itself did not answer (user 2026-11-12: say so plainly, not "operation aborted due to timeout").
+// ScrapeProgress shows "<portal> website is down" for messages that start this way.
+function siteDownMessage(site, e) {
+  const why = /timeout|aborted/i.test(e.message) ? 'it did not answer in 30 seconds, 3 tries' : `it could not be reached, 3 tries: ${e.message}`;
+  return `The ${site} website is down right now (${why}). This is on ${site}'s side, not ours, and your log-in is kept. Press Sync again in 5–10 minutes.`;
+}
+
 async function get(session, url, { ajax = false } = {}) {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -101,7 +108,7 @@ async function get(session, url, { ajax = false } = {}) {
       if (res.status >= 500 && attempt < 3) throw new Error(`HTTP ${res.status}`);
       return res;
     } catch (e) {
-      if (attempt >= 3) throw new PsSyncError('SITE_DOWN', `PS-PhilGEPS is not responding (${e.message}). Try again in a few minutes.`);
+      if (attempt >= 3) throw new PsSyncError('SITE_DOWN', siteDownMessage('PS-PhilGEPS', e));
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
