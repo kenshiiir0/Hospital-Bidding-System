@@ -37,7 +37,11 @@ async function poll() {
   busy = true;
   heartbeat();
   log(`Log-in asked for (${data.jid}); opening it in Chrome here`);
-  const child = spawn(process.execPath, [path.join(__dirname, 'ps-connect-cloud.js'), data.jid], { cwd: ROOT, stdio: 'inherit' });
+  const child = spawn(process.execPath, [path.join(__dirname, 'ps-connect-cloud.js'), data.jid], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, PS_SAVE_EVERY_MS: '800', PS_INPUT_EVERY_MS: '250' },
+  });
   child.on('close', (code) => {
     busy = false;
     heartbeat();

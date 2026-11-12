@@ -22,6 +22,8 @@ export default function PsLiveLogin({ streamId = null }) {
   const [src, setSrc] = useState(null);
   const [clicked, setClicked] = useState(null);
   const [whole, setWhole] = useState(false);
+  // Which way the latest picture came, shown under it for the diagnosis: 'live' (the channel) or 'backup' (the server)
+  const [mode, setMode] = useState(null);
   const imgRef = useRef(null);
   const channelRef = useRef(null);
   const streamedAt = useRef(0);
@@ -39,6 +41,7 @@ export default function PsLiveLogin({ streamId = null }) {
         .on('broadcast', { event: 'frame' }, ({ payload }) => {
           if (!payload?.f) return;
           streamedAt.current = Date.now();
+          setMode('live');
           setSrc(`data:image/jpeg;base64,${payload.f}`);
         })
         .subscribe((status) => {
@@ -67,6 +70,7 @@ export default function PsLiveLogin({ streamId = null }) {
           const url = URL.createObjectURL(await res.blob());
           if (stopped) return URL.revokeObjectURL(url);
           setSrc(url);
+          setMode('backup');
           if (current) URL.revokeObjectURL(current);
           current = url;
         }
@@ -142,6 +146,11 @@ export default function PsLiveLogin({ streamId = null }) {
           />
         )}
       </div>
+      {mode && (
+        <p className={`mt-2 text-center text-[11px] ${mode === 'live' ? 'text-[#61A644]' : 'text-[#B3312C]'}`}>
+          {mode === 'live' ? '● Live connection' : '● Backup connection (slower): the live connection is not working on this device'}
+        </p>
+      )}
       {!whole && (
         <button type="button" onClick={() => setWhole(true)} className="mt-2 w-full text-center text-xs text-black/46 underline underline-offset-2 hover:text-[#12769F]">
           Show the whole page

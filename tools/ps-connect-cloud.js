@@ -15,8 +15,12 @@ const { createClient } = require('@supabase/supabase-js');
 const ID = process.argv[2];
 // Pictures: at most every STREAM_EVERY_MS on the channel, every SAVE_EVERY_MS in the database
 const STREAM_EVERY_MS = 200;
-const SAVE_EVERY_MS = 2500;
-const INPUT_EVERY_MS = 400;
+// The office log-in laptop (tools/ps-connect-host.js) saves more often: a device whose live channel doesn't work
+// then gets a picture about every second instead of every 2.5 s
+const SAVE_EVERY_MS = Number(process.env.PS_SAVE_EVERY_MS) || 2500;
+const INPUT_EVERY_MS = Number(process.env.PS_INPUT_EVERY_MS) || 400;
+// Timestamped lines for the diagnosis (which way the pictures and clicks travel, and how fast)
+const stamp = (msg) => console.log(`${new Date().toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila' })}  ${msg}`);
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 const table = () => supabase.from('philgeps_sync_relay');
@@ -46,11 +50,17 @@ async function main() {
   let streaming = false;
   channel
     .on('broadcast', { event: 'click' }, ({ payload }) => {
-      if (Number.isFinite(payload?.x) && Number.isFinite(payload?.y)) send(`CLICK ${Math.round(payload.x)} ${Math.round(payload.y)}`);
+      if (Number.isFinite(payload?.x) && Number.isFinite(payload?.y)) {
+        stamp(`Click on the live channel (${Math.round(payload.x)}, ${Math.round(payload.y)})`);
+        send(`CLICK ${Math.round(payload.x)} ${Math.round(payload.y)}`);
+      }
     })
     .on('broadcast', { event: 'cancel' }, () => send('CANCEL'))
     // A dashboard that just opened asks for the current picture
-    .on('broadcast', { event: 'hello' }, () => frame && channel.send({ type: 'broadcast', event: 'frame', payload: { f: frame } }))
+    .on('broadcast', { event: 'hello' }, () => {
+      stamp('A dashboard joined the live channel (fast pictures and clicks)');
+      if (frame) channel.send({ type: 'broadcast', event: 'frame', payload: { f: frame } });
+    })
     .subscribe((status) => {
       streaming = status === 'SUBSCRIBED';
       console.log(`Live channel: ${status}`);
@@ -89,6 +99,7 @@ async function main() {
     if (asked.cancel) send('CANCEL');
     else if (asked.click && asked.click.at !== lastClick) {
       lastClick = asked.click.at;
+      stamp(`Click through the backup (the server), ${Date.now() - asked.click.at} ms after it was made`);
       send(`CLICK ${Math.round(asked.click.x)} ${Math.round(asked.click.y)}`);
     }
   }, INPUT_EVERY_MS);
