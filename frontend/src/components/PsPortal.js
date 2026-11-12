@@ -208,28 +208,39 @@ export function PsPortalProvider({ children }) {
   // browser asked for (its id), so a failure of someone else's log-in isn't reported here.
   const [loginFor, setLoginFor] = useState(null);
   const loginFailed = (error, id) => failSync('ps', { startedAt: `login-${id || Date.now()}`, stage: 'PS-PhilGEPS log-in', error });
-  const pressSync = async () => {
-    if (connected) return runSync();
+  // The log-in on the office laptop (or GitHub's computer when it is off), its picture shown here
+  const startRemoteLogin = async () => {
     setSyncAfterConnect(true);
     setRequestError('');
-    // The office log-in laptop, when it is on, serves every device (lib/psCloudConnect.mjs), pop-up choice or not
-    if (connect && (connect.hostOnline || !popupHere())) {
-      try {
-        const res = await authFetch('/api/ps-philgeps', { method: 'POST' });
-        const result = await res.json().catch(() => ({}));
-        if (!result.ok) throw new Error(result.error || `the server answered ${res.status}`);
-        setLoginFor(result.job?.id || null);
-      } catch (err) {
-        setSyncAfterConnect(false);
-        loginFailed(`The log-in could not be started: ${err.message}`);
-      }
-      loadConnect();
-      return;
+    try {
+      const res = await authFetch('/api/ps-philgeps', { method: 'POST' });
+      const result = await res.json().catch(() => ({}));
+      if (!result.ok) throw new Error(result.error || `the server answered ${res.status}`);
+      setLoginFor(result.job?.id || null);
+    } catch (err) {
+      setSyncAfterConnect(false);
+      loginFailed(`The log-in could not be started: ${err.message}`);
     }
+    loadConnect();
+  };
+  // A browser set up for the pop-up opens the log-in in its own Chrome window (fast, one tick; the user's way, back
+  // on 2026-11-12: the picture from the office laptop was too slow for them); every other device uses the office
+  // laptop. "Nothing opened?" in the waiting notice switches this browser to the office laptop.
+  const pressSync = async () => {
+    if (connected) return runSync();
+    if (connect && !popupHere()) return startRemoteLogin();
+    setSyncAfterConnect(true);
+    setRequestError('');
     openPopupLogin().catch((err) => {
       setSyncAfterConnect(false);
       loginFailed(`The pop-up log-in on this computer could not be opened: ${err.message}`);
     });
+  };
+  const useOfficeLaptop = () => {
+    try {
+      localStorage.removeItem(POPUP_KEY);
+    } catch {}
+    startRemoteLogin();
   };
   // The log-in this browser asked for ended without a connection: say why, and on which computer it ran
   const loginError = loginFor && connect?.id === loginFor && connect.status === 'failed' ? connect.error : null;
@@ -336,7 +347,7 @@ export function PsPortalProvider({ children }) {
   const notices = (
     <>
       {requestError && <Notice tone="error">{requestError}</Notice>}
-      <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
+      <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} onUseOffice={connect?.hostOnline ? useOfficeLaptop : null} />
       <SyncNotice sync={sync} ringShowing={Boolean(syncJob || savedFailure)} />
     </>
   );
@@ -415,14 +426,14 @@ const switchToLive = () =>
   }).catch(() => {});
 
 // known: the Sync status has loaded (until then "not connected" isn't known yet)
-function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
+function ConnectNotice({ connect, connected, known, waiting, onCancel, onUseOffice }) {
   // The log-in shown in a dialog (PsConnectModal): while it starts, then its live picture. hidden: the log-in the
   // person closed the dialog of (it keeps waiting; the notice reopens it)
   const [hidden, setHidden] = useState(null);
   const inDialog = connect?.status === 'starting' || (connect?.status === 'connecting' && connect.view === 'live');
   if (inDialog) {
     const key = connect.id || connect.startedAt || 'live';
-    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={connect.hostOnline ? null : () => { setHidden(key); switchToPopup(); }} onSetup={connect.hostOnline ? null : downloadLaptopSetup} />;
+    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={() => { setHidden(key); switchToPopup(); }} onSetup={downloadLaptopSetup} />;
     return (
       <Notice>
         The PS-PhilGEPS log-in is waiting for you to confirm you are not a robot.{' '}
@@ -454,6 +465,11 @@ function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
         <span className="block mt-1.5 text-xs text-black/62">
           Nothing opened? This laptop needs a one-time setup: in the project folder run{' '}
           <code>node tools/register-connect-link.js</code> (or double-click <b>Connect PS-PhilGEPS</b> there).{' '}
+          {onUseOffice && (
+            <>
+              <button onClick={onUseOffice} className="font-semibold underline underline-offset-2">Log in through the office laptop instead</button>{' '}
+            </>
+          )}
           <button onClick={onCancel} className="underline underline-offset-2">Cancel</button>
         </span>
       </Notice>

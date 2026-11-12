@@ -223,14 +223,22 @@ function startLiveView(page) {
         const [command, x, y] = line.trim().split(/\s+/);
         if (command === 'CANCEL') cancelled = true;
         if (command !== 'CLICK' || !Number.isFinite(+x) || !Number.isFinite(+y)) return;
-        // Clicks on the password field are ignored: its eye button would show the PhilGEPS password
-        // in the dashboard's picture
-        const onPassword = await page.evaluate((px, py) => {
+        // Only clicks on the log-in form or Google's captcha (its checkbox and picture puzzle are iframes) reach the
+        // page: a tap on the site's menu or a link left the log-in page for PS-PhilGEPS's 500 page (user
+        // 2026-11-12, the picture had just switched to the whole page). Clicks on the password field are ignored
+        // too: its eye button would show the PhilGEPS password in the dashboard's picture.
+        const verdict = await page.evaluate((px, py) => {
             const field = document.querySelector('input[name=password]');
             const box = (field?.parentElement || field)?.getBoundingClientRect();
-            return Boolean(box && px >= box.left && px <= box.right && py >= box.top && py <= box.bottom);
-        }, +x, +y).catch(() => false);
-        if (!onPassword) page.mouse.click(+x, +y).catch(() => {});
+            if (box && px >= box.left && px <= box.right && py >= box.top && py <= box.bottom) return 'password field';
+            const el = document.elementFromPoint(px, py);
+            if (!el) return 'nothing there';
+            if (el.tagName === 'IFRAME' && /recaptcha/i.test(el.src || el.title || '')) return 'ok';
+            if (el.closest('form[action*="users/login"]') && !el.closest('a')) return 'ok';
+            return `outside the log-in form (${el.closest('a') ? 'a link' : el.tagName.toLowerCase()})`;
+        }, +x, +y).catch(() => 'ok');
+        if (verdict === 'ok') page.mouse.click(+x, +y).catch(() => {});
+        else sessionLog(`Connect: click at ${x}, ${y} ignored: ${verdict}`);
     });
     return () => {
         clearInterval(timer);
@@ -245,6 +253,17 @@ const LOGIN_TRIES = 3;
 async function openLoginForm(page) {
     for (let attempt = 1; ; attempt++) {
         try {
+            // A fresh start with PS-PhilGEPS: a session cookie left by a log-in that hit its 500 page kept every page
+            // at 500 for this browser while the site answered others normally (user 2026-11-12). Only its cookies go;
+            // Google's stay (the captcha trusts a returning browser more).
+            const client = await page.createCDPSession();
+            for (const domain of ['philgeps.gov.ph', '.philgeps.gov.ph', 'www.philgeps.gov.ph']) {
+                const { cookies } = await client.send('Network.getAllCookies').catch(() => ({ cookies: [] }));
+                for (const c of cookies.filter((k) => k.domain === domain)) {
+                    await client.send('Network.deleteCookies', { name: c.name, domain: c.domain, path: c.path }).catch(() => {});
+                }
+            }
+            await client.detach().catch(() => {});
             await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await page.waitForSelector('form[action*="users/login"] input[name=username]', { timeout: 20000 });
             return;
@@ -283,6 +302,21 @@ async function fillCredentials(page) {
         }
     }, values);
     sessionLog(`Connect: typing did not stick; username and password set directly (${(await ok()) ? 'ok' : 'still empty'})`);
+}
+
+// After PS-PhilGEPS's 500 page following Log In: did the log-in get through? (the Bid Match page in a second tab,
+// so the log-in page stays where it is if not)
+const MAX_SITE_ERRORS = 3;
+async function loggedInNow(page) {
+    const probe = await page.browser().newPage();
+    try {
+        await probe.goto(CHECK_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        return !(await onLoginPage(probe)) && !/Something went wrong/i.test(await probe.evaluate(() => document.body?.innerText.slice(0, 3000) || ''));
+    } catch {
+        return false;
+    } finally {
+        await probe.close().catch(() => {});
+    }
 }
 
 // Fills user type, username and password, waits for a person to tick the reCAPTCHA (in a visible Chrome
@@ -352,6 +386,7 @@ async function connectWindow({ live, onRefused, onSubmit = async () => {}, share
 
         const deadline = Date.now() + CONNECT_TIMEOUT_MS;
         let submitted = false;
+        let siteErrors = 0;
         while (Date.now() < deadline) {
             // stdin "CANCEL": the dashboard switched to another way of logging in; close the window quietly
             if (cancelled) throw new PsPhilgepsSessionError('CANCELLED', 'Log-in cancelled.');
@@ -362,8 +397,25 @@ async function connectWindow({ live, onRefused, onSubmit = async () => {}, share
                 form: Boolean(document.querySelector('form[action*="users/login"]')),
                 solved: Boolean(document.querySelector('#g-recaptcha-response')?.value),
                 filled: Boolean(document.querySelector('input[name=username]')?.value && document.querySelector('input[name=password]')?.value),
-                alert: document.querySelector('.alert, .message.error, .error-message')?.innerText.trim() || ''
+                alert: document.querySelector('.alert, .message.error, .error-message')?.innerText.trim() || '',
+                // PS-PhilGEPS's own error page ("500 Server Error ... Something went wrong")
+                errorPage: /\b50\d\b[\s\S]{0,40}Server Error|Something went wrong/i.test(document.body?.innerText.slice(0, 3000) || '')
             })).catch(() => null); // page is navigating
+            // PS-PhilGEPS showed its 500 page (on its own, after Log In, or after a stray click): if the log-in got
+            // through anyway, carry on; else open the log-in page again, filled in, for another tick (a few times)
+            if (state?.errorPage && !state.form) {
+                if (submitted && (await loggedInNow(page))) break;
+                if (++siteErrors > MAX_SITE_ERRORS) {
+                    throw new PsPhilgepsSessionError('SITE_DOWN', `PS-PhilGEPS kept showing its 500 error page${submitted ? ' after Log In' : ''}. Try again in a few minutes.`);
+                }
+                sessionLog(`Connect: PS-PhilGEPS showed its 500 page${submitted ? ' after Log In' : ''}; opening the log-in page again (${siteErrors} of ${MAX_SITE_ERRORS})`);
+                await openLoginForm(page);
+                await page.waitForNetworkIdle({ idleTime: 500, timeout: 10000 }).catch(() => {});
+                await fillCredentials(page);
+                if (live) await page.evaluate(() => document.querySelector('.g-recaptcha')?.scrollIntoView({ block: 'center' })).catch(() => {});
+                submitted = false;
+                continue;
+            }
             if (state && !state.form && !(await onLoginPage(page))) break;
             // The form came back empty (the page reloaded, or a failed log-in cleared it): fill it again
             if (state?.form && !state.filled && !submitted) await fillCredentials(page).catch(() => {});
