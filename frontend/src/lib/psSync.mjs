@@ -105,10 +105,13 @@ async function get(session, url, { ajax = false } = {}) {
         signal: AbortSignal.timeout(30000),
       });
       session.update(res);
-      if (res.status >= 500 && attempt < 3) throw new Error(`HTTP ${res.status}`);
+      // An error page on the last try too is not a page to read: on 2026-11-12 the 500 pages were read as empty
+      // lists and saved over the team's tenders (Bid Match emptied while the site was down). A list that fails so
+      // stops the Sync (nothing saved); one notice that fails so keeps its last reading (keepPrevious).
+      if (res.status >= 500) throw new PsSyncError('HTTP_ERROR', siteDownMessage('PS-PhilGEPS', new Error(`it answered with an error page, HTTP ${res.status}`)));
       return res;
     } catch (e) {
-      if (attempt >= 3) throw new PsSyncError('SITE_DOWN', siteDownMessage('PS-PhilGEPS', e));
+      if (attempt >= 3) throw e.code === 'HTTP_ERROR' ? e : new PsSyncError('SITE_DOWN', siteDownMessage('PS-PhilGEPS', e));
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
@@ -187,6 +190,9 @@ export async function readList(session, list, onPage = () => {}) {
     const root = parse(await getPage(session, url));
     result.pages++;
     const { headers, rows } = readTable(root);
+    // A list page always has its table header, even with no rows: without one the site sent something else
+    // (error or maintenance page), so the Sync stops and the saved lists stay as they are
+    if (result.pages === 1 && !headers.length) throw new PsSyncError('SITE_DOWN', `The PS-PhilGEPS website is down right now (${list.label} came back without its list). This is on PS-PhilGEPS's side, not ours, and your log-in is kept. The saved tenders stay on the dashboard. Press Sync again in 5–10 minutes.`);
     if (!result.headers.length) result.headers = headers;
     result.rows.push(...rows);
     // (awaited: the Sync's progress stops here when it was cancelled)
@@ -607,6 +613,10 @@ export async function runSync() {
     });
 
     await progress(84, 'Saving');
+    // Last check before the saved copy is replaced: an empty Bid Match after a full one is the site failing, not
+    // every tender closing at once (the copy is what the team works from while PS-PhilGEPS is down)
+    const before = Object.keys(previous?.notices || {}).length;
+    if (!lists.bidMatch.rows.length && before >= 5) throw new PsSyncError('SITE_DOWN', `PS-PhilGEPS sent an empty Bid Match (the last Sync had ${before} tenders), so nothing was saved and the saved tenders stay on the dashboard. Press Sync again in 5–10 minutes.`);
     const syncedAt = new Date().toISOString();
     const { error } = await supabase.from('ps_philgeps_snapshot').upsert({ id: 'latest', synced_at: syncedAt, lists, notices, updated_at: syncedAt });
     if (error) throw new PsSyncError('DB', `Saving the result: ${error.message}`);
