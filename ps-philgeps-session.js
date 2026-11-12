@@ -302,7 +302,7 @@ async function connect({ live = false, code = null } = {}) {
     await recordLogin('ps-philgeps', 'started', { source: live ? 'dashboard' : 'team computer' });
     let refused = 0;
     try {
-        await connectWindow({ live, onRefused: async (said) => {
+        await connectWindow({ live, onSubmit: () => recordLogin('ps-philgeps', 'submitted'), onRefused: async (said) => {
             refused++;
             await recordLogin('ps-philgeps', 'rejected', { detail: said });
             if (refused >= MAX_REFUSED) {
@@ -317,7 +317,7 @@ async function connect({ live = false, code = null } = {}) {
     }
 }
 
-async function connectWindow({ live, onRefused, share = shareSession }) {
+async function connectWindow({ live, onRefused, onSubmit = async () => {}, share = shareSession }) {
     const browser = live ? await launchLive() : await launchLoginWindow();
     let stopLive = () => {};
     try {
@@ -369,6 +369,8 @@ async function connectWindow({ live, onRefused, share = shareSession }) {
             if (state?.form && !state.filled && !submitted) await fillCredentials(page).catch(() => {});
             if (state?.solved && !submitted) {
                 submitted = true;
+                // Counted by the log-in limit (frontend/src/lib/loginGuard.mjs): the password goes to PS-PhilGEPS now
+                await onSubmit().catch(() => {});
                 await Promise.all([
                     page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {}),
                     page.click('form[action*="users/login"] input[type=submit]')
@@ -439,6 +441,7 @@ async function connectLaptop(code) {
     try {
         await connectWindow({
             live: false,
+            onSubmit: () => askDashboard(code, { action: 'submitted' }),
             onRefused: async (said) => {
                 refused++;
                 await askDashboard(code, { action: 'refused', detail: said }).catch(() => {});

@@ -52,8 +52,12 @@ export async function checkLogin(site, { trigger = 'person' } = {}) {
     throw new LoginGuardError(`${name} refused ${recentRejected.length} log-ins within the hour. To protect the account, log-ins are paused until ${at(until)}.`);
   }
 
-  // Separate log-ins: one row per log-in session ('started' marks its first attempt)
-  const starts = times.filter((r) => r.outcome === 'started');
+  // Separate log-ins: one row per log-in session ('started' marks its first attempt). PS-PhilGEPS counts only
+  // log-ins that sent the password ('submitted'): one that never got that far (the site's 500 page, a window
+  // closed, cancelled before the captcha) never touched the account, and six of them blocked everyone for an
+  // hour (user 2026-11-12). The one-minute gap still counts every start.
+  const allStarts = times.filter((r) => r.outcome === 'started');
+  const starts = site === 'ps-philgeps' ? times.filter((r) => r.outcome === 'submitted') : allStarts;
   const lastHour = starts.filter((r) => now - r.ms < 60 * 60 * 1000);
   if (lastHour.length >= RULES.perHour) {
     throw new LoginGuardError(`${name} has been logged in to ${lastHour.length} times in the last hour. To protect the account, the next log-in is allowed at ${at(lastHour[RULES.perHour - 1].ms + 60 * 60 * 1000)}.`);
@@ -61,8 +65,8 @@ export async function checkLogin(site, { trigger = 'person' } = {}) {
   if (starts.length >= RULES.perDay) {
     throw new LoginGuardError(`${name} has been logged in to ${starts.length} times today. To protect the account, the next log-in is allowed at ${at(starts[RULES.perDay - 1].ms + 24 * 60 * 60 * 1000)}.`);
   }
-  if (starts[0] && now - starts[0].ms < RULES.minGapMs) {
-    throw new LoginGuardError(`${name} was logged in to less than a minute ago. Try again at ${at(starts[0].ms + RULES.minGapMs)}.`);
+  if (allStarts[0] && now - allStarts[0].ms < RULES.minGapMs) {
+    throw new LoginGuardError(`${name} was logged in to less than a minute ago. Try again at ${at(allStarts[0].ms + RULES.minGapMs)}.`);
   }
   const busy = times.find((r) => r.outcome === 'busy');
   const wait = RULES.afterBusyMs[trigger] || RULES.afterBusyMs.person;
@@ -71,7 +75,7 @@ export async function checkLogin(site, { trigger = 'person' } = {}) {
   }
 }
 
-// outcome: 'started' (a new log-in begins) | 'ok' | 'rejected' (password refused, account locked) |
+// outcome: 'started' (a new log-in begins) | 'submitted' (PS-PhilGEPS: the password was sent) | 'ok' | 'rejected' (password refused, account locked) |
 // 'busy' (in use elsewhere) | 'error' (site down / no answer). Never throws.
 export async function recordLogin(site, outcome, { detail, source } = {}) {
   const db = admin();

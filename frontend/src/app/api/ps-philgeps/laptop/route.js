@@ -54,6 +54,11 @@ export async function POST(request) {
     await recordLogin(SITE, 'started', { source });
     return Response.json(known ? { ok: true, username, password } : { ok: true });
   }
+  // The password was sent: counted by the log-in limit (lib/loginGuard.mjs)
+  if (body.action === 'submitted') {
+    await recordLogin(SITE, 'submitted', { source });
+    return Response.json({ ok: true });
+  }
   if (body.action === 'refused') {
     await recordLogin(SITE, 'rejected', { detail: body.detail, source });
     return Response.json({ ok: true });
