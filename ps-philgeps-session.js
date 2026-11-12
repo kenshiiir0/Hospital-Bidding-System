@@ -373,7 +373,10 @@ async function connectWindow({ live, onRefused, onSubmit = async () => {}, share
                 await onSubmit().catch(() => {});
                 await Promise.all([
                     page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {}),
-                    page.click('form[action*="users/login"] input[type=submit]')
+                    // Pressed in the page, not with the mouse: in the office laptop's off-screen window a mouse click
+                    // waited for ever for the button to come into view, and every click after it (the person's own)
+                    // queued behind it until the captcha expired (user 2026-11-12)
+                    page.evaluate(() => document.querySelector('form[action*="users/login"] input[type=submit]')?.click())
                 ]);
                 continue;
             }
