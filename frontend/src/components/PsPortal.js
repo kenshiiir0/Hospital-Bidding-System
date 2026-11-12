@@ -7,7 +7,6 @@ import WorkingDots from '@/components/WorkingDots';
 import { blueAction, plainAction } from '@/components/PageHeader';
 import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
-import PsConnectModal from '@/components/PsConnectModal';
 import { clearSync, failSync, followSync, pressedSync, psRun, useSyncAlert } from '@/lib/syncAlerts';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 import { registerList, reportUnread, useTenderNews } from '@/lib/newTenders';
@@ -203,62 +202,25 @@ export function PsPortalProvider({ children }) {
     }
     loadSync();
   };
-  // Every log-in that doesn't end in a connection shows in the bottom-left ring with its reason and where it ran,
-  // as a failed Sync does (user 2026-11-12: the dialog just closed, nobody knew why). loginFor: the log-in this
-  // browser asked for (its id), so a failure of someone else's log-in isn't reported here.
-  const [loginFor, setLoginFor] = useState(null);
-  const loginFailed = (error, id) => failSync('ps', { startedAt: `login-${id || Date.now()}`, stage: 'PS-PhilGEPS log-in', error });
-  // The log-in on the office laptop (or GitHub's computer when it is off), its picture shown here
-  const startRemoteLogin = async () => {
-    setSyncAfterConnect(true);
-    setRequestError('');
-    try {
-      const res = await authFetch('/api/ps-philgeps', { method: 'POST' });
-      const result = await res.json().catch(() => ({}));
-      if (!result.ok) throw new Error(result.error || `the server answered ${res.status}`);
-      setLoginFor(result.job?.id || null);
-    } catch (err) {
-      setSyncAfterConnect(false);
-      loginFailed(`The log-in could not be started: ${err.message}`);
-    }
-    loadConnect();
-  };
-  // A browser set up for the pop-up opens the log-in in its own Chrome window (fast, one tick; the user's way, back
-  // on 2026-11-12: the picture from the office laptop was too slow for them); every other device uses the office
-  // laptop. "Nothing opened?" in the waiting notice switches this browser to the office laptop.
+  // Every log-in that doesn't end in a connection shows in the bottom-left ring with its reason, as a failed Sync does
+  const loginFailed = (error) => failSync('ps', { startedAt: `login-${Date.now()}`, stage: 'PS-PhilGEPS log-in', error });
+  // The log-in always opens in its own Chrome window on this laptop: fast, one tick (user 2026-11-13: "fully" the
+  // pop-up window, no dialog with a picture of the log-in). A laptop that isn't set up gets "Set up this laptop".
   const pressSync = async () => {
     if (connected) return runSync();
-    if (connect && !popupHere()) return startRemoteLogin();
     setSyncAfterConnect(true);
     setRequestError('');
     openPopupLogin().catch((err) => {
       setSyncAfterConnect(false);
-      loginFailed(`The pop-up log-in on this computer could not be opened: ${err.message}`);
+      loginFailed(`The log-in window on this laptop could not be opened: ${err.message}`);
     });
   };
-  const useOfficeLaptop = () => {
-    try {
-      localStorage.removeItem(POPUP_KEY);
-    } catch {}
-    startRemoteLogin();
-  };
-  // The log-in this browser asked for ended without a connection: say why, and on which computer it ran
-  const loginError = loginFor && connect?.id === loginFor && connect.status === 'failed' ? connect.error : null;
-  useEffect(() => {
-    if (!loginError) return;
-    const where = connect?.host ? 'office log-in laptop' : 'cloud computer';
-    const t = setTimeout(() => {
-      loginFailed(`${loginError} (log-in on the ${where})`, loginFor);
-      setLoginFor(null);
-    }, 0);
-    return () => clearTimeout(t);
-  }, [loginError, loginFor, connect?.host]);
   // Waiting for a log-in that never started (nothing opened, the request was lost): give up after 3 minutes
   useEffect(() => {
     if (!syncAfterConnect || connected || connecting) return;
     const t = setTimeout(() => {
       setSyncAfterConnect(false);
-      loginFailed('No log-in opened within 3 minutes. On a laptop using the pop-up, check that it is set up; otherwise press Sync PS-PhilGEPS again.');
+      loginFailed('No log-in window opened within 3 minutes. If this laptop is not set up yet, press Sync PS-PhilGEPS, then Set up this laptop.');
     }, 3 * 60 * 1000);
     return () => clearTimeout(t);
   }, [syncAfterConnect, connected, connecting]);
@@ -347,7 +309,7 @@ export function PsPortalProvider({ children }) {
   const notices = (
     <>
       {requestError && <Notice tone="error">{requestError}</Notice>}
-      <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} onUseOffice={connect?.hostOnline ? useOfficeLaptop : null} />
+      <ConnectNotice connect={connect} connected={connected} known={Boolean(sync)} waiting={syncAfterConnect} onCancel={() => setSyncAfterConnect(false)} />
       <SyncNotice sync={sync} ringShowing={Boolean(syncJob || savedFailure)} />
     </>
   );
@@ -355,25 +317,6 @@ export function PsPortalProvider({ children }) {
 
   return <PsContext.Provider value={{ data, search, setSearch, reload: loadData, connected, syncing, sync, portal }}>{children}</PsContext.Provider>;
 }
-
-// Closes the Chrome log-in window and shows the log-in page inside the dashboard instead
-// Cancel button of the log-in dialog (stops the cloud log-in, lib/psCloudConnect.mjs)
-// A team laptop that chose the pop-up (PsConnectModal "Use the pop-up on this computer"): its log-ins open in a
-// Chrome window here (tools/register-connect-link.js), the cloud log-in elsewhere. Kept in this browser only
-const POPUP_KEY = 'ps-connect-popup';
-const popupHere = () => {
-  try {
-    return localStorage.getItem(POPUP_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-const switchToPopup = () => {
-  try {
-    localStorage.setItem(POPUP_KEY, '1');
-  } catch {}
-  cancelConnect().finally(() => openPopupLogin().catch(() => {}));
-};
 
 // Opens the pop-up log-in on this laptop: the link carries a one-time code (15 minutes) for the signed-in person,
 // with which the laptop gets the log-in from the dashboard and hands the session back (api/ps-philgeps/laptop)
@@ -388,8 +331,8 @@ async function openPopupLogin() {
   window.location.href = `ps-philgeps-connect:start?code=${encodeURIComponent(result.code)}`;
 }
 
-// "Set up this laptop" (log-in dialog): downloads the setup file made for the signed-in person (it can download the
-// log-in files for 60 minutes) and remembers that this browser uses the pop-up from now on
+// "Set up this laptop" (waiting notice): downloads the setup file made for the signed-in person (it can download the
+// log-in files for 60 minutes)
 export async function downloadLaptopSetup() {
   const res = await authFetch('/api/ps-philgeps/laptop', {
     method: 'POST',
@@ -406,9 +349,6 @@ export async function downloadLaptopSetup() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  try {
-    localStorage.setItem(POPUP_KEY, '1');
-  } catch {}
 }
 
 const cancelConnect = () =>
@@ -418,40 +358,19 @@ const cancelConnect = () =>
     body: JSON.stringify({ cancel: true }),
   }).catch(() => {});
 
-const switchToLive = () =>
-  authFetch('/api/ps-philgeps/live', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ switch: true }),
-  }).catch(() => {});
-
 // known: the Sync status has loaded (until then "not connected" isn't known yet)
-function ConnectNotice({ connect, connected, known, waiting, onCancel, onUseOffice }) {
-  // The log-in shown in a dialog (PsConnectModal): while it starts, then its live picture. hidden: the log-in the
-  // person closed the dialog of (it keeps waiting; the notice reopens it)
-  const [hidden, setHidden] = useState(null);
-  const inDialog = connect?.status === 'starting' || (connect?.status === 'connecting' && connect.view === 'live');
-  if (inDialog) {
-    const key = connect.id || connect.startedAt || 'live';
-    if (hidden !== key) return <PsConnectModal connect={connect} onHide={() => setHidden(key)} onCancel={() => cancelConnect().then(() => setHidden(key))} onPopup={() => { setHidden(key); switchToPopup(); }} onSetup={downloadLaptopSetup} />;
+function ConnectNotice({ connect, connected, known, waiting, onCancel }) {
+  const [setupNote, setSetupNote] = useState('');
+  const setUp = () =>
+    downloadLaptopSetup()
+      .then(() => setSetupNote('Downloaded. Open "Set up PS-PhilGEPS log-in.cmd" from your downloads within 60 minutes, then press Sync PS-PhilGEPS again.'))
+      .catch((err) => setSetupNote(`The setup could not be downloaded: ${err.message}`));
+  if (['starting', 'connecting'].includes(connect?.status)) {
     return (
       <Notice>
-        The PS-PhilGEPS log-in is waiting for you to confirm you are not a robot.{' '}
-        <button onClick={() => setHidden(null)} className="font-semibold underline underline-offset-2 hover:text-[#0E5C7C]">
-          Open it
-        </button>
-      </Notice>
-    );
-  }
-  if (connect?.status === 'connecting') {
-    return (
-      <Notice>
-        The PhilGEPS log-in ended, so a small Google Chrome window opened with the log-in filled in (find it on the
-        taskbar if it is behind this page). Tick &ldquo;I&rsquo;m not a robot&rdquo; there; the window closes and the
-        Sync starts by itself.{' '}
-        <button onClick={switchToLive} className="underline underline-offset-2 hover:text-[#0E5C7C]">
-          Window not showing? Do the captcha here instead.
-        </button>
+        A Google Chrome window is open with the PS-PhilGEPS log-in filled in (find it on the taskbar if it is behind this
+        page). Tick &ldquo;I&rsquo;m not a robot&rdquo; there; the window closes and the Sync starts by itself.{' '}
+        <button onClick={() => cancelConnect()} className="underline underline-offset-2 hover:text-[#0E5C7C]">Cancel</button>
       </Notice>
     );
   }
@@ -463,13 +382,9 @@ function ConnectNotice({ connect, connected, known, waiting, onCancel, onUseOffi
         <b>Connect PS-PhilGEPS</b>, allow it, then tick &ldquo;I&rsquo;m not a robot&rdquo; in the Chrome window. The Sync
         starts by itself once you are logged in.
         <span className="block mt-1.5 text-xs text-black/62">
-          Nothing opened? This laptop needs a one-time setup: in the project folder run{' '}
-          <code>node tools/register-connect-link.js</code> (or double-click <b>Connect PS-PhilGEPS</b> there).{' '}
-          {onUseOffice && (
-            <>
-              <button onClick={onUseOffice} className="font-semibold underline underline-offset-2">Log in through the office laptop instead</button>{' '}
-            </>
-          )}
+          Nothing opened? This laptop needs a one-time setup (Windows with Google Chrome, about 5 minutes):{' '}
+          <button onClick={setUp} className="font-semibold underline underline-offset-2">Set up this laptop</button>{' '}
+          {setupNote && <span className="block mt-1">{setupNote}</span>}
           <button onClick={onCancel} className="underline underline-offset-2">Cancel</button>
         </span>
       </Notice>
