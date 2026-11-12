@@ -355,9 +355,9 @@ async function connectWindow({ live, onRefused, share = shareSession }) {
         while (Date.now() < deadline) {
             // stdin "CANCEL": the dashboard switched to another way of logging in; close the window quietly
             if (cancelled) throw new PsPhilgepsSessionError('CANCELLED', 'Log-in cancelled.');
-            if (!browser.connected || page.isClosed()) {
-                throw new PsPhilgepsSessionError('CONNECT_FAILED', 'The log-in window was closed.');
-            }
+            // Told apart for the diagnosis: Chrome itself gone (closed from the taskbar, crashed) or only its page
+            if (!browser.connected) throw new PsPhilgepsSessionError('CONNECT_FAILED', 'Chrome on the log-in computer stopped (closed from the taskbar or crashed).');
+            if (page.isClosed()) throw new PsPhilgepsSessionError('CONNECT_FAILED', 'The log-in window was closed.');
             const state = await page.evaluate(() => ({
                 form: Boolean(document.querySelector('form[action*="users/login"]')),
                 solved: Boolean(document.querySelector('#g-recaptcha-response')?.value),

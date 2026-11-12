@@ -174,17 +174,6 @@ export function PsPortalProvider({ children }) {
     };
   }, [loadData, finishedAt]);
 
-  const post = async (url, after) => {
-    setRequestError('');
-    try {
-      const res = await authFetch(url, { method: 'POST' });
-      const result = await res.json();
-      if (!result.ok) setRequestError(result.error || `Could not start (${res.status})`);
-      after();
-    } catch (err) {
-      setRequestError(err.message);
-    }
-  };
   const connected = Boolean(sync?.connected_at);
 
   // Followed from the press on, so a failure shows on whatever page is open (lib/syncAlerts.js)
@@ -214,13 +203,54 @@ export function PsPortalProvider({ children }) {
     }
     loadSync();
   };
-  const pressSync = () => {
+  // Every log-in that doesn't end in a connection shows in the bottom-left ring with its reason and where it ran,
+  // as a failed Sync does (user 2026-11-12: the dialog just closed, nobody knew why). loginFor: the log-in this
+  // browser asked for (its id), so a failure of someone else's log-in isn't reported here.
+  const [loginFor, setLoginFor] = useState(null);
+  const loginFailed = (error, id) => failSync('ps', { startedAt: `login-${id || Date.now()}`, stage: 'PS-PhilGEPS log-in', error });
+  const pressSync = async () => {
     if (connected) return runSync();
     setSyncAfterConnect(true);
+    setRequestError('');
     // The office log-in laptop, when it is on, serves every device (lib/psCloudConnect.mjs), pop-up choice or not
-    if (connect && (connect.hostOnline || !popupHere())) post('/api/ps-philgeps', loadConnect);
-    else openPopupLogin().catch((err) => setRequestError(`The log-in could not be opened: ${err.message}`));
+    if (connect && (connect.hostOnline || !popupHere())) {
+      try {
+        const res = await authFetch('/api/ps-philgeps', { method: 'POST' });
+        const result = await res.json().catch(() => ({}));
+        if (!result.ok) throw new Error(result.error || `the server answered ${res.status}`);
+        setLoginFor(result.job?.id || null);
+      } catch (err) {
+        setSyncAfterConnect(false);
+        loginFailed(`The log-in could not be started: ${err.message}`);
+      }
+      loadConnect();
+      return;
+    }
+    openPopupLogin().catch((err) => {
+      setSyncAfterConnect(false);
+      loginFailed(`The pop-up log-in on this computer could not be opened: ${err.message}`);
+    });
   };
+  // The log-in this browser asked for ended without a connection: say why, and on which computer it ran
+  const loginError = loginFor && connect?.id === loginFor && connect.status === 'failed' ? connect.error : null;
+  useEffect(() => {
+    if (!loginError) return;
+    const where = connect?.host ? 'office log-in laptop' : 'cloud computer';
+    const t = setTimeout(() => {
+      loginFailed(`${loginError} (log-in on the ${where})`, loginFor);
+      setLoginFor(null);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [loginError, loginFor, connect?.host]);
+  // Waiting for a log-in that never started (nothing opened, the request was lost): give up after 3 minutes
+  useEffect(() => {
+    if (!syncAfterConnect || connected || connecting) return;
+    const t = setTimeout(() => {
+      setSyncAfterConnect(false);
+      loginFailed('No log-in opened within 3 minutes. On a laptop using the pop-up, check that it is set up; otherwise press Sync PS-PhilGEPS again.');
+    }, 3 * 60 * 1000);
+    return () => clearTimeout(t);
+  }, [syncAfterConnect, connected, connecting]);
 
   // The log-in was saved (on this or another laptop): run the Sync that was asked for
   useEffect(() => {
