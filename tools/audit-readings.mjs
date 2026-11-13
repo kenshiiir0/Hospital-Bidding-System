@@ -17,6 +17,7 @@ const req = createRequire(`${root}/package.json`);
 const { createClient } = req('@supabase/supabase-js');
 const { loadMatcher } = await import(pathToFileURL(`${root}/src/lib/products.mjs`).href);
 const { rowAhead } = await import(pathToFileURL(`${root}/src/lib/psDocs.mjs`).href);
+const { lineIssues } = await import(pathToFileURL(`${root}/src/lib/readingAccuracy.mjs`).href);
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { auth: { persistSession: false } });
 const match = await loadMatcher(sb);
 
@@ -72,14 +73,9 @@ for (const x of lines) {
 const unusual = [];
 for (const x of lines) {
   const { i } = x;
-  const why = [];
+  // The same line checks as the reading's accuracy (lib/readingAccuracy.mjs, Check reading alert)
+  const why = lineIssues(i);
   const unit = i.computed === 'unit_price' ? null : i.unit_price;
-  const name = String(i.description || '');
-  if (i.quantity === 0) why.push('Qty 0');
-  if (unit != null && unit < 0.1) why.push(`ABC/Unit ₱${unit}`);
-  if (unit != null && unit >= 100000) why.push(`ABC/Unit ₱${unit.toLocaleString()}`);
-  if (i.quantity != null && unit != null && i.total != null && i.computed !== 'total' && Math.abs(i.quantity * unit - i.total) > Math.max(1, i.total * 0.01)) why.push('Qty × ABC/Unit ≠ ABC Total');
-  if (/\d[\d,]*\.\d{2}\b/.test(name)) why.push('amount in the name');
   if (i.quantity != null && (unit != null || i.total != null) && !complete(i)) why.push('incomplete');
   if (why.length) unusual.push({ screened: isScreened(x), side: x.side, ref: x.ref, why: why.join('; '), line: written(i), file: i.source });
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { stillReading } from '@/lib/documentsReading';
 import { supabase } from '@/lib/supabase';
 import { downloadOpportunityWorkbook, moleculeText, philgepsTender, PS_SR_NO, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
@@ -53,6 +54,38 @@ export function useScreened() {
   }, []);
   const keys = new Set((state.rows || []).map((r) => screenedKey(r.source, r.ref)));
   return { ...state, has: (source, ref) => keys.has(screenedKey(source, ref)) };
+}
+
+// How well each screened tender's documents were read, for the "Check reading" alert (lib/readingAccuracy.mjs):
+// { 'ps 123': { accuracy, reading } }, reading = scanned files still being read. Only the small fields are loaded.
+export function useScreenedAccuracy(list) {
+  const [byKey, setByKey] = useState({});
+  const ps = (list || []).filter((r) => r.source === 'ps').map((r) => String(r.ref));
+  const philgeps = (list || []).filter((r) => r.source === 'philgeps').map((r) => String(r.ref));
+  const key = `${ps.join(',')}|${philgeps.join(',')}`;
+  useEffect(() => {
+    if (!key || key === '|') return;
+    let live = true;
+    (async () => {
+      const [{ data: a }, { data: b }] = await Promise.all([
+        ps.length ? supabase.from('ps_tender_analysis').select('ref, accuracy:result->accuracy, documents_read').in('ref', ps) : { data: [] },
+        philgeps.length
+          ? supabase.from('philgeps_opportunities').select('ref_no, accuracy:details->documents_accuracy, documents_read:details->documents_read').in('ref_no', philgeps)
+          : { data: [] },
+      ]);
+      if (!live) return;
+      const out = {};
+      for (const r of a || []) out[screenedKey('ps', r.ref)] = { accuracy: r.accuracy, reading: stillReading(r.documents_read) };
+      for (const r of b || []) out[screenedKey('philgeps', r.ref_no)] = { accuracy: r.accuracy, reading: stillReading(r.documents_read) };
+      setByKey(out);
+    })().catch(() => {});
+    return () => {
+      live = false;
+    };
+    // (key holds the refs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return (source, ref) => byKey[screenedKey(source, ref)] || {};
 }
 
 // tender: the tender in export shape (philgepsTender / psTender); products: our products it asks for (kept

@@ -12,7 +12,8 @@ import PsDetailsPanel, { KeyValueList, PanelSection, ProductPills } from '@/comp
 import ScreenButton from '@/components/ScreenButton';
 import WorkingDots from '@/components/WorkingDots';
 import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, pesoValue } from '@/components/PageHeader';
-import { downloadScreenedDocuments, exportScreened, loadScreenedDetails, removeScreened, useScreened } from '@/lib/screened';
+import { downloadScreenedDocuments, exportScreened, loadScreenedDetails, removeScreened, useScreened, useScreenedAccuracy } from '@/lib/screened';
+import { ReadingAlertTag } from '@/components/ReadingAlert';
 import { formatDate, formatDateTime, formatInstant, instantDay } from '@/lib/format';
 import { displayName } from '@/lib/username';
 import SourceTag, { SOURCES } from '@/components/SourceTag';
@@ -22,6 +23,7 @@ import SourceTag, { SOURCES } from '@/components/SourceTag';
 // team's Opportunity sheet, with each tender as it is now (latest update / Sync), stacked in the order they were screened.
 export default function ScreenedPage() {
   const { rows, error } = useScreened();
+  const accuracyOf = useScreenedAccuracy(rows);
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState({ tone: '', text: '' });
@@ -138,7 +140,20 @@ export default function ScreenedPage() {
 
   const columns = [
     { label: 'Source', width: '7.5rem', badge: true, render: (r) => <SourceTag source={r.source} /> },
-    { label: 'Reference', title: true, width: '8rem', nowrap: true, render: (r) => <span className="font-mono text-xs">{r.ref}</span> },
+    {
+      label: 'Reference',
+      title: true,
+      width: '8rem',
+      nowrap: true,
+      render: (r) => (
+        <>
+          <span className="font-mono text-xs">{r.ref}</span>
+          <span className="block">
+            <ReadingAlertTag {...accuracyOf(r.source, r.ref)} />
+          </span>
+        </>
+      ),
+    },
     { label: 'Type', width: '6rem', render: (r) => <TypeBadge type={r.tender?.type ? { code: r.tender.type, title: r.tender.type } : null} /> },
     {
       label: 'Procuring Agency',

@@ -6,6 +6,7 @@ import ScreenButton from '@/components/ScreenButton';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel, { SourceLinks } from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
+import { ReadingAlertBox } from '@/components/ReadingAlert';
 import { abcOf, asWritten, moleculeText, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { bidDateText, deliveryText } from '@/lib/bidDates';
 import { formatInstant } from '@/lib/format';
@@ -129,6 +130,7 @@ function FromDocuments({ reading, tenderRef, documents }) {
       </PanelSection>
       {/* Always shown, as on PhilGEPS, so Attached documents sits in the same place on both portals */}
       <PanelSection title={`Molecule tracker${reading?.status === 'done' && reading.result.items.length ? ` (${reading.result.items.length} lines naming our products)` : ''}`}>
+        <ReadingAlertBox accuracy={reading?.result?.accuracy} reading={stillReading(reading?.documents_read)} />
         {reading?.status !== 'done' ? (
           <p className="text-sm text-black/46">
             {reading ? 'The documents could not be read, so no item lines were picked out.' : 'The item lines naming our products show here once the documents are read.'}

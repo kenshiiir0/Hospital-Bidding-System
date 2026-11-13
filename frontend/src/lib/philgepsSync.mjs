@@ -671,6 +671,8 @@ export async function readTenderDocuments(supabase, matchProducts, o, details) {
       // Lines naming our products outside any table: not shown, kept for checking (psDocs.mjs isTableRow)
       documents_outside_table: outcome.result?.outside_table || [],
       documents_read: outcome.read,
+      // How well it was read (lib/readingAccuracy.mjs), for the "Check reading" alert
+      documents_accuracy: outcome.result?.accuracy || null,
       documents_read_note: outcome.status === 'done' ? null : outcome.error,
       // Pre-bid, bid opening, submission deadline, ... as written in the documents (the notice page has no schedule)
       documents_bid_data_sheet: outcome.result?.bid_data_sheet || null,

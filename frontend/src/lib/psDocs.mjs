@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { readingAccuracy } from './readingAccuracy.mjs';
 import { loadMatcher, withOcrUnits } from './products.mjs';
 import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
@@ -1690,7 +1691,8 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
   return {
     status: 'done',
     read,
-    result: { bid_data_sheet: readBidDataSheet(clean(texts.join('\n'))), items, outside_table: outside.slice(0, 100), ...((isPackage || many || lineItems) && { package: whole }), ...(lotsLeftOut.length && { lots_left_out: lotsLeftOut }) },
+    // How well it was read (lib/readingAccuracy.mjs): the "Check reading" alert at 70% or below, both portals
+    result: { bid_data_sheet: readBidDataSheet(clean(texts.join('\n'))), items, outside_table: outside.slice(0, 100), accuracy: readingAccuracy({ items, outside, read }),...((isPackage || many || lineItems) && { package: whole }), ...(lotsLeftOut.length && { lots_left_out: lotsLeftOut }) },
   };
 }
 

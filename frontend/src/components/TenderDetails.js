@@ -7,6 +7,7 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import FetchedSection from '@/components/FetchedSection';
 import DocumentsPanel, { SourceLinks } from '@/components/DocumentsPanel';
 import { stillReading } from '@/lib/documentsReading';
+import { ReadingAlertBox } from '@/components/ReadingAlert';
 import ScreenButton from '@/components/ScreenButton';
 import { abcOf, asWritten, moleculeText, philgepsTender, splitContact } from '@/lib/opportunityWorkbook';
 import PsDetailsPanel, { AbcAmount, ChecklistList, ComputedNote, KeyValueList, PanelSection, ProductPills, ReadingNote } from '@/components/PsDetailsPanel';
@@ -214,6 +215,7 @@ export default function TenderDetails({ bid, onClose }) {
 
       {/* Only the item lines that request our products */}
       <PanelSection title={`Molecule tracker${items?.length ? ` (${items.length} lines naming our products)` : ''}`}>
+        <ReadingAlertBox accuracy={d.documents_accuracy} reading={stillReading(d.documents_read)} />
         {items === undefined ? (
           <p className="text-sm text-black/46">The next automatic update (hourly, 6 AM–5 PM) picks out the requested items for this tender.</p>
         ) : items.length === 0 ? (

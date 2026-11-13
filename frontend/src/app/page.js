@@ -30,6 +30,7 @@ import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatInstant, formatPeso, instantDay } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { authFetch } from '@/lib/authFetch';
+import { ReadingAlertTag } from '@/components/ReadingAlert';
 
 const EXCLUDED_KEY = 'excludedProducts';
 // Sort choices, the same as the PS-PhilGEPS lists (PsFilters.js PS_SORTS); the first is the default
@@ -109,6 +110,7 @@ function DocumentCount({ bid }) {
       <span className="text-xs text-[#3F6F2C]">
         📎 {n} file{n > 1 ? 's' : ''}
         {reading(bid) && <span className="block font-medium text-[#12769F]">Reading scans (OCR)</span>}
+        <ReadingAlertTag accuracy={d.documents_accuracy} reading={reading(bid)} />
       </span>
     );
   if (d.documents_status === 'pick-up') return <span className="text-xs text-black/62">Pick-up only</span>;
@@ -141,7 +143,7 @@ function PsRefLink({ row }) {
 }
 
 // A PS-PhilGEPS tender's downloaded documents (reading: scanned ones still being read with OCR)
-function PsDocumentCount({ notice, reading }) {
+function PsDocumentCount({ notice, reading, accuracy }) {
   if (!notice) return <span className="text-black/46">—</span>;
   if (notice.error) return <span className="text-xs text-[#B3312C]">Not read</span>;
   const n = notice.documents?.length || 0;
@@ -150,6 +152,7 @@ function PsDocumentCount({ notice, reading }) {
     <span className="text-xs text-[#3F6F2C]">
       📎 {n} file{n > 1 ? 's' : ''}
       {reading && <span className="block font-medium text-[#12769F]">Reading scans (OCR)</span>}
+      <ReadingAlertTag accuracy={accuracy} reading={reading} />
     </span>
   );
 }
@@ -1001,7 +1004,7 @@ function BidMatch() {
                         <TypeBadge type={t.type} />
                       </div>
                       <div className="font-normal">
-                        {t.source === 'philgeps' ? <DocumentCount bid={t.bid} /> : <PsDocumentCount notice={psNotice(t.row)} reading={stillReading(psReading(t.row)?.documents_read)} />}
+                        {t.source === 'philgeps' ? <DocumentCount bid={t.bid} /> : <PsDocumentCount notice={psNotice(t.row)} reading={stillReading(psReading(t.row)?.documents_read)} accuracy={psReading(t.row)?.result?.accuracy} />}
                       </div>
                     </div>
                   ),
