@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { authFetch } from '@/lib/authFetch';
 import { formatInstant, instantDay } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
@@ -36,6 +36,8 @@ export function PsPortalProvider({ children }) {
   // Sync pressed while not connected: start it as soon as the log-in is saved
   const [syncAfterConnect, setSyncAfterConnect] = useState(false);
 
+  // Our active product names from the last full load, to apply to a single reading that arrives live
+  const activeNames = useRef(null);
   const loadData = useCallback(async () => {
     // The lists + notices, and what was read in each tender's documents (ps_tender_analysis, filled by
     // the keep-alive call every 5 minutes, see lib/psDocs.mjs)
@@ -45,6 +47,7 @@ export function PsPortalProvider({ children }) {
       // Archived products show nowhere, even before the next Sync re-matches the notices
       loadActiveNames().catch(() => null),
     ]);
+    activeNames.current = active;
     if (error) setRequestError(`Could not load PS-PhilGEPS data: ${error.message}`);
     else if (row) {
       const analysis = Object.fromEntries((readings || []).map((r) => [r.ref, r]));
@@ -142,19 +145,26 @@ export function PsPortalProvider({ children }) {
   }, [loadSync, loadConnect, syncing, connecting, syncAfterConnect]);
 
   // Live updates (Supabase Realtime, schema.sql): the page changes the moment the Sync status moves, a Sync saves
-  // its lists, or a tender's documents are read (incl. OCR of scanned ones), without a refresh. Bursts (an OCR
-  // run saving many tenders) reload the data once, DATA_RELOAD_WAIT_MS after the last change.
+  // its lists, or a tender's documents are read (incl. OCR of scanned ones), without a refresh. A new list reloads
+  // the data once, DATA_RELOAD_WAIT_MS after the last change. A tender's reading arrives whole in the live message,
+  // so it is merged in place: reloading every reading (~1.3 MB) per change used up the Supabase egress allowance.
   useEffect(() => {
     let reloadTimer;
     const reloadSoon = () => {
       clearTimeout(reloadTimer);
       reloadTimer = setTimeout(loadData, DATA_RELOAD_WAIT_MS);
     };
+    const mergeReading = (payload) => {
+      const row = payload.new;
+      if (!row?.ref || !row.result) return reloadSoon(); // a deleted row, or a message without the reading
+      const { ref, status, result, documents_read, error, analyzed_at } = row;
+      setData((prev) => (prev ? activePsData({ ...prev, analysis: { ...prev.analysis, [ref]: { ref, status, result, documents_read, error, analyzed_at } } }, activeNames.current) : prev));
+    };
     const channel = supabase
       .channel('ps_philgeps_live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_sync_status' }, (payload) => payload.new?.id && setSync(payload.new))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_philgeps_snapshot' }, reloadSoon)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_tender_analysis' }, reloadSoon)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_tender_analysis' }, mergeReading)
       .subscribe();
     return () => {
       clearTimeout(reloadTimer);
@@ -162,11 +172,12 @@ export function PsPortalProvider({ children }) {
     };
   }, [loadData]);
 
-  // Data: on open, every 5 minutes (in case a live update was missed), and whenever a Sync finishes
+  // Data: on open, whenever a Sync finishes, and every 30 minutes while the tab is in view (in case a live update
+  // was missed; was every 5 minutes, ~2 MB each, in every open tab, even hidden ones)
   const finishedAt = sync?.finished_at;
   useEffect(() => {
     const first = setTimeout(loadData, 0);
-    const timer = setInterval(loadData, 5 * 60000);
+    const timer = setInterval(() => document.visibilityState === 'visible' && loadData(), 30 * 60000);
     return () => {
       clearTimeout(first);
       clearInterval(timer);

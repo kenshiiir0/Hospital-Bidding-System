@@ -19,6 +19,18 @@ export const maxDuration = 300;
 //    (psDocs.mjs), for up to 3 minutes; the rest wait for the next call,
 // 3. then checks hospitals' own procurement pages that are due (hospitals.mjs, every 3 hours each),
 // 4. then the Google Vision backup for scanned documents (ocrVision.mjs).
+const SYNC_FRESH_MS = 15 * 60 * 1000;
+
+async function documentWorkDue() {
+  const now = new Date();
+  const manila = new Date(now.getTime() + 8 * 3600 * 1000);
+  const hour = manila.getUTCHours();
+  if (hour >= 6 && hour < 20 && manila.getUTCMinutes() % 15 < 5) return true;
+  // Only the snapshot's time (a few bytes), not its lists
+  const { data } = await admin().from('ps_philgeps_snapshot').select('synced_at').eq('id', 'latest').maybeSingle();
+  return Boolean(data?.synced_at) && now - new Date(data.synced_at) < SYNC_FRESH_MS;
+}
+
 export async function GET(request) {
   if (!hasCronSecret(request)) {
     return Response.json({ ok: false }, { status: 401 });
@@ -26,6 +38,10 @@ export async function GET(request) {
   after(async () => {
     // 0. PhilGEPS (notices) Sync: log out a session a cut-off round left behind (never while a Sync runs)
     await sweepSession().then((r) => r.loggedOut && console.log('[philgeps] logged out a leftover session'));
+    // Steps 2–4 each read every PS-PhilGEPS notice and reading (~2 MB) from Supabase; every 5 minutes around the
+    // clock that used up the free plan's egress (2026-11-03, 2026-11-13). They run only when there can be work:
+    // within 15 minutes of a Sync saving new lists, else once every 15 minutes from 6 AM to 8 PM Manila time.
+    if (!(await documentWorkDue())) return;
     await analyzePending({ maxMs: 180000 })
       .then(async (r) => {
         if (r.read || r.failed) console.log(`[ps-docs] read ${r.read}, failed ${r.failed}, waiting ${r.left}`);
