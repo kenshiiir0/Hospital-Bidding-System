@@ -466,7 +466,7 @@ async function connectWindow({ live, onRefused, onSubmit = async () => {}, share
 // one-time code (15 minutes) for the signed-in person; with it this laptop asks the dashboard for the log-in
 // (the dashboard applies the same log-in rules, lib/loginGuard.mjs), the person ticks the captcha here, and the
 // session goes back to the dashboard, which saves it for the whole team.
-const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'https://government-bidding-automation.vercel.app').replace(/\/+$/, '');
+const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'https://hospital-bidding-system.vercel.app').replace(/\/+$/, '');
 
 async function askDashboard(code, body) {
     let res;

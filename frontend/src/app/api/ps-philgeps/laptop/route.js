@@ -15,7 +15,7 @@ import { LAPTOP_KIT } from '@/lib/laptopKit.generated.mjs';
 //   { action: 'failed', outcome, detail }    the log-in stopped (closed window, 10 minutes passed...)
 //   { action: 'done', cookies, savedAt }     logged in: the session is saved for the whole team
 // GET ?file=NAME&code=SETUP_CODE: one of the laptop's files (lib/laptopKit.generated.mjs), for the setup file
-const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'https://government-bidding-automation.vercel.app').replace(/\/+$/, '');
+const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'https://hospital-bidding-system.vercel.app').replace(/\/+$/, '');
 const SITE = 'ps-philgeps';
 
 const fail = (status, error, code) => Response.json({ ok: false, error, code }, { status });

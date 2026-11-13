@@ -4,7 +4,7 @@ const { Client } = require('pg');
 // Schedules the PS-PhilGEPS keep-alive in Supabase (pg_cron + pg_net): every 5 minutes the database
 // calls <site>/api/ps-keepalive with the CRON_SECRET from .env, so PhilGEPS doesn't end the log-in
 // session for being idle. Re-run after changing the site address or CRON_SECRET; --remove unschedules.
-//   node tools/setup-keepalive.js https://government-bidding-automation.vercel.app
+//   node tools/setup-keepalive.js https://hospital-bidding-system.vercel.app
 // (Kept out of schema.sql because the job contains the secret.)
 const JOB = 'ps-philgeps-keepalive';
 
