@@ -8,7 +8,7 @@ import { withOcrUnits } from '../frontend/src/lib/products.mjs';
 import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
 import { needsDocuments, supplementNos } from '../frontend/src/lib/philgepsSync.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, itemisedLots, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -589,4 +589,12 @@ assert.equal(fullyRead('failed', [{ kind: 'text' }]), false, 'a failed reading k
 assert.equal(ocrPending([{ kind: 'text', ocr_waiting: true }]), true, 'pages waiting for OCR are read where OCR runs');
 assert.equal(ocrPending([{ kind: 'text', ocr_error: 'OCR failed' }]), false, 'a file OCR failed on where it runs is not queued every hour');
 
+// PS 138892 (user 2026-11-14 "Why the cetirizine is blank again"): in a tender of lots, a row with no Qty/ABC stays only
+// in a lot priced as a whole; beside rows priced one by one (no lot, or the same lot) it is another listing, set aside
+{
+  const lots = itemisedLots([{ quantity: 11445, unit_price: 32, total: 366240 }, { quantity: 5, total: 50, lot: 'Lot 1' }, { lot: 'Lot 2' }, { written: '98 Cetirizine Alnix Plus' }]);
+  assert.equal(lots.has(''), true, 'rows with no lot priced one by one: a blank row there is set aside');
+  assert.equal(lots.has('Lot 1'), true, 'a lot priced row by row');
+  assert.equal(lots.has('Lot 2'), false, 'a lot with no priced row is priced as a whole: its rows stay');
+}
 console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4} rows).`);

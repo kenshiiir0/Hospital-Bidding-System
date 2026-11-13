@@ -23,10 +23,13 @@ check('one of two files unreadable: 50%', readingAccuracy({ items: [line(10, 5, 
 check('scanned pages waiting for OCR count half', readingAccuracy({ items: [line(10, 5, 50)], read: [{ ...text, ocr_waiting: true }] }).percent, 50);
 check('Word/Excel-only "unsupported" files are left out', readingAccuracy({ items: [line(10, 5, 50)], read: [text, { name: 'a.zip', kind: 'unsupported' }] }).percent, 100);
 check('nothing read: no score, no alert', readingAccuracy({ read: [] }), (a) => a === null && !isLowAccuracy(a));
+// PS 138892 (2026-11-14): a blank line left among priced rows counts as a gap; a lot priced as a whole does not
+check('blank line among priced rows (kept in a lot tender) lowers it', readingAccuracy({ items: [line(10, 5, 50), { written: '98 Cetirizine Alnix Plus', source: 'x.pdf, page 88' }], read: [text] }).percent, 50);
+check('a lot priced as a whole beside an itemised one is not a gap', readingAccuracy({ items: [{ ...line(10, 5, 50), lot: 'Lot 1' }, { written: 'Cisplatin 1 mg/mL', lot: 'Lot 2' }], read: [text] }).percent, 100);
 check('71% is not an alert, 70% is', !isLowAccuracy({ percent: 71 }) && isLowAccuracy({ percent: 70 }), true);
 
 if (failed) {
   console.log(`\nReading accuracy check FAILED (${failed}).`);
   process.exit(1);
 }
-console.log('\nReading accuracy check passed (11 checks).');
+console.log('\nReading accuracy check passed (13 checks).');

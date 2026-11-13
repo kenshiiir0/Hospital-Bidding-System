@@ -49,7 +49,11 @@ export function readingAccuracy({ items = [], outside = [], read = [] } = {}) {
 
   // Lines
   const priced = (items || []).filter(complete);
-  const empty = (outside || []).filter((x) => x.why && x.our_products?.length);
+  // Lines without Qty or ABC: set aside (why), or left among the lines in a lot whose other rows are priced one by one
+  // (a lot priced as a whole has none: not a misreading)
+  const itemised = new Set((items || []).filter(complete).map((i) => i.lot ?? ''));
+  const blank = (items || []).filter((i) => !complete(i) && itemised.has(i.lot ?? '')).map((i) => ({ line: i.written || i.line, source: i.source }));
+  const empty = [...(outside || []).filter((x) => x.why && x.our_products?.length), ...blank];
   let lineShare = 1;
   if (priced.length) {
     const odd = priced.map((i) => ({ i, why: lineIssues(i) })).filter((x) => x.why.length);
