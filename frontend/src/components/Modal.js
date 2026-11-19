@@ -8,7 +8,8 @@ import { useEffect, useRef } from 'react';
 // - a scrolling body and a footer for the buttons.
 // Centred on wider screens, a sheet from the bottom on phones. The page behind is locked while it is open and
 // Tab stays inside it.
-export default function Modal({ title, subtitle, icon, busy = false, onClose, footer, children, width = 'sm:max-w-lg' }) {
+// padding: the body's padding ('p-5'; 'p-6' also widens the footer's sides to match)
+export default function Modal({ title, subtitle, icon, busy = false, onClose, footer, children, width = 'sm:max-w-lg', padding = 'p-5' }) {
   const card = useRef(null);
   const closeRef = useRef(onClose);
   useEffect(() => {
@@ -70,9 +71,9 @@ export default function Modal({ title, subtitle, icon, busy = false, onClose, fo
           </button>
         </header>
 
-        <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain p-5">{children}</div>
+        <div className={`flex-1 space-y-4 overflow-y-auto overscroll-contain ${padding}`}>{children}</div>
 
-        {footer && <footer className="flex items-center justify-end gap-2 border-t border-[#E2E8F0] bg-white p-4">{footer}</footer>}
+        {footer && <footer className={`flex items-center justify-end gap-2 border-t border-[#E2E8F0] bg-white ${padding === 'p-6' ? 'px-6 py-4' : 'p-4'}`}>{footer}</footer>}
       </div>
     </div>
   );

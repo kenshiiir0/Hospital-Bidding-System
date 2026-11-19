@@ -759,7 +759,7 @@ function MailIcon({ className }) {
   );
 }
 
-// ••• → Edit, or "+ Add email": status, note, e-mail addresses and contacts (PATCH /api/hospitals { agency_key, edit })
+﻿// ••• → Edit, or "+ Add email": status, note, e-mail addresses and contacts (PATCH /api/hospitals { agency_key, edit })
 function EditHospital({ hospital, focus, onCancel, onSaved }) {
   const [status, setStatus] = useState(hospital.status);
   const [note, setNote] = useState(hospital.list_note || '');
@@ -768,16 +768,35 @@ function EditHospital({ hospital, focus, onCancel, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const firstEmail = useRef(null);
+  const contactList = useRef(null);
+  const added = useRef(false);
   useEffect(() => {
     if (focus === 'email') firstEmail.current?.focus();
   }, [focus]);
+  // "+ Add contact" (in the footer): show the new row and start on its Name
+  useEffect(() => {
+    if (!added.current) return;
+    added.current = false;
+    const last = contactList.current?.lastElementChild;
+    last?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    last?.querySelector('input')?.focus();
+  }, [contacts.length]);
 
+  // 12px fields with soft borders for the top fields; the contact grid's fields sit inside a light row
   const field =
-    'w-full min-w-0 rounded-full border border-[#CBD5E1] bg-white px-4 py-2 text-sm text-black placeholder:text-black/46 transition focus:border-[#1EA0DA] focus:outline-none focus:ring-2 focus:ring-[#1EA0DA]/25';
+    'w-full min-w-0 rounded-xl border border-[#E2E8F0] bg-white px-3.5 py-2 text-sm text-black placeholder:text-black/40 transition hover:border-[#CBD5E1] focus:border-[#1EA0DA] focus:outline-none focus:ring-2 focus:ring-[#1EA0DA]/20';
+  const cell =
+    'w-full min-w-0 rounded-[10px] border border-transparent bg-transparent px-2.5 py-1.5 text-sm text-black placeholder:text-black/40 transition hover:bg-white focus:border-[#1EA0DA] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1EA0DA]/20';
   const label = 'text-xs font-semibold uppercase tracking-wider text-black/62';
-  const removeButton = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black/46 transition hover:bg-[#B3312C]/8 hover:text-[#B3312C]';
-  const addLink = 'mt-2 text-xs font-medium text-[#1EA0DA] hover:text-[#12769F] hover:underline';
+  // ✕ only on hover / keyboard focus (always on touch screens)
+  const removeButton =
+    'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-black/40 opacity-0 transition hover:bg-[#B3312C]/8 hover:text-[#B3312C] focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B3312C]/25 group-hover/row:opacity-100 group-focus-within/row:opacity-100 [@media(hover:none)]:opacity-100';
+  const columns = 'sm:grid-cols-[minmax(0,35fr)_minmax(0,40fr)_minmax(0,25fr)]';
   const setContact = (i, key, value) => setContacts(contacts.map((c, j) => (j === i ? { ...c, [key]: value } : c)));
+  const addContact = () => {
+    added.current = true;
+    setContacts([...contacts, { name: '', role: '', phone: '', source: 'added' }]);
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -807,19 +826,28 @@ function EditHospital({ hospital, focus, onCancel, onSaved }) {
       busy={saving}
       onClose={onCancel}
       width="sm:max-w-2xl"
+      padding="p-6"
       icon={<PencilIcon className="h-5 w-5" />}
       footer={
         <>
-          <button type="button" onClick={onCancel} disabled={saving} className={cancelButton}>
+          <button type="button" onClick={addContact} disabled={saving} className="mr-auto rounded-full px-2 py-2 text-xs font-semibold text-[#1EA0DA] transition hover:text-[#12769F] hover:underline disabled:opacity-50">
+            + Add contact
+          </button>
+          <button type="button" onClick={onCancel} disabled={saving} className="rounded-full border border-[#CBD5E1] px-4 py-2 text-xs font-medium text-black/62 transition hover:bg-[#1EA0DA]/6 disabled:opacity-60">
             Cancel
           </button>
-          <button type="submit" form="edit-hospital" disabled={saving} className={saveButton}>
+          <button
+            type="submit"
+            form="edit-hospital"
+            disabled={saving}
+            className="rounded-full bg-[#61A644] px-5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#4F8F35] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#61A644]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          >
             {saving ? 'Saving…' : 'Save'}
           </button>
         </>
       }
     >
-      <form id="edit-hospital" onSubmit={save} noValidate className="space-y-4">
+      <form id="edit-hospital" onSubmit={save} noValidate className="space-y-5">
         <div>
           <span className={`mb-1.5 block ${label}`}>Status</span>
           <SegmentedTabs label="Status" value={status} onChange={setStatus} options={Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }))} />
@@ -832,7 +860,7 @@ function EditHospital({ hospital, focus, onCancel, onSaved }) {
           <span className={label}>Hospital e-mails</span>
           <ul className="mt-1.5 space-y-2">
             {emails.map((value, i) => (
-              <li key={i} className="flex items-center gap-2">
+              <li key={i} className="group/row flex items-center gap-2">
                 <input
                   ref={i === 0 ? firstEmail : undefined}
                   type="email"
@@ -843,41 +871,50 @@ function EditHospital({ hospital, focus, onCancel, onSaved }) {
                   aria-label={`E-mail ${i + 1}`}
                   className={field}
                 />
-                <button type="button" onClick={() => setEmails(emails.length > 1 ? emails.filter((_, j) => j !== i) : [''])} aria-label={`Remove e-mail ${i + 1}`} className={removeButton}>
+                <button type="button" onClick={() => setEmails(emails.length > 1 ? emails.filter((_, j) => j !== i) : [''])} aria-label={`Remove e-mail ${i + 1}`} title="Remove" className={removeButton}>
                   ✕
                 </button>
               </li>
             ))}
           </ul>
           {emails.length < 10 && (
-            <button type="button" onClick={() => setEmails([...emails, ''])} className={addLink}>
+            <button type="button" onClick={() => setEmails([...emails, ''])} className="mt-2 text-xs font-medium text-[#1EA0DA] hover:text-[#12769F] hover:underline">
               + Add another e-mail
             </button>
           )}
         </section>
         <section>
-          <span className={label}>Contacts</span>
+          <span className={label}>
+            Contacts <span className="font-medium normal-case tracking-normal text-black/46">({contacts.length})</span>
+          </span>
           {contacts.length ? (
-            <ul className="mt-1.5 space-y-2">
-              {contacts.map((c, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
-                    <input value={c.name || ''} maxLength={200} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Name" aria-label={`Contact ${i + 1} name`} className={field} />
-                    <input value={c.role || ''} maxLength={200} onChange={(e) => setContact(i, 'role', e.target.value)} placeholder="Role / Department" aria-label={`Contact ${i + 1} role`} className={field} />
-                    <input value={c.phone || ''} maxLength={80} onChange={(e) => setContact(i, 'phone', e.target.value)} placeholder="WhatsApp / Phone" aria-label={`Contact ${i + 1} number`} className={field} />
-                  </div>
-                  <button type="button" onClick={() => setContacts(contacts.filter((_, j) => j !== i))} aria-label={`Remove contact ${i + 1}`} className={`${removeButton} mt-0.5`}>
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className={`mt-2 hidden gap-2 pl-1 pr-11 text-[11px] font-medium text-black/50 sm:grid ${columns}`} aria-hidden>
+                <span className="px-2.5">Name</span>
+                <span className="px-2.5">Role / Department</span>
+                <span className="inline-flex items-center gap-1 px-2.5">
+                  <WhatsAppIcon className="h-3 w-3 text-[#3F6F2C]" />
+                  Contact Number
+                </span>
+              </div>
+              <ul ref={contactList} className="mt-1.5 space-y-1.5">
+                {contacts.map((c, i) => (
+                  <li key={i} className="group/row flex items-start gap-1 rounded-xl bg-[#F8FAFC] p-1 sm:items-center">
+                    <div className={`grid min-w-0 flex-1 grid-cols-1 gap-1 sm:gap-2 ${columns}`}>
+                      <input value={c.name || ''} maxLength={200} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Name" title={c.name || ''} aria-label={`Contact ${i + 1} name`} className={`${cell} font-medium`} />
+                      <input value={c.role || ''} maxLength={200} onChange={(e) => setContact(i, 'role', e.target.value)} placeholder="Role / Department" title={c.role || ''} aria-label={`Contact ${i + 1} role`} className={cell} />
+                      <input value={c.phone || ''} maxLength={80} onChange={(e) => setContact(i, 'phone', e.target.value)} placeholder="0917 123 4567" title={c.phone || ''} aria-label={`Contact ${i + 1} number`} className={`${cell} tabular-nums`} />
+                    </div>
+                    <button type="button" onClick={() => setContacts(contacts.filter((_, j) => j !== i))} aria-label={`Remove contact ${i + 1}`} title="Remove" className={`${removeButton} mx-1 mt-1 sm:mt-0`}>
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : (
-            <p className="mt-1.5 text-xs text-black/46">No contacts yet.</p>
+            <p className="mt-1.5 text-xs text-black/46">No contacts yet. Use + Add contact below.</p>
           )}
-          <button type="button" onClick={() => setContacts([...contacts, { name: '', role: '', phone: '', source: 'added' }])} className={addLink}>
-            + Add contact
-          </button>
         </section>
       </form>
       {error && <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">{error}</p>}
