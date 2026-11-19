@@ -172,20 +172,17 @@ function RowMenu({ label, items }) {
   );
 }
 
-// The pill that opens and closes a row's other contacts
-function MorePill({ count, noun, open, onClick }) {
+// "+N contacts": opens the View window with every contact and e-mail
+function MorePill({ count, noun, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-expanded={open}
+      title="View all"
       className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-[#1EA0DA]/30 bg-[#1EA0DA]/6 px-2 py-0.5 text-[11px] font-medium text-[#12769F] transition hover:bg-[#1EA0DA]/12"
     >
       +{count} {noun}
       {count === 1 ? '' : 's'}
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
-        <path d="m5 8 5 5 5-5" />
-      </svg>
     </button>
   );
 }
@@ -202,7 +199,7 @@ export default function HospitalsPage() {
   const [view, setView] = useState('active'); // active | rfq | prospect | noemail | archived
   const [archiving, setArchiving] = useState(null);
   const [restoring, setRestoring] = useState(null);
-  const [open, setOpen] = useState(() => new Set());
+  const [viewing, setViewing] = useState(null); // the hospital shown in the View window
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const listTop = useRef(null);
@@ -250,13 +247,6 @@ export default function HospitalsPage() {
   const changeView = (next) => {
     setView(next);
     setPage(1);
-    setOpen(new Set());
-  };
-  const toggleOpen = (key) => {
-    const next = new Set(open);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    setOpen(next);
   };
 
   const all = hospitals || [];
@@ -274,7 +264,6 @@ export default function HospitalsPage() {
 
   // With a role picked, that role's contacts come first (the first one is shown in the row)
   const contactsOf = (h) => (role === 'all' ? h.contacts : [...h.contacts.filter((c) => matchesRole(c, role)), ...h.contacts.filter((c) => !matchesRole(c, role))]);
-  const extraOf = (h) => Math.max(0, h.contacts.length - 1) + Math.max(0, h.emails.length - 1);
 
   const columns = [
     {
@@ -325,7 +314,7 @@ export default function HospitalsPage() {
                   {first.role}
                 </span>
               )}
-              {more > 0 && <MorePill count={more} noun="contact" open={open.has(h.agency_key)} onClick={() => toggleOpen(h.agency_key)} />}
+              {more > 0 && <MorePill count={more} noun="contact" onClick={() => setViewing(h)} />}
             </span>
           </span>
         );
@@ -365,7 +354,7 @@ export default function HospitalsPage() {
                 {h.emails[0]}
               </a>
             </Copyable>
-            {more > 0 && <MorePill count={more} noun="e-mail" open={open.has(h.agency_key)} onClick={() => toggleOpen(h.agency_key)} />}
+            {more > 0 && <MorePill count={more} noun="e-mail" onClick={() => setViewing(h)} />}
           </span>
         );
       },
@@ -386,92 +375,38 @@ export default function HospitalsPage() {
       : []),
     {
       label: view === 'archived' ? 'Actions' : '',
-      width: view === 'archived' ? '7rem' : '3.75rem',
+      width: view === 'archived' ? '10.5rem' : '7.5rem',
       nowrap: true,
       align: 'right',
-      render: (h) =>
-        h.archived_at ? (
-          <button
-            type="button"
-            onClick={() => restore(h)}
-            disabled={restoring === h.agency_key}
-            className="whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold text-[#3F6F2C] transition hover:bg-[#61A644]/10 disabled:opacity-60"
-          >
-            {restoring === h.agency_key ? 'Restoring…' : '↺ Restore'}
+      render: (h) => (
+        <span className="inline-flex items-center justify-end gap-1">
+          <button type="button" onClick={() => setViewing(h)} className={viewButton}>
+            View
           </button>
-        ) : (
-          <RowMenu
-            label={h.name}
-            items={[
-              { label: 'Edit', icon: <PencilIcon className="h-3.5 w-3.5" />, onClick: () => setEditing({ hospital: h }) },
-              { label: 'Message', icon: <MailIcon className="h-3.5 w-3.5" />, onClick: () => setMessaging({ only: h.agency_key }) },
-              { label: 'Archive', icon: <ArchiveIcon className="h-3.5 w-3.5" />, onClick: () => setArchiving(h) },
-            ]}
-          />
-        ),
+          {h.archived_at ? (
+            <button
+              type="button"
+              onClick={() => restore(h)}
+              disabled={restoring === h.agency_key}
+              className="whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold text-[#3F6F2C] transition hover:bg-[#61A644]/10 disabled:opacity-60"
+            >
+              {restoring === h.agency_key ? 'Restoring…' : '↺ Restore'}
+            </button>
+          ) : (
+            <RowMenu
+              label={h.name}
+              items={[
+                { label: 'View details', icon: <EyeIcon className="h-3.5 w-3.5" />, onClick: () => setViewing(h) },
+                { label: 'Edit', icon: <PencilIcon className="h-3.5 w-3.5" />, onClick: () => setEditing({ hospital: h }) },
+                { label: 'Message', icon: <MailIcon className="h-3.5 w-3.5" />, onClick: () => setMessaging({ only: h.agency_key }) },
+                { label: 'Archive', icon: <ArchiveIcon className="h-3.5 w-3.5" />, onClick: () => setArchiving(h) },
+              ]}
+            />
+          )}
+        </span>
+      ),
     },
   ];
-
-  // The panel under an opened row: every other contact (name, role, number) and the other e-mail addresses
-  const expanded = (h) => {
-    if (!open.has(h.agency_key) || !extraOf(h)) return null;
-    const others = contactsOf(h).slice(1);
-    return (
-      <div className="space-y-3">
-        {others.length > 0 && (
-          <section>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-black/50">
-              Other contacts ({others.length})
-            </p>
-            <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white">
-              <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4 border-b border-[#EEF1F5] px-3.5 py-2 text-[11px] font-medium text-black/50 sm:grid">
-                <span>Name</span>
-                <span>Role / Department</span>
-                <span>WhatsApp / Phone</span>
-              </div>
-              <ul className="divide-y divide-[#EEF1F5]">
-                {others.map((c, i) => (
-                  <li key={i} className="grid grid-cols-1 gap-x-4 gap-y-0.5 px-3.5 py-2 text-xs sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-center">
-                    <span className="truncate font-semibold text-black" title={c.name || ''}>
-                      {c.name || '—'}
-                    </span>
-                    <span className="truncate text-black/62" title={c.role || ''}>
-                      {c.role || <span className="text-black/46">—</span>}
-                    </span>
-                    <span className="min-w-0 tabular-nums">
-                      {c.phone ? (
-                        <Copyable value={c.phone} label="number">
-                          <PhoneNumber value={c.phone} />
-                        </Copyable>
-                      ) : (
-                        <span className="text-black/46">—</span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-        )}
-        {h.emails.length > 1 && (
-          <section>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-black/50">Other e-mails ({h.emails.length - 1})</p>
-            <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
-              {h.emails.slice(1).map((e) => (
-                <li key={e} className="min-w-0">
-                  <Copyable value={e} label="e-mail address">
-                    <a href={`mailto:${e}`} className="text-[#12769F] hover:text-[#0E5C7C] hover:underline">
-                      {e}
-                    </a>
-                  </Copyable>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </div>
-    );
-  };
 
   const kpi = (value, label, tone, note) => ({
     label,
@@ -556,6 +491,28 @@ export default function HospitalsPage() {
             }}
           />
         )}
+        {viewing && (
+          <HospitalDetails
+            hospital={viewing}
+            onClose={() => setViewing(null)}
+            onEdit={
+              viewing.archived_at
+                ? null
+                : () => {
+                    setEditing({ hospital: viewing });
+                    setViewing(null);
+                  }
+            }
+            onMessage={
+              viewing.archived_at
+                ? null
+                : () => {
+                    setMessaging({ only: viewing.agency_key });
+                    setViewing(null);
+                  }
+            }
+          />
+        )}
         {messaging && <MessageHospitals hospitals={all} only={messaging.only} onClose={() => setMessaging(null)} />}
         {archiving && (
           <ArchiveHospital
@@ -619,8 +576,7 @@ export default function HospitalsPage() {
               columns={columns}
               rows={pageRows}
               rowKey={(h) => h.agency_key}
-              expanded={expanded}
-              onRowClick={(h) => extraOf(h) && toggleOpen(h.agency_key)}
+              onRowClick={(h) => setViewing(h)}
             />
             {rows.length > PAGE_SIZES[0] && (
               <Pagination
@@ -657,6 +613,137 @@ function WhatsAppIcon({ className }) {
       <path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4l-4.5 1.1z" />
       <path d="M9 8.5c0 3.5 2.6 6.5 6.5 6.5l1-1.5-2-1-1 .8c-1.2-.5-2.3-1.6-2.8-2.8l.8-1-1-2L9 8.5z" />
     </svg>
+  );
+}
+
+function EyeIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+const viewButton =
+  'whitespace-nowrap rounded-full border border-[#1EA0DA]/30 px-3 py-1 text-xs font-semibold text-[#12769F] transition hover:bg-[#1EA0DA]/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30';
+
+const shortDate = (v) => (v ? new Date(v).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+const SOURCES = { 'winning-bid-tracker': 'WINNING BID TRACKER sheet', 'excel-import': 'Import Excel', added: 'Add Hospital' };
+
+// View: the whole record of one hospital — status, note, website, every e-mail and contact (name, role, number)
+function HospitalDetails({ hospital: h, onClose, onEdit, onMessage }) {
+  const heading = 'mb-2 text-[11px] font-semibold uppercase tracking-wider text-black/50';
+  const from = [h.source && (SOURCES[h.source] || h.source), h.added_by && `by ${h.added_by.split('@')[0]}`, shortDate(h.created_at)].filter(Boolean).join(' · ');
+  return (
+    <Modal
+      title={h.name.toUpperCase()}
+      subtitle="Hospital details"
+      onClose={onClose}
+      width="sm:max-w-3xl"
+      icon={<EyeIcon className="h-5 w-5" />}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className={cancelButton}>
+            Close
+          </button>
+          {onMessage && (
+            <button type="button" onClick={onMessage} className={cancelButton}>
+              ✉ Message
+            </button>
+          )}
+          {onEdit && (
+            <button type="button" onClick={onEdit} className={saveButton}>
+              Edit
+            </button>
+          )}
+        </>
+      }
+    >
+      <section className="grid grid-cols-1 gap-4 rounded-[14px] border border-[#E2E8F0] p-4 text-xs sm:grid-cols-2">
+        <div>
+          <p className={heading}>Status</p>
+          <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${STATUS[h.status].pill}`}>{STATUS[h.status].label}</span>
+          {h.archived_at && (
+            <span className="ml-2 text-black/62">
+              Archived {shortDate(h.archived_at)}
+              {h.archived_by && ` by ${h.archived_by.split('@')[0]}`}
+            </span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className={heading}>Website</p>
+          {h.website ? (
+            <a href={h.website} target="_blank" rel="noreferrer" className="break-all text-[#12769F] hover:text-[#0E5C7C] hover:underline">
+              {h.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+            </a>
+          ) : (
+            <span className="text-black/46">—</span>
+          )}
+        </div>
+        <div className="sm:col-span-2">
+          <p className={heading}>Note</p>
+          <p className="whitespace-pre-wrap break-words text-black/85">{h.list_note || <span className="text-black/46">—</span>}</p>
+        </div>
+        {from && (
+          <div className="sm:col-span-2">
+            <p className={heading}>Added from</p>
+            <p className="text-black/62">{from}</p>
+          </div>
+        )}
+      </section>
+
+      <section>
+        <p className={heading}>E-mails ({h.emails.length})</p>
+        {h.emails.length ? (
+          <ul className="space-y-1.5 text-xs">
+            {h.emails.map((e) => (
+              <li key={e} className="min-w-0">
+                <Copyable value={e} label="e-mail address">
+                  <a href={`mailto:${e}`} className="text-[#12769F] hover:text-[#0E5C7C] hover:underline">
+                    {e}
+                  </a>
+                </Copyable>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-black/46">No e-mail address yet.</p>
+        )}
+      </section>
+
+      <section>
+        <p className={heading}>Contacts ({h.contacts.length})</p>
+        {h.contacts.length ? (
+          <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white">
+            <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4 border-b border-[#EEF1F5] bg-[#F8FAFC] px-3.5 py-2 text-[11px] font-medium text-black/50 sm:grid">
+              <span>Name</span>
+              <span>Role / Department</span>
+              <span>WhatsApp / Phone</span>
+            </div>
+            <ul className="divide-y divide-[#EEF1F5]">
+              {h.contacts.map((c, i) => (
+                <li key={i} className="grid grid-cols-1 gap-x-4 gap-y-0.5 px-3.5 py-2.5 text-xs sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-center">
+                  <span className="break-words font-semibold text-black">{c.name || '—'}</span>
+                  <span className="break-words text-black/62">{c.role || <span className="text-black/46">—</span>}</span>
+                  <span className="min-w-0 tabular-nums">
+                    {c.phone ? (
+                      <Copyable value={c.phone} label="number">
+                        <PhoneNumber value={c.phone} />
+                      </Copyable>
+                    ) : (
+                      <span className="text-black/46">—</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="text-xs text-black/46">No contacts yet.</p>
+        )}
+      </section>
+    </Modal>
   );
 }
 
