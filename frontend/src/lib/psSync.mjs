@@ -617,6 +617,10 @@ export async function runSync() {
     // every tender closing at once (the copy is what the team works from while PS-PhilGEPS is down)
     const before = Object.keys(previous?.notices || {}).length;
     if (!lists.bidMatch.rows.length && before >= 5) throw new PsSyncError('SITE_DOWN', `PS-PhilGEPS sent an empty Bid Match (the last Sync had ${before} tenders), so nothing was saved and the saved tenders stay on the dashboard. Press Sync again in 5–10 minutes.`);
+    // When the dashboard first had each tender (user 2026-11-19: "Why some is popping out now?"; PhilGEPS has
+    // created_at): kept from Sync to Sync. Tenders already listed before this was kept have none (shown as such).
+    const firstSeen = new Date(syncStarted).toISOString();
+    for (const ref of refs) if (notices[ref]) notices[ref].first_seen = previous?.notices?.[ref] ? previous.notices[ref].first_seen ?? null : firstSeen;
     const syncedAt = new Date().toISOString();
     const { error } = await supabase.from('ps_philgeps_snapshot').upsert({ id: 'latest', synced_at: syncedAt, lists, notices, updated_at: syncedAt });
     if (error) throw new PsSyncError('DB', `Saving the result: ${error.message}`);

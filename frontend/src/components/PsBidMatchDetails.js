@@ -51,6 +51,8 @@ export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose }) {
           {/* When this tender was fetched (the last Sync's list) and its documents read, and the automatic schedule */}
           <FetchedSection
             items={[
+              // (kept since 2026-11-19; earlier tenders weren't timed)
+              ['First fetched', notice && (notice.first_seen ? formatInstant(notice.first_seen) : 'Before Nov 19, 2026 (not recorded)')],
               ['Last fetched', data.syncedAt && [formatInstant(data.syncedAt), lastSyncBy].filter(Boolean).join(' · ')],
               ['Documents read', reading?.analyzed_at && `${formatInstant(reading.analyzed_at)} · Automatic`],
             ]}
