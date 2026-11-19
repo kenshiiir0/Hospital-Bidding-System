@@ -1884,6 +1884,13 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
       }
       if (outcome.status === 'failed') failed++;
       else readCount++;
+      // A failed reading never replaces an earlier one (user, 2026-11-19: PS 140616 and 16 other Screened tenders
+      // showed "reading budget is used up" in place of their lines). Its documents_key stays the old one, so it is
+      // tried again next run; PhilGEPS does the same (philgepsSync.mjs keeps details when readTenderDocuments fails)
+      if (outcome.status === 'failed' && known.get(ref)?.documents_read) {
+        await onProgress?.(readCount + failed, queue.length);
+        continue;
+      }
       // Read to the end and none of ours (not Screened either): its files aren't kept. The names go with the
       // reading, so the Sync doesn't download them again (psSync.mjs readNotice; lib/documentKeep.mjs)
       let removed = [];
