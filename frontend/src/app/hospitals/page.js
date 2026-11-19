@@ -375,14 +375,11 @@ export default function HospitalsPage() {
       : []),
     {
       label: view === 'archived' ? 'Actions' : '',
-      width: view === 'archived' ? '10.5rem' : '7.5rem',
+      width: view === 'archived' ? '7rem' : '3.75rem',
       nowrap: true,
       align: 'right',
       render: (h) => (
         <span className="inline-flex items-center justify-end gap-1">
-          <button type="button" onClick={() => setViewing(h)} className={viewButton}>
-            View
-          </button>
           {h.archived_at ? (
             <button
               type="button"
@@ -625,8 +622,6 @@ function EyeIcon({ className }) {
   );
 }
 
-const viewButton =
-  'whitespace-nowrap rounded-full border border-[#1EA0DA]/30 px-3 py-1 text-xs font-semibold text-[#12769F] transition hover:bg-[#1EA0DA]/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30';
 
 const shortDate = (v) => (v ? new Date(v).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 const SOURCES = { 'winning-bid-tracker': 'WINNING BID TRACKER sheet', 'excel-import': 'Import Excel', added: 'Add Hospital' };
