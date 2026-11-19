@@ -22,6 +22,20 @@ ALTER TABLE philgeps_opportunities ADD COLUMN IF NOT EXISTS matched_molecules TE
 -- Migration: notice details shown in the dashboard's tender panel (procurement mode, contact person, ...)
 ALTER TABLE philgeps_opportunities ADD COLUMN IF NOT EXISTS details JSONB;
 
+-- Migration (2026-11-19, Supabase egress): when a tender last changed, so the Bid Match loads only the tenders
+-- changed since its saved copy (app/page.js loadBids) instead of all of them (~3.7 MB) on every open
+ALTER TABLE philgeps_opportunities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+CREATE INDEX IF NOT EXISTS philgeps_opportunities_updated_at ON philgeps_opportunities (updated_at);
+CREATE OR REPLACE FUNCTION philgeps_opportunities_touch() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.updated_at := now();
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS philgeps_opportunities_touch ON philgeps_opportunities;
+CREATE TRIGGER philgeps_opportunities_touch BEFORE UPDATE ON philgeps_opportunities
+    FOR EACH ROW EXECUTE FUNCTION philgeps_opportunities_touch();
+
 -- Migration for tables created before detail_link was UNIQUE (the scraper upserts on ref_no)
 DO $$
 BEGIN
@@ -635,3 +649,18 @@ REVOKE ALL ON assigned_people FROM anon;
 REVOKE ALL ON assigned_hospitals FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON assigned_people FROM authenticated;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON assigned_hospitals FROM authenticated;
+
+-- Each bid document's text as read (lib/psDocs.mjs savedTexts / saveTexts, 2026-11-19, Supabase egress): a reading
+-- again uses it instead of downloading the file again. text: the pages as JSON, gzipped, base64. Server only (the
+-- secret key): no policies, not sent live.
+CREATE TABLE IF NOT EXISTS document_text (
+    bucket TEXT NOT NULL,
+    path TEXT NOT NULL,
+    size BIGINT,
+    version TEXT NOT NULL,
+    text TEXT NOT NULL,
+    saved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (bucket, path)
+);
+ALTER TABLE document_text ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON document_text FROM anon, authenticated;

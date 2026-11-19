@@ -7,6 +7,8 @@ import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from '
 import { BDS_ONE_LOT, PACKAGE_ROW } from './packageTender.js';
 import { dropFiles, fullyRead } from './documentKeep.mjs';
 import { DOWNLOAD_BUDGET_MESSAGE, countDownload, downloadsOverBudget } from './usageMeter.mjs';
+import { docsIdle, docsStamp, markDocsIdle } from './docsIdle.mjs';
+import { gunzipSync, gzipSync } from 'node:zlib';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -1127,8 +1129,46 @@ async function xlsxText(zip) {
   return lines.join('\n');
 }
 
+// Each file's text as read (pages, after OCR), kept in document_text (schema.sql) so a reading again (a rule
+// changed, a new Sync, the keep-alive's turn) never downloads the same file again (user 2026-11-19: "Read each
+// document once"; re-readings were most of the 2.7 GB of files downloaded in November). Gzipped: about a tenth of
+// the file. Bump TEXT_VERSION whenever fileText, withOcr or anything they call changes what a file's pages read,
+// so the saved texts are read again from the files.
+const TEXT_VERSION = 'text-1';
+async function savedTexts(supabase, bucket, documents) {
+  const paths = (documents || []).filter((d) => d.path && !d.removed).map((d) => d.path);
+  const out = new Map();
+  if (!paths.length) return out;
+  try {
+    const { data, error } = await supabase.from('document_text').select('path, size, version, text').eq('bucket', bucket).in('path', paths);
+    if (error) return out;
+    for (const r of data || []) {
+      if (r.version !== TEXT_VERSION) continue;
+      try {
+        out.set(r.path, { size: r.size, ...JSON.parse(gunzipSync(Buffer.from(r.text, 'base64')).toString('utf8')) });
+      } catch {
+        // damaged: the file is read instead
+      }
+    }
+  } catch {
+    // not reachable: the files are read instead
+  }
+  return out;
+}
+async function saveTexts(supabase, bucket, entries) {
+  if (!entries.length) return;
+  const rows = entries.map(({ path, size, ...text }) => ({ bucket, path, size, version: TEXT_VERSION, text: gzipSync(Buffer.from(JSON.stringify(text), 'utf8')).toString('base64'), saved_at: new Date().toISOString() }));
+  await supabase
+    .from('document_text')
+    .upsert(rows, { onConflict: 'bucket,path' })
+    .then(
+      () => {},
+      () => {}
+    );
+}
+
 // A file's text as pages (a Word or Excel file is one "page"); [] when it can't be opened.
-// pdf: the opened PDF (pdf.js), for OCR of its scanned pages
+// pdf: the opened PDF (pdf.js), for OCR of its scanned pages. A change to what it reads: bump TEXT_VERSION above.
 async function fileText(name, bytes) {
   if (/\.pdf$/i.test(name)) {
     const pdf = await getDocumentProxy(bytes);
@@ -1508,30 +1548,42 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
   const undosed = [];
   const read = [];
   const texts = [];
+  // Files' text saved by an earlier reading (loaded at the first file to read), and the text to save from this one
+  let texts0;
+  const toCache = [];
   for (const doc of documents || []) {
     // (a file not kept, the tender not being ours: lib/documentKeep.mjs)
     if (!doc.path || doc.removed || !READABLE.test(doc.name)) {
       if (doc.path && !doc.removed) read.push({ name: doc.name, kind: 'unsupported' });
       continue;
     }
-    const { data: blob, error } = await downloadWithRetry(supabase, bucket, doc.path);
-    if (error) throw new Error(`${doc.name}: ${error.message}`);
     let pages;
     let pdf;
-    try {
-      ({ pages, pdf } = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer())));
-    } catch {
-      read.push({ name: doc.name, kind: 'unreadable' });
-      continue;
-    }
     const isPdf = /\.pdf$/i.test(doc.name);
     let ocrPages = 0;
     let ocrError;
     let ocrVersion;
-    if (pdf) {
-      const ocr = await withOcr(supabase, bucket, doc, pdf, pages, ocrUntil);
-      if (!ocr.complete) throw new Error(`${doc.name}: scanned pages are still being read (OCR); the next run continues.`);
-      ({ pages, ocrPages, error: ocrError, version: ocrVersion } = ocr);
+    // Read before: its text, not the file again (savedTexts)
+    const saved = (texts0 ??= await savedTexts(supabase, bucket, documents)).get(doc.path);
+    if (saved && (doc.size == null || saved.size == null || Number(saved.size) === Number(doc.size)) && (!saved.ocrPages || saved.ocrVersion === OCR_VERSION)) {
+      ({ pages, ocrPages, ocrVersion } = saved);
+      pdf = saved.pdf || null;
+    } else {
+      const { data: blob, error } = await downloadWithRetry(supabase, bucket, doc.path);
+      if (error) throw new Error(`${doc.name}: ${error.message}`);
+      try {
+        ({ pages, pdf } = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer())));
+      } catch {
+        read.push({ name: doc.name, kind: 'unreadable' });
+        continue;
+      }
+      if (pdf) {
+        const ocr = await withOcr(supabase, bucket, doc, pdf, pages, ocrUntil);
+        if (!ocr.complete) throw new Error(`${doc.name}: scanned pages are still being read (OCR); the next run continues.`);
+        ({ pages, ocrPages, error: ocrError, version: ocrVersion } = ocr);
+      }
+      // Kept only when nothing is left to read in it (OCR waiting or failed: read again once OCR has run)
+      if (!ocrError) toCache.push({ path: doc.path, size: doc.size ?? null, pages, ocrPages, ocrVersion, pdf: Boolean(pdf) });
     }
     const letters = pages.join('').replace(/\s/g, '').length;
     // Not readable: almost no text in the whole file, or mostly empty pages that OCR couldn't run on (yet).
@@ -1702,6 +1754,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
   }
   if (!read.some((d) => d.kind !== 'unsupported')) return { status: 'skipped', read, error: 'No PDF, Word or Excel documents.' };
   if (!texts.length) return { status: 'skipped', read, error: 'No readable text (scanned or damaged documents).' };
+  // The files' text, for reading them again without downloading them (only a tender of ours: the others' files
+  // are let go after reading, lib/documentKeep.mjs)
+  if (items.length) await saveTexts(supabase, bucket, toCache);
   return {
     status: 'done',
     read,
@@ -1852,19 +1907,24 @@ export function lotSchedule(lines) {
 }
 
 // Reads the tenders whose documents are new or changed, a few at a time, until maxMs has passed.
-// onProgress(done, total) after each tender. Returns { read, failed, left }.
-export async function analyzePending({ maxMs = 200000, refs: only, onProgress } = {}) {
+// onProgress(done, total) after each tender. Returns { read, failed, left, idle }.
+// notices: the Sync's own (just saved), so they aren't loaded back. Without refs (the keep-alive's run) it stops
+// at once when nothing changed since its last full pass (lib/docsIdle.mjs; idle: true).
+export async function analyzePending({ maxMs = 200000, refs: only, notices: given, onProgress } = {}) {
   const started = Date.now();
   const supabase = admin();
   const matchProducts = await loadMatcher();
+  const stamp = only ? null : await docsStamp(supabase, `${matchProducts.key}|${RULES_VERSION}|${OCR_ENABLED}`);
+  if (await docsIdle(supabase, stamp)) return { read: 0, failed: 0, left: 0, idle: true };
 
-  const { data: snap } = await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle();
-  const { data: done } = await supabase.from('ps_tender_analysis').select('ref, documents_key, documents_read');
+  const notices = given || (await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle()).data?.notices;
+  // What was read in each file is needed only where OCR runs (ocrPending); elsewhere whether there is a reading
+  const { data: done } = await supabase.from('ps_tender_analysis').select(OCR_ENABLED ? 'ref, documents_key, documents_read' : 'ref, documents_key, documents_read:documents_read->0');
   const known = new Map((done || []).map((r) => [r.ref, r]));
   // Screened tenders first (user, 2026-10-27): the ones the team bids on
   const { data: screened } = await supabase.from('screened_tenders').select('ref').eq('source', 'ps');
   const isScreened = new Set((screened || []).map((s) => String(s.ref)));
-  const queue = Object.entries(snap?.notices || {})
+  const queue = Object.entries(notices || {})
     .filter(([ref, n]) => (!only || only.includes(ref)) && n.documents?.some((d) => d.path))
     .filter(([ref, n]) => known.get(ref)?.documents_key !== documentsKey(n, matchProducts.key) || ocrPending(known.get(ref).documents_read))
     // Screened tenders first, then those that mention our products
@@ -1913,5 +1973,8 @@ export async function analyzePending({ maxMs = 200000, refs: only, onProgress } 
     }
   };
   await Promise.all(Array.from({ length: TENDERS_AT_ONCE }, worker));
+  // Everything was tried: the next runs stop at once until a Sync, the product list or the month changes (the
+  // failed ones are tried again then)
+  if (next >= queue.length) await markDocsIdle(supabase, stamp);
   return { read: readCount, failed, left: queue.length - next };
 }

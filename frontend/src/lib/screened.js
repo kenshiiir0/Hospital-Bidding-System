@@ -5,6 +5,7 @@ import { stillReading } from '@/lib/documentsReading';
 import { supabase } from '@/lib/supabase';
 import { downloadOpportunityWorkbook, moleculeText, philgepsTender, PS_SR_NO, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
+import { psReadings, psSnapshot } from '@/lib/psData';
 
 // Screened Tenders (Supabase screened_tenders, shared by the team): tenders picked with "Add to Screened" in
 // View details. The Screened Tenders page lists them and exports them to Excel.
@@ -103,18 +104,18 @@ export async function removeScreened(source, ref) {
   await loadScreened();
 }
 
-// PS-PhilGEPS Bid Match: the last Sync's list, notices and document readings (as app/ps-philgeps/layout.js loads them)
+// PS-PhilGEPS Bid Match: the last Sync's list, notices and document readings, the same copy the Bid Match and the
+// PS-PhilGEPS pages keep (lib/psData.js: only what changed is loaded)
 async function loadPsData() {
-  const [{ data: snap, error: err }, { data: readings }] = await Promise.all([
-    supabase.from('ps_philgeps_snapshot').select('synced_at, lists, notices').eq('id', 'latest').maybeSingle(),
-    supabase.from('ps_tender_analysis').select('ref, status, result, documents_read, error, analyzed_at'),
-  ]);
-  if (err) throw new Error(`Could not load PS-PhilGEPS data: ${err.message}`);
+  let snap;
+  let analysis;
+  try {
+    [snap, analysis] = await Promise.all([psSnapshot(), psReadings()]);
+  } catch (e) {
+    throw new Error(`Could not load PS-PhilGEPS data: ${e.message}`);
+  }
   const active = await loadActiveNames().catch(() => null);
-  return activePsData(
-    { syncedAt: snap?.synced_at, lists: snap?.lists || {}, notices: snap?.notices || {}, analysis: Object.fromEntries((readings || []).map((r) => [r.ref, r])) },
-    active
-  );
+  return activePsData({ syncedAt: snap?.synced_at, lists: snap?.lists || {}, notices: snap?.notices || {}, analysis }, active);
 }
 
 // What View details on the Screened Tenders page opens for a screened row:

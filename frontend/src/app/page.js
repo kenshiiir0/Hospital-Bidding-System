@@ -49,10 +49,15 @@ const PAGE_ROWS = 1000;
 
 // Last list loaded from Supabase, shown at once on the next visit while the fresh copy loads
 const BIDS_CACHE_KEY = 'bidsCache';
+// A saved list older than this is loaded whole again, not only what changed since (loadBids)
+const FULL_RELOAD_AFTER_MS = 24 * 3600 * 1000;
+// The newest change (updated_at) among loaded tenders, or `since` when none is newer
+const newestChange = (rows, since) => (rows || []).reduce((max, r) => (r.updated_at && (!max || r.updated_at > max) ? r.updated_at : max), since);
 // How often the page asks the server about PhilGEPS fetches: often while one runs, less when idle
-// (to notice the hourly automatic update starting), and how long a plain "complete" stays up
+// (to notice the hourly automatic update starting; was every 5 s in every open tab, each a Supabase read), and
+// how long a plain "complete" stays up
 const FETCH_POLL_MS = 1000;
-const IDLE_POLL_MS = 5000;
+const IDLE_POLL_MS = 30000;
 const DONE_SHOWN_MS = 6000;
 const RELOAD_DURING_SYNC_MS = 10000;
 
@@ -197,6 +202,9 @@ export default function Home() {
 
 function BidMatch() {
   const [bids, setBids] = useState([]);
+  // The list as shown, for loadBids; and the newest change loaded (updated_at): the next load asks only for later ones
+  const bidsRef = useRef([]);
+  const changedSince = useRef(null);
   // New, unread tenders (lib/newTenders.js)
   const [loading, setLoading] = useState(true);
   // When the shown list was loaded from Supabase (null until the cache or the first load arrives), and whether a reload is running
@@ -306,6 +314,40 @@ function BidMatch() {
   // Initial load uses this directly after showing the cached list.
   // Only tenders that ask for our products in our dosages (matched_molecules, lib/products.mjs).
   const loadBids = async () => {
+    // With a list already here (this visit, or saved on the last one): only the tenders changed since (updated_at,
+    // schema.sql), not all of them again (~3.7 MB on every open and after every hourly update: Supabase egress,
+    // 2026-11-19)
+    const since = changedSince.current;
+    if (since) {
+      const [{ data, error }, { data: screenedRows }] = await Promise.all([
+        supabase.from('philgeps_opportunities').select('*').gt('updated_at', since),
+        supabase.from('screened_tenders').select('ref').eq('source', 'philgeps'),
+      ]);
+      if (error) {
+        console.error('Error fetching bids:', error.message);
+        setScrapeError(`Could not load tenders: ${error.message}`);
+      } else {
+        const screenedRefs = new Set((screenedRows || []).map((r) => r.ref));
+        // A tender screened since that doesn't mention our products isn't among the changed ones
+        const listed = new Set(bidsRef.current.map((bid) => bid.ref_no));
+        for (const row of data || []) listed.add(row.ref_no);
+        const missing = [...screenedRefs].filter((ref) => !listed.has(ref));
+        const { data: screenedBids } = missing.length ? await supabase.from('philgeps_opportunities').select('*').in('ref_no', missing) : { data: [] };
+        setBids((prev) => {
+          const byId = new Map(prev.map((bid) => [bid.id, bid]));
+          for (const row of [...(data || []), ...(screenedBids || [])]) {
+            if (row.matched_molecules?.length || screenedRefs.has(row.ref_no)) byId.set(row.id, row);
+            else byId.delete(row.id);
+          }
+          return [...byId.values()].sort((a, b) => b.id - a.id);
+        });
+        changedSince.current = newestChange(data, since);
+        setUpdatedAt(Date.now());
+      }
+      setLoading(false);
+      setReloading(false);
+      return;
+    }
     // Screened tenders too, whatever their molecules (a package or lot tender keeps none), so they stay findable
     const [{ data, error }, { data: screenedRows }] = await Promise.all([
       supabase.from('philgeps_opportunities').select('*').not('matched_molecules', 'eq', '{}').order('id', { ascending: false }),
@@ -320,6 +362,7 @@ function BidMatch() {
       setScrapeError(`Could not load tenders: ${error.message}`);
     } else {
       setBids([...(data || []), ...(screenedBids || [])].sort((a, b) => b.id - a.id));
+      changedSince.current = newestChange([...(data || []), ...(screenedBids || [])], null);
       setUpdatedAt(Date.now());
     }
     setLoading(false);
@@ -441,9 +484,10 @@ function BidMatch() {
 
   // Keep the cache in step with what is shown (including realtime inserts), once a real list has arrived
   useEffect(() => {
+    bidsRef.current = bids;
     if (updatedAt == null) return;
     try {
-      localStorage.setItem(BIDS_CACHE_KEY, JSON.stringify({ savedAt: updatedAt, bids }));
+      localStorage.setItem(BIDS_CACHE_KEY, JSON.stringify({ savedAt: updatedAt, bids, since: changedSince.current }));
     } catch {
       // Storage full or blocked: the next visit just waits for Supabase
     }
@@ -456,6 +500,10 @@ function BidMatch() {
       .then((cached) => {
         if (cached) {
           setBids(cached.bids);
+          bidsRef.current = cached.bids;
+          // Only what changed since is loaded next; a copy older than a day is loaded whole again (a tender
+          // deleted meanwhile isn't among the changed ones)
+          if (cached.since && Date.now() - cached.savedAt < FULL_RELOAD_AFTER_MS) changedSince.current = cached.since;
           setUpdatedAt(cached.savedAt);
           setLoading(false);
           setReloading(true);
@@ -472,6 +520,8 @@ function BidMatch() {
     (async () => {
       while (!stopped) {
         try {
+          // Not asked while the tab is hidden and nothing runs (asked again once it is in view)
+          if (!first && !runningSince && document.visibilityState === 'hidden') throw new Error('hidden');
           const res = await authFetch('/api/scrape');
           if (stopped) break;
           if (!res.ok) throw new Error(`status ${res.status}`);

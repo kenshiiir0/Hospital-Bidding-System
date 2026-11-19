@@ -24,6 +24,22 @@ const SUPPLEMENTS_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 // The host stops a request at 300 s: stop starting new notice / supplement reads after this, and save
 const WORK_UNTIL_MS = 230 * 1000;
 
+// The columns the update writes; a tender is saved again only when one of them changed (sameRow)
+const SAVED_COLUMNS = ['publish_date', 'closing_date', 'title', 'procuring_entity', 'category', 'detail_link', 'items_text', 'abc_amount', 'details', 'matched_molecules'];
+// The same JSON whatever the order of an object's keys (Postgres jsonb keeps them in its own order)
+const stable = (v) =>
+  Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}` : JSON.stringify(v ?? null);
+// A time as an instant ("2026-11-20 10:00" from the page is Manila time; Supabase answers in UTC)
+const instant = (v) => (v == null || v === '' ? null : Date.parse(String(v).replace(' ', 'T').replace(/(\+\d\d:\d\d|Z)?$/, (z) => z || '+08:00')) || String(v));
+const amount = (v) => (v == null || v === '' ? null : Number(v));
+export function sameRow(row, stored) {
+  return SAVED_COLUMNS.every((c) => {
+    if (c === 'publish_date' || c === 'closing_date') return instant(row[c]) === instant(stored[c]);
+    if (c === 'abc_amount') return amount(row[c]) === amount(stored[c]);
+    return stable(row[c]) === stable(stored[c]);
+  });
+}
+
 function admin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url || !process.env.SUPABASE_KEY) throw new Error('SUPABASE_URL and SUPABASE_KEY (secret key) are not set on this server.');
@@ -241,7 +257,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
     for (let i = 0; i < tenders.length; i += 200) {
       const { data, error } = await supabase
         .from('philgeps_opportunities')
-        .select('ref_no, items_text, abc_amount, details')
+        .select(`ref_no, ${SAVED_COLUMNS.join(', ')}`)
         .in(
           'ref_no',
           tenders.slice(i, i + 200).map((t) => t.ref_no)
@@ -320,19 +336,11 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
     // 6. Save. The Sync may have written a tender's documents meanwhile: merge onto the newest details
     Object.assign(job, { percent: 92, stage: 'Saving' });
     await saveStatus(supabase, job);
-    const current = new Map();
-    for (let i = 0; i < tenders.length; i += 200) {
-      const { data } = await supabase
-        .from('philgeps_opportunities')
-        .select('ref_no, details')
-        .in(
-          'ref_no',
-          tenders.slice(i, i + 200).map((t) => t.ref_no)
-        );
-      for (const row of data || []) current.set(row.ref_no, row.details);
-    }
-    const rows = tenders.map((t) => {
-      const now = current.get(t.ref_no);
+    // Only the tenders that changed are saved: every saved row goes live to every open dashboard (Supabase
+    // Realtime), and saving all of them each hour, unchanged, used up the free plan's egress (2026-11-19).
+    // Which ones changed is worked out against what was loaded in step 2; their details are then loaded again just
+    // before saving, as the Sync may have written their documents meanwhile.
+    const rowOf = (t, now) => {
       const details = t.details ? { ...(now || {}), ...t.details, ...documentFields(now) } : now || null;
       return {
         ref_no: t.ref_no,
@@ -347,7 +355,20 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
         details,
         matched_molecules: isPackageTender(t.items_text, details?.package) ? [] : [...new Set([...t.matched_molecules, ...onList(details?.documents_products)])],
       };
-    });
+    };
+    const changedRefs = tenders.filter((t) => {
+      const s = stored.get(t.ref_no);
+      return !s || !sameRow(rowOf(t, s.details), s);
+    }).map((t) => t.ref_no);
+    const current = new Map();
+    for (let i = 0; i < changedRefs.length; i += 200) {
+      const { data } = await supabase.from('philgeps_opportunities').select('ref_no, details').in('ref_no', changedRefs.slice(i, i + 200));
+      for (const row of data || []) current.set(row.ref_no, row.details);
+    }
+    const changed = new Set(changedRefs);
+    // Every tender (for the summary below), and the changed ones to save
+    const allRows = tenders.map((t) => (changed.has(t.ref_no) ? rowOf(t, current.get(t.ref_no)) : rowOf(t, stored.get(t.ref_no)?.details)));
+    const rows = allRows.filter((r) => changed.has(r.ref_no));
     for (let i = 0; i < rows.length; i += 200) {
       const { error } = await supabase.from('philgeps_opportunities').upsert(rows.slice(i, i + 200), { onConflict: 'ref_no' });
       if (error) throw new Error(`Supabase: ${error.message}`);
@@ -356,10 +377,12 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
     const summarize = (r) => ({ ref_no: r.ref_no, title: r.title, procuring_entity: r.procuring_entity, matched_molecules: r.matched_molecules });
     const stats = {
       found: tenders.length,
-      matched: rows.filter((r) => r.matched_molecules.length).length,
+      matched: allRows.filter((r) => r.matched_molecules.length).length,
       new_tenders: tenders.filter((t) => !stored.has(t.ref_no)).length,
-      new_matched: rows.filter((r) => r.matched_molecules.length && !stored.has(r.ref_no)).map(summarize),
+      new_matched: allRows.filter((r) => r.matched_molecules.length && !stored.has(r.ref_no)).map(summarize),
       new_supplements: newSupplements,
+      // Tenders saved (changed); the rest were left as they were
+      saved: rows.length,
       duration_ms: Date.now() - started,
     };
     const unread = fresh.length - read;

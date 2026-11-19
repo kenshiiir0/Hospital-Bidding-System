@@ -7,7 +7,7 @@
 // The OCR text is cached in Storage (_ocr/...), so a run cut short continues where it stopped.
 // Needs SUPABASE_URL and SUPABASE_KEY (GitHub repository secrets). Run from frontend/: node scripts/ocr-job.mjs
 import { analyzePending, loadMatcher } from '../src/lib/psDocs.mjs';
-import { allTenders, needsReading, readTenderDocuments, screenedFirst } from '../src/lib/philgepsSync.mjs';
+import { readTenderDocuments, screenedFirst, tendersToRead } from '../src/lib/philgepsSync.mjs';
 import { admin, saveOcrStatus } from '../src/lib/ocrQueue.mjs';
 
 const RUN_MS = Number(process.env.OCR_RUN_MINUTES || 45) * 60 * 1000; // the workflow allows 60 minutes; OCR_RUN_MINUTES for a short test
@@ -24,9 +24,8 @@ async function main() {
 
   // PhilGEPS: downloaded documents not read yet, or scanned and not read with OCR yet
   const matchProducts = await loadMatcher();
-  const tenders = await allTenders(supabase); // paged: one query stops at 1,000 rows
-  // Screened tenders first
-  const unread = await screenedFirst(supabase, tenders.filter((o) => needsReading(o, matchProducts.key)));
+  // Only the tenders to read are loaded whole (tendersToRead), Screened ones first
+  const unread = await screenedFirst(supabase, await tendersToRead(supabase, matchProducts.key));
   let read = 0;
   let failed = 0;
   for (const o of unread) {

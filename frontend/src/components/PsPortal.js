@@ -9,6 +9,7 @@ import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
 import { clearSync, failSync, followSync, pressedSync, psRun, useSyncAlert } from '@/lib/syncAlerts';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
+import { mergePsReading, psReadings, psSnapshot } from '@/lib/psData';
 import { registerList, reportUnread, useTenderNews } from '@/lib/newTenders';
 import { psRefOf } from '@/lib/opportunityWorkbook';
 
@@ -39,19 +40,19 @@ export function PsPortalProvider({ children }) {
   // Our active product names from the last full load, to apply to a single reading that arrives live
   const activeNames = useRef(null);
   const loadData = useCallback(async () => {
-    // The lists + notices, and what was read in each tender's documents (ps_tender_analysis, filled by
-    // the keep-alive call every 5 minutes, see lib/psDocs.mjs)
-    const [{ data: row, error }, { data: readings }, active] = await Promise.all([
-      supabase.from('ps_philgeps_snapshot').select('synced_at, lists, notices').eq('id', 'latest').maybeSingle(),
-      supabase.from('ps_tender_analysis').select('ref, status, result, documents_read, error, analyzed_at'),
-      // Archived products show nowhere, even before the next Sync re-matches the notices
-      loadActiveNames().catch(() => null),
-    ]);
-    activeNames.current = active;
-    if (error) setRequestError(`Could not load PS-PhilGEPS data: ${error.message}`);
-    else if (row) {
-      const analysis = Object.fromEntries((readings || []).map((r) => [r.ref, r]));
-      setData(activePsData({ syncedAt: row.synced_at, lists: row.lists, notices: row.notices, analysis }, active));
+    // The lists + notices, and what was read in each tender's documents (ps_tender_analysis, see lib/psDocs.mjs):
+    // only what changed since this tab last loaded them (lib/psData.js)
+    try {
+      const [row, analysis, active] = await Promise.all([
+        psSnapshot(),
+        psReadings(),
+        // Archived products show nowhere, even before the next Sync re-matches the notices
+        loadActiveNames().catch(() => null),
+      ]);
+      activeNames.current = active;
+      if (row) setData(activePsData({ syncedAt: row.synced_at, lists: row.lists, notices: row.notices, analysis }, active));
+    } catch (e) {
+      setRequestError(`Could not load PS-PhilGEPS data: ${e.message}`);
     }
   }, []);
 
@@ -144,10 +145,11 @@ export function PsPortalProvider({ children }) {
     };
   }, [loadSync, loadConnect, syncing, connecting, syncAfterConnect]);
 
-  // Live updates (Supabase Realtime, schema.sql): the page changes the moment the Sync status moves, a Sync saves
-  // its lists, or a tender's documents are read (incl. OCR of scanned ones), without a refresh. A new list reloads
-  // the data once, DATA_RELOAD_WAIT_MS after the last change. A tender's reading arrives whole in the live message,
-  // so it is merged in place: reloading every reading (~1.3 MB) per change used up the Supabase egress allowance.
+  // Live updates (Supabase Realtime, schema.sql): the page changes the moment the Sync status moves or a tender's
+  // documents are read (incl. OCR of scanned ones), without a refresh. A tender's reading arrives whole in the live
+  // message, so it is merged in place (reloading every reading per change used up the Supabase egress allowance).
+  // New lists come with the Sync's end (finished_at, below), not from a live message of the snapshot: that sent
+  // the whole ~1 MB row to every open tab on each Sync, which then loaded it again (2026-11-19).
   useEffect(() => {
     let reloadTimer;
     const reloadSoon = () => {
@@ -158,12 +160,13 @@ export function PsPortalProvider({ children }) {
       const row = payload.new;
       if (!row?.ref || !row.result) return reloadSoon(); // a deleted row, or a message without the reading
       const { ref, status, result, documents_read, error, analyzed_at } = row;
-      setData((prev) => (prev ? activePsData({ ...prev, analysis: { ...prev.analysis, [ref]: { ref, status, result, documents_read, error, analyzed_at } } }, activeNames.current) : prev));
+      const reading = { ref, status, result, documents_read, error, analyzed_at };
+      mergePsReading(reading);
+      setData((prev) => (prev ? activePsData({ ...prev, analysis: { ...prev.analysis, [ref]: reading } }, activeNames.current) : prev));
     };
     const channel = supabase
       .channel('ps_philgeps_live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_sync_status' }, (payload) => payload.new?.id && setSync(payload.new))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_philgeps_snapshot' }, reloadSoon)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_tender_analysis' }, mergeReading)
       .subscribe();
     return () => {
@@ -173,7 +176,7 @@ export function PsPortalProvider({ children }) {
   }, [loadData]);
 
   // Data: on open, whenever a Sync finishes, and every 30 minutes while the tab is in view (in case a live update
-  // was missed; was every 5 minutes, ~2 MB each, in every open tab, even hidden ones)
+  // was missed). Each time only what changed is loaded (lib/psData.js): a few bytes when nothing did.
   const finishedAt = sync?.finished_at;
   useEffect(() => {
     const first = setTimeout(loadData, 0);

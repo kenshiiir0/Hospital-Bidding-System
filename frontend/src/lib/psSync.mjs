@@ -627,8 +627,10 @@ export async function runSync() {
     await saveCookies();
 
     const summarize = async (reading) => {
-      const { data: analyses } = await supabase.from('ps_tender_analysis').select('ref, result').in('ref', refs);
-      const inDocuments = new Set((analyses || []).filter((a) => a.result?.items?.length).map((a) => a.ref));
+      // Only whether each reading has a line (its first item), not every reading whole (~1.5 MB, twice per Sync:
+      // Supabase egress, 2026-11-19)
+      const { data: analyses } = await supabase.from('ps_tender_analysis').select('ref, first_item:result->items->0').in('ref', refs);
+      const inDocuments = new Set((analyses || []).filter((a) => a.first_item).map((a) => a.ref));
       const ours = refs.filter((ref) => notices[ref]?.matched?.length || inDocuments.has(ref));
       const onlyInDocuments = ours.filter((ref) => !notices[ref]?.matched?.length).length;
       const files = Object.values(notices).reduce((sum, n) => sum + (n.documents?.length || 0), 0);
@@ -659,6 +661,8 @@ export async function runSync() {
     const reading = await analyzePending({
       maxMs: Math.max(0, READ_UNTIL_MS - (Date.now() - syncStarted)),
       refs,
+      // The notices just saved, not loaded back from Supabase
+      notices,
       onProgress: (n, total) => setStatus(supabase, { stage: `${first.stage} · reading the documents for our products (${n} of ${total})` }).catch(() => {}),
     }).catch(() => null);
     const { stage } = await summarize(reading);

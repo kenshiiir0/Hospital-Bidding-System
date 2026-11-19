@@ -42,8 +42,11 @@ export async function GET(request) {
     // clock that used up the free plan's egress (2026-11-03, 2026-11-13). They run only when there can be work:
     // within 15 minutes of a Sync saving new lists, else once every 15 minutes from 6 AM to 8 PM Manila time.
     if (!(await documentWorkDue())) return;
+    // Nothing new since the last full pass (lib/docsIdle.mjs): no notices, readings or OCR count loaded
+    let idle = false;
     await analyzePending({ maxMs: 180000 })
       .then(async (r) => {
+        idle = Boolean(r.idle);
         if (r.read || r.failed) console.log(`[ps-docs] read ${r.read}, failed ${r.failed}, waiting ${r.left}`);
         // New PS-PhilGEPS documents were just read (a Sync brought them): scanned ones are read now on GitHub
         if (r.read) await triggerOcr('ps-documents');
@@ -54,7 +57,9 @@ export async function GET(request) {
       .catch((e) => console.error(`[hospitals] ${e.message}`));
     // 4. Scanned documents: Google Vision backup for the ones the hourly GitHub OCR job (layer 1) hasn't
     //    read within 6 hours or found no text in (ocrVision.mjs; off without GOOGLE_VISION_API_KEY), and the
-    //    waiting count the dashboard warns about
+    //    waiting count the dashboard warns about. Skipped when the document run had nothing new: the count
+    //    can't have moved (the GitHub OCR job saves its own when it reads)
+    if (idle) return;
     await visionBackfill(admin(), { maxMs: 30000 })
       .then((r) => (r.read || r.error) && console.log(`[ocr-vision] read ${r.read} (${r.pages} pages)${r.error ? `, error: ${r.error}` : ''}`))
       .catch((e) => console.error(`[ocr-vision] ${e.message}`));

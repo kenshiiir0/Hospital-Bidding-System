@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { OCR_VERSION } from './ocr.mjs';
+import { wakeDocs } from './docsIdle.mjs';
 
 // Scanned documents still waiting to be read with OCR, on both sides, and the ocr_status row the dashboard
 // reads (schema.sql). A document "waits" when the last reading listed it as scanned without OCR text
@@ -28,13 +29,19 @@ const scannedIn = (read) =>
 export async function scannedWaiting(supabase, { includeTried = false } = {}) {
   const out = [];
 
-  // PS-PhilGEPS: ps_tender_analysis (what was read) + the snapshot's notices (where the files are)
-  const [{ data: readings }, { data: snap }] = await Promise.all([
-    supabase.from('ps_tender_analysis').select('ref, documents_read, analyzed_at'),
-    supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle(),
-  ]);
-  for (const r of readings || []) {
-    const docs = snap?.notices?.[r.ref]?.documents || [];
+  // PS-PhilGEPS: ps_tender_analysis (what was read) + the snapshot's notices (where the files are), only the
+  // documents of the tenders with scanned files, not every notice (~0.8 MB each time: Supabase egress, 2026-11-19)
+  const { data: readings } = await supabase.from('ps_tender_analysis').select('ref, documents_read, analyzed_at');
+  const scanned = (readings || []).filter((r) => scannedIn(r.documents_read).length);
+  const docsOf = new Map();
+  for (let i = 0; i < scanned.length; i += 40) {
+    const refs = scanned.slice(i, i + 40).map((r) => r.ref).filter((ref) => /^\d+$/.test(ref));
+    if (!refs.length) continue;
+    const { data } = await supabase.from('ps_philgeps_snapshot').select(refs.map((ref) => `d${ref}:notices->"${ref}"->documents`).join(',')).eq('id', 'latest').maybeSingle();
+    for (const ref of refs) docsOf.set(ref, data?.[`d${ref}`] || []);
+  }
+  for (const r of scanned) {
+    const docs = docsOf.get(r.ref) || [];
     for (const { name, tried } of scannedIn(r.documents_read)) {
       if (tried && !includeTried) continue;
       const doc = docs.find((d) => d.name === name && d.path && !d.removed);
@@ -42,11 +49,13 @@ export async function scannedWaiting(supabase, { includeTried = false } = {}) {
     }
   }
 
-  // PhilGEPS: philgeps_opportunities.details (documents and what was read from them)
+  // PhilGEPS: philgeps_opportunities.details (documents and what was read from them), open tenders only (a
+  // closed one's scans are never bid on; ~0.5 MB for all of them each time)
   const { data: rows } = await supabase
     .from('philgeps_opportunities')
     .select('ref_no, details->documents, details->documents_read, details->documents_checked_at')
-    .not('details->documents_read', 'is', null);
+    .not('details->documents_read', 'is', null)
+    .or(`closing_date.is.null,closing_date.gt.${new Date().toISOString()}`);
   for (const o of rows || []) {
     for (const { name, tried } of scannedIn(o.documents_read)) {
       if (tried && !includeTried) continue;
@@ -73,6 +82,8 @@ export async function saveOcrStatus(supabase, fields = {}) {
 export async function rereadTender(supabase, side, ref) {
   if (side === 'ps') {
     await supabase.from('ps_tender_analysis').update({ documents_key: null }).eq('ref', ref);
+    // The keep-alive's document run looks again (it stops early when nothing changed, lib/docsIdle.mjs)
+    await wakeDocs(supabase);
     return;
   }
   const { data } = await supabase.from('philgeps_opportunities').select('details').eq('ref_no', ref).maybeSingle();

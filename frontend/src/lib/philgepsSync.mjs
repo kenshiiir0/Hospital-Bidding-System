@@ -638,6 +638,36 @@ const readKey = (documents, listKey = '') => `${READ_RULES}|${listKey}|${(docume
 export const needsReading = (o, listKey) =>
   (o.details?.documents || []).some((d) => d.path) && (o.details?.documents_read_key !== readKey(o.details.documents, listKey) || ocrPending(o.details?.documents_read));
 
+/** The tenders needsReading picks, found from the few fields it looks at; only those are loaded whole (every
+ * tender whole is ~10 MB, loaded on each hourly OCR run: Supabase egress, 2026-11-19). Open tenders only. */
+export async function tendersToRead(supabase, listKey) {
+  const light = [];
+  const now = new Date().toISOString();
+  for (let from = 0; ; from += PAGE_ROWS) {
+    const { data, error } = await supabase
+      .from('philgeps_opportunities')
+      .select('ref_no, documents:details->documents, documents_read_key:details->documents_read_key, documents_read:details->documents_read')
+      .not('details->documents', 'is', null)
+      .or(`closing_date.is.null,closing_date.gt.${now}`)
+      .order('id')
+      .range(from, from + PAGE_ROWS - 1);
+    if (error) throw new PhilgepsSyncError('DB', error.message);
+    light.push(...data);
+    if (data.length < PAGE_ROWS) break;
+  }
+  const refs = light.filter((o) => needsReading({ details: o }, listKey)).map((o) => o.ref_no);
+  const rows = [];
+  for (let i = 0; i < refs.length; i += 100) {
+    const { data, error } = await supabase
+      .from('philgeps_opportunities')
+      .select('ref_no, title, publish_date, closing_date, abc_amount, matched_molecules, items_text, details')
+      .in('ref_no', refs.slice(i, i + 100));
+    if (error) throw new PhilgepsSyncError('DB', error.message);
+    rows.push(...data);
+  }
+  return rows;
+}
+
 // Reads a tender's downloaded documents (PDF, Word, Excel) for our products and returns the details fields
 // to store, plus matched_molecules (description matches with today's list + products found in the documents)
 /** PhilGEPS tenders with the Screened ones first (user, 2026-10-27: the ones the team bids on), else in their order */
