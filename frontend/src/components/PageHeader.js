@@ -59,7 +59,8 @@ export const plainAction =
 /**
  * Summary cards under the header: an icon in a soft circle, a quiet label, the number, one short note.
  * Three cards in a row; four: two by two on tablets, one row on wide screens.
- * @param {Array<{ label: string, value: React.ReactNode, note?: React.ReactNode, tone?: 'black' | 'green' | 'blue' | 'docs' }>} props.items
+ * @param {Array<{ label: string, value: React.ReactNode, note?: React.ReactNode, tone?: 'black' | 'green' | 'blue' | 'docs',
+ *   onClick?: () => void, active?: boolean }>} props.items  With onClick the card is a filter button; active = blue border.
  */
 export function KpiRow({ items }) {
   const tile = { black: 'bg-[#1EA0DA]/8 text-[#12769F]', green: 'bg-[#61A644]/12 text-[#3F6F2C]', blue: 'bg-[#1EA0DA]/8 text-[#12769F]', docs: 'bg-[#1EA0DA]/8 text-[#12769F]' };
@@ -79,8 +80,16 @@ export function KpiRow({ items }) {
     <section className={`grid grid-cols-2 gap-3 ${columns} [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1`} aria-label="Summary">
       {items.map((k) => {
         const tone = k.tone || 'black';
+        const Card = k.onClick ? 'button' : 'div';
+        const border = k.active ? 'border-[#1EA0DA] ring-1 ring-[#1EA0DA]' : 'border-[#E2E8F0]';
         return (
-          <div key={k.label} className="flex min-w-0 items-start gap-3 rounded-[14px] border border-[#E2E8F0] bg-white p-3 sm:p-4">
+          <Card
+            key={k.label}
+            {...(k.onClick ? { type: 'button', onClick: k.onClick, 'aria-pressed': !!k.active } : {})}
+            className={`flex min-w-0 items-start gap-3 rounded-[14px] border bg-white p-3 text-left sm:p-4 ${border} ${
+              k.onClick ? 'cursor-pointer transition hover:border-[#1EA0DA]/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30' : ''
+            }`}
+          >
             <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-full sm:flex ${tile[tone]}`} aria-hidden>
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                 {icon[tone]}
@@ -91,7 +100,7 @@ export function KpiRow({ items }) {
               <div className={`mt-0.5 truncate text-lg font-semibold tabular-nums sm:text-xl ${value[tone]}`}>{k.value}</div>
               {k.note && <div className="mt-0.5 hidden truncate text-xs text-black/46 sm:block">{k.note}</div>}
             </div>
-          </div>
+          </Card>
         );
       })}
     </section>

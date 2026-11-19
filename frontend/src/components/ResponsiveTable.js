@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import { DetailsButton } from '@/components/FilterControls';
 
 // Columns without a set width need at least this much room to stay readable in the table
@@ -25,8 +25,15 @@ const rem = (value) => (value ? parseFloat(value) : FLEX_COLUMN_REM);
  *   optional - a number: the table may leave this column out when space is short (1 goes first)
  * onDetails(row): adds the "View details" action (last table column, full-width button on cards).
  * rowKey(row, index): React key.
+ * expanded(row, index): optional; when it returns content, it shows in a full-width panel under the row (table)
+ *   or at the bottom of the card (e.g. a hospital's other contacts).
+ * onRowClick(row, index): optional; a click on the row that is not on a link, button or field.
  */
-export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_, i) => i, size = 'sm' }) {
+export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_, i) => i, size = 'sm', expanded, onRowClick }) {
+  const rowClick = (row, i) => (e) => {
+    if (!onRowClick || e.target.closest('a, button, input, select, textarea, label')) return;
+    onRowClick(row, i);
+  };
   const lead = columns.find((c) => c.lead);
   const title = columns.find((c) => c.title);
   const badge = columns.find((c) => c.badge);
@@ -76,23 +83,38 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => (
-              <tr key={rowKey(row, i)} className="border-t border-[#EEF1F5] align-top bg-white text-black/85 transition-colors hover:bg-[#1EA0DA]/4">
-                {tableColumns.map((c) => (
-                  <td
-                    key={c.label}
-                    className={`px-4 py-3.5 ${c.nowrap ? 'whitespace-nowrap' : 'break-words [overflow-wrap:anywhere]'} ${c.align === 'right' ? 'text-right' : ''}`}
+            {rows.map((row, i) => {
+              const more = expanded?.(row, i);
+              return (
+                <Fragment key={rowKey(row, i)}>
+                  <tr
+                    onClick={rowClick(row, i)}
+                    className={`border-t border-[#EEF1F5] align-top text-black/85 transition-colors hover:bg-[#1EA0DA]/4 ${more ? 'bg-[#1EA0DA]/4' : 'bg-white'} ${onRowClick ? 'cursor-pointer' : ''}`}
                   >
-                    {c.render(row, i)}
-                  </td>
-                ))}
-                {onDetails && (
-                  <td className="px-4 py-3 text-right">
-                    <DetailsButton onClick={() => onDetails(row)} />
-                  </td>
-                )}
-              </tr>
-            ))}
+                    {tableColumns.map((c) => (
+                      <td
+                        key={c.label}
+                        className={`px-4 py-3.5 ${c.nowrap ? 'whitespace-nowrap' : 'break-words [overflow-wrap:anywhere]'} ${c.align === 'right' ? 'text-right' : ''}`}
+                      >
+                        {c.render(row, i)}
+                      </td>
+                    ))}
+                    {onDetails && (
+                      <td className="px-4 py-3 text-right">
+                        <DetailsButton onClick={() => onDetails(row)} />
+                      </td>
+                    )}
+                  </tr>
+                  {more && (
+                    <tr className="bg-[#F8FAFC]">
+                      <td colSpan={tableColumns.length + (onDetails ? 1 : 0)} className="px-4 pb-4 pt-1">
+                        {more}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -123,6 +145,10 @@ export default function ResponsiveTable({ columns, rows, onDetails, rowKey = (_,
                 ))}
               </dl>
             )}
+            {(() => {
+              const more = expanded?.(row, i);
+              return more ? <div className="mt-3 rounded-xl bg-[#F8FAFC] p-3">{more}</div> : null;
+            })()}
             {onDetails && (
               <div className="mt-3 border-t border-[#E2E8F0] pt-3">
                 <button

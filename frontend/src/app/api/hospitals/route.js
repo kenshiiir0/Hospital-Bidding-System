@@ -63,15 +63,57 @@ export async function POST(request) {
   return Response.json({ ok: true, hospital: data }, { status: 201 });
 }
 
+const EMAIL = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+
+// Edit (Hospital List ••• → Edit, "+ Add email"): the same columns Add Hospital and Import Excel write.
+// Each field is optional; a field left out stays as it is.
+function editChange(edit) {
+  const change = { updated_at: new Date().toISOString() };
+  if (edit.status !== undefined) {
+    if (!STATUSES.includes(edit.status)) return { error: 'Unknown status.' };
+    change.status = edit.status;
+  }
+  if (edit.list_note !== undefined) change.list_note = clean(edit.list_note, 500) || null;
+  if (edit.emails !== undefined) {
+    if (!Array.isArray(edit.emails)) return { error: 'E-mails must be a list.' };
+    const emails = [...new Set(edit.emails.map((e) => clean(e).toLowerCase()).filter(Boolean))];
+    const bad = emails.find((e) => !EMAIL.test(e));
+    if (bad) return { error: `"${bad}" does not look like an e-mail address.` };
+    change.emails = emails.slice(0, 10);
+  }
+  if (edit.contacts !== undefined) {
+    if (!Array.isArray(edit.contacts)) return { error: 'Contacts must be a list.' };
+    change.contacts = edit.contacts
+      .slice(0, 50)
+      .map((c) => ({
+        name: clean(c?.name) || null,
+        role: clean(c?.role) || null,
+        phone: clean(c?.phone, 80) || null,
+        ...(typeof c?.source === 'string' ? { source: clean(c.source, 40) } : {}),
+      }))
+      .filter((c) => c.name || c.phone);
+  }
+  return { change };
+}
+
 // Archive / Restore: { agency_key, archived: true | false }. An archived hospital stays in the table.
+// Edit: { agency_key, edit: { status?, list_note?, emails?, contacts? } }.
 export async function PATCH(request) {
   const { user, response } = await requireUser(request);
   if (response) return response;
   const body = await request.json().catch(() => ({}));
-  if (typeof body.agency_key !== 'string' || typeof body.archived !== 'boolean') {
-    return Response.json({ ok: false, error: 'Send { agency_key, archived: true | false }.' }, { status: 400 });
+  const isEdit = body.edit && typeof body.edit === 'object';
+  if (typeof body.agency_key !== 'string' || (!isEdit && typeof body.archived !== 'boolean')) {
+    return Response.json({ ok: false, error: 'Send { agency_key, archived: true | false } or { agency_key, edit }.' }, { status: 400 });
   }
-  const change = body.archived ? { archived_at: new Date().toISOString(), archived_by: user.email } : { archived_at: null, archived_by: null };
+  let change;
+  if (isEdit) {
+    const result = editChange(body.edit);
+    if (result.error) return Response.json({ ok: false, error: result.error }, { status: 400 });
+    change = result.change;
+  } else {
+    change = body.archived ? { archived_at: new Date().toISOString(), archived_by: user.email } : { archived_at: null, archived_by: null };
+  }
   const { data, error } = await admin().from('hospitals').update(change).eq('agency_key', body.agency_key).not('status', 'is', null).select(FIELDS).maybeSingle();
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
   if (!data) return Response.json({ ok: false, error: 'That hospital is no longer on the list.' }, { status: 404 });

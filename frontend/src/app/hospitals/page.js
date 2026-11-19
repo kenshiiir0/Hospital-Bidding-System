@@ -8,9 +8,9 @@ import Modal from '@/components/Modal';
 import MessageHospitals from '@/components/MessageHospitals';
 import ImportExcel from '@/components/ImportExcel';
 import { HOSPITAL_SHEET, readHospitalSheet } from '@/lib/sheetImport.mjs';
-import { SegmentedTabs } from '@/components/FilterControls';
+import { CustomSelect, SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
-import PageHeader, { KpiRow, blueAction, plainAction } from '@/components/PageHeader';
+import PageHeader, { KpiRow, plainAction } from '@/components/PageHeader';
 
 // The hospitals we bid for (table hospitals, /api/hospitals): the "Active Hospital" sheet of the WINNING BID TRACKER
 // (tools/import-hospitals.mjs) plus Add Hospital. The same hospitals post tenders on PhilGEPS and PS-PhilGEPS.
@@ -18,6 +18,20 @@ const STATUS = {
   active: { label: 'Active tender', tab: 'Active', pill: 'bg-[#61A644]/10 text-[#3F6F2C]' },
   rfq: { label: 'RFQ', tab: 'RFQ', pill: 'bg-[#1EA0DA]/8 text-[#12769F]' },
   prospect: { label: 'Prospect', tab: 'Prospects', pill: 'bg-[#E2E8F0]/70 text-black/62' },
+};
+
+// Role / Department filter: matched on the contact's role and name (positions are often written in the name,
+// e.g. "Ma'am Lou (BAC Sec)").
+const ROLES = [
+  { value: 'procurement', label: 'Procurement', test: /procure|\bbac\b|purchas|supply|bidding|canvass/i },
+  { value: 'pharmacy', label: 'Pharmacy', test: /pharm/i },
+  { value: 'mms', label: 'MMS', test: /\bmms\b|materials?\s+management/i },
+];
+const roleOf = (c) => `${c.role || ''} ${c.name || ''}`;
+const matchesRole = (c, role) => {
+  if (role === 'all') return true;
+  if (role === 'other') return !ROLES.some((r) => r.test.test(roleOf(c)));
+  return ROLES.find((r) => r.value === role)?.test.test(roleOf(c)) || false;
 };
 
 // Philippine mobile numbers (09xx xxx xxxx) are the WhatsApp numbers; landlines and local lines stay plain text.
@@ -28,7 +42,7 @@ function PhoneNumber({ value }) {
   const parts = [];
   let last = 0;
   for (const m of value.matchAll(MOBILE)) {
-    if (m.index > last) parts.push(value.slice(last, m.index));
+    if (m.index > last) parts.push(<span key={`t${m.index}`} className="text-black/62">{value.slice(last, m.index)}</span>);
     parts.push(
       <a key={m.index} href={whatsappLink(m[0])} target="_blank" rel="noreferrer" title="Chat on WhatsApp" className="font-medium text-[#3F6F2C] hover:text-[#2F5321] hover:underline">
         <WhatsAppIcon className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
@@ -41,19 +55,154 @@ function PhoneNumber({ value }) {
   return <>{parts}</>;
 }
 
-// One line pair per contact: the names and the numbers sit in two columns, so each item has the same fixed height
-const contactLine = 'h-8 line-clamp-2 break-words';
+// A number or address with a Copy button that shows on hover (always on touch screens), and "Copied" for a moment
+function Copyable({ value, label, children, className = '' }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    navigator.clipboard
+      ?.writeText(value)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      })
+      .catch(() => {});
+  return (
+    <span className={`group/copy inline-flex max-w-full items-center gap-1 ${className}`}>
+      <span className="min-w-0 truncate" title={value}>
+        {children}
+      </span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={`Copy ${label}`}
+        title={`Copy ${label}`}
+        className={`relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-black/46 transition hover:bg-[#1EA0DA]/8 hover:text-[#12769F] focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30 [@media(hover:none)]:opacity-100 ${
+          copied ? 'opacity-100' : 'opacity-0 group-hover/copy:opacity-100'
+        }`}
+      >
+        {copied ? (
+          <svg viewBox="0 0 20 20" fill="none" stroke="#61A644" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+            <path d="m4.5 10.5 3.5 3.5 7.5-8" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+            <rect x="7" y="7" width="10" height="10" rx="2" />
+            <path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+          </svg>
+        )}
+        {copied && (
+          <span role="status" className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/85 px-2 py-0.5 text-[11px] font-medium text-white">
+            Copied
+          </span>
+        )}
+      </button>
+    </span>
+  );
+}
+
+// The ••• menu of a row. Drawn fixed (not inside the table box, which clips), opens upward near the bottom of the screen.
+function RowMenu({ label, items }) {
+  const [pos, setPos] = useState(null);
+  const button = useRef(null);
+  const menu = useRef(null);
+  useEffect(() => {
+    if (!pos) return;
+    const close = (e) => {
+      if (e.type === 'keydown' && e.key !== 'Escape') return;
+      if (e.type === 'mousedown' && (menu.current?.contains(e.target) || button.current?.contains(e.target))) return;
+      setPos(null);
+      if (e.type === 'keydown') button.current?.focus();
+    };
+    const closeNow = () => setPos(null);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    window.addEventListener('scroll', closeNow, true);
+    window.addEventListener('resize', closeNow);
+    menu.current?.querySelector('button')?.focus();
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+      window.removeEventListener('scroll', closeNow, true);
+      window.removeEventListener('resize', closeNow);
+    };
+  }, [pos]);
+  const toggle = () => {
+    if (pos) return setPos(null);
+    const r = button.current.getBoundingClientRect();
+    const up = r.bottom + 150 > window.innerHeight;
+    setPos({ right: window.innerWidth - r.right, ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+  };
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        onClick={toggle}
+        aria-label={`Actions for ${label}`}
+        aria-haspopup="menu"
+        aria-expanded={!!pos}
+        className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-black/62 transition hover:bg-[#1EA0DA]/8 hover:text-[#12769F] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1EA0DA]/30 ${pos ? 'bg-[#1EA0DA]/8 text-[#12769F]' : ''}`}
+      >
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+          <circle cx="4.5" cy="10" r="1.6" />
+          <circle cx="10" cy="10" r="1.6" />
+          <circle cx="15.5" cy="10" r="1.6" />
+        </svg>
+      </button>
+      {pos && (
+        <div ref={menu} role="menu" aria-label={`Actions for ${label}`} style={pos} className="fixed z-40 w-44 overflow-hidden rounded-xl border border-[#E2E8F0] bg-white py-1 text-left shadow-lg">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setPos(null);
+                item.onClick();
+              }}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-black/85 transition hover:bg-[#1EA0DA]/6 hover:text-[#12769F] focus:bg-[#1EA0DA]/6 focus:outline-none"
+            >
+              <span className="text-black/46">{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// The pill that opens and closes a row's other contacts
+function MorePill({ count, noun, open, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-[#1EA0DA]/30 bg-[#1EA0DA]/6 px-2 py-0.5 text-[11px] font-medium text-[#12769F] transition hover:bg-[#1EA0DA]/12"
+    >
+      +{count} {noun}
+      {count === 1 ? '' : 's'}
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
+        <path d="m5 8 5 5 5-5" />
+      </svg>
+    </button>
+  );
+}
 
 export default function HospitalsPage() {
   const [hospitals, setHospitals] = useState(null);
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
-  const [messaging, setMessaging] = useState(false);
+  const [messaging, setMessaging] = useState(null); // null | { only?: agency_key }
+  const [editing, setEditing] = useState(null); // null | { hospital, focus?: 'email' }
   const [search, setSearch] = useState('');
+  const [role, setRole] = useState('all');
   const [added, setAdded] = useState('');
-  const [view, setView] = useState('active');
+  const [view, setView] = useState('active'); // active | rfq | prospect | noemail | archived
   const [archiving, setArchiving] = useState(null);
   const [restoring, setRestoring] = useState(null);
+  const [open, setOpen] = useState(() => new Set());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const listTop = useRef(null);
@@ -98,28 +247,45 @@ export default function HospitalsPage() {
     setRestoring(null);
   };
 
+  const changeView = (next) => {
+    setView(next);
+    setPage(1);
+    setOpen(new Set());
+  };
+  const toggleOpen = (key) => {
+    const next = new Set(open);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setOpen(next);
+  };
+
   const all = hospitals || [];
   const listed = all.filter((h) => !h.archived_at);
   const archived = all.filter((h) => h.archived_at);
   const byStatus = (s) => listed.filter((h) => h.status === s);
-  const shown = view === 'archived' ? archived : byStatus(view);
+  const noEmailList = listed.filter((h) => h.status !== 'prospect' && !h.emails.length);
+  const shown = view === 'archived' ? archived : view === 'noemail' ? noEmailList : byStatus(view);
   const query = search.trim().toLowerCase();
   const text = (h) => `${h.name} ${h.list_note || ''} ${h.emails.join(' ')} ${h.contacts.map((c) => `${c.name || ''} ${c.role || ''} ${c.phone || ''}`).join(' ')}`.toLowerCase();
-  const rows = shown.filter((h) => !query || text(h).includes(query));
-  const noEmail = listed.filter((h) => h.status !== 'prospect' && !h.emails.length).length;
+  const rows = shown.filter((h) => (!query || text(h).includes(query)) && (role === 'all' || h.contacts.some((c) => matchesRole(c, role))));
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const actionButton = 'whitespace-nowrap rounded-lg px-3 py-1 text-xs font-semibold transition-all disabled:opacity-60';
+  // With a role picked, that role's contacts come first (the first one is shown in the row)
+  const contactsOf = (h) => (role === 'all' ? h.contacts : [...h.contacts.filter((c) => matchesRole(c, role)), ...h.contacts.filter((c) => !matchesRole(c, role))]);
+  const extraOf = (h) => Math.max(0, h.contacts.length - 1) + Math.max(0, h.emails.length - 1);
+
   const columns = [
     {
       label: 'Hospital',
       title: true,
       render: (h) => (
-        <span>
+        <span className="block min-w-0">
           {/* Capitals as on the sheet; names saved from View details are in mixed case */}
-          {h.name.toUpperCase()}
+          <span className="block truncate" title={h.name.toUpperCase()}>
+            {h.name.toUpperCase()}
+          </span>
           {h.website && (
             <a href={h.website} target="_blank" rel="noreferrer" className="mt-0.5 block truncate text-xs font-normal text-[#12769F] hover:text-[#0E5C7C] hover:underline">
               {h.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
@@ -130,62 +296,79 @@ export default function HospitalsPage() {
     },
     {
       label: 'Status',
-      width: '11rem',
+      width: '9.5rem',
       render: (h) => (
-        <span>
+        <span className="block min-w-0">
           <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${STATUS[h.status].pill}`}>{STATUS[h.status].label}</span>
-          {h.list_note && <span className="mt-1 block text-xs text-black/62">{h.list_note}</span>}
+          {h.list_note && (
+            <span className="mt-1 block truncate text-xs text-black/62" title={h.list_note}>
+              {h.list_note}
+            </span>
+          )}
         </span>
       ),
     },
     {
       label: 'Contact Person',
-      render: (h) =>
-        h.contacts.length ? (
-          <ul className="space-y-1 text-xs">
-            {h.contacts.map((c, i) => (
-              <li key={i} title={[c.name, c.role].filter(Boolean).join(' · ')} className={`${contactLine} text-black`}>
-                {c.name || (!c.role && '—')}
-                {c.role && <span className="text-black/62">{c.name ? ' · ' : ''}{c.role}</span>}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <span className="text-black/46">—</span>
-        ),
+      render: (h) => {
+        const [first] = contactsOf(h);
+        if (!first) return <span className="text-black/46">—</span>;
+        const more = h.contacts.length - 1;
+        return (
+          <span className="block min-w-0">
+            <span className="block truncate text-[13px] font-semibold text-black" title={first.name || ''}>
+              {first.name || '—'}
+            </span>
+            <span className="mt-0.5 flex min-w-0 items-center gap-2">
+              {first.role && (
+                <span className="min-w-0 truncate text-xs text-black/62" title={first.role}>
+                  {first.role}
+                </span>
+              )}
+              {more > 0 && <MorePill count={more} noun="contact" open={open.has(h.agency_key)} onClick={() => toggleOpen(h.agency_key)} />}
+            </span>
+          </span>
+        );
+      },
     },
     {
       label: 'WhatsApp / Phone',
-      width: '11rem',
-      render: (h) =>
-        h.contacts.length ? (
-          <ul className="space-y-1 text-xs tabular-nums">
-            {h.contacts.map((c, i) => (
-              <li key={i} title={c.phone || ''} className={contactLine}>
-                {c.phone ? <PhoneNumber value={c.phone} /> : <span className="text-black/46">—</span>}
-              </li>
-            ))}
-          </ul>
+      width: '12rem',
+      render: (h) => {
+        const [first] = contactsOf(h);
+        return first?.phone ? (
+          <Copyable value={first.phone} label="number" className="text-xs tabular-nums">
+            <PhoneNumber value={first.phone} />
+          </Copyable>
         ) : (
           <span className="text-black/46">—</span>
-        ),
+        );
+      },
     },
     {
       label: 'Email',
-      render: (h) =>
-        h.emails.length ? (
-          <ul className="space-y-1 text-xs">
-            {h.emails.map((e) => (
-              <li key={e} className="break-all">
-                <a href={`mailto:${e}`} className="text-[#12769F] hover:text-[#0E5C7C] hover:underline">
-                  {e}
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <span className="text-black/46">—</span>
-        ),
+      render: (h) => {
+        if (!h.emails.length) {
+          return h.archived_at ? (
+            <span className="text-black/46">—</span>
+          ) : (
+            <button type="button" onClick={() => setEditing({ hospital: h, focus: 'email' })} className="text-xs font-medium text-[#1EA0DA] hover:text-[#12769F] hover:underline">
+              + Add email
+            </button>
+          );
+        }
+        const more = h.emails.length - 1;
+        return (
+          <span className="flex min-w-0 flex-col items-start gap-1">
+            <Copyable value={h.emails[0]} label="e-mail address" className="text-xs">
+              <a href={`mailto:${h.emails[0]}`} className="text-[#12769F] hover:text-[#0E5C7C] hover:underline">
+                {h.emails[0]}
+              </a>
+            </Copyable>
+            {more > 0 && <MorePill count={more} noun="e-mail" open={open.has(h.agency_key)} onClick={() => toggleOpen(h.agency_key)} />}
+          </span>
+        );
+      },
     },
     ...(view === 'archived'
       ? [
@@ -202,22 +385,102 @@ export default function HospitalsPage() {
         ]
       : []),
     {
-      label: 'Actions',
-      width: '7rem',
+      label: view === 'archived' ? 'Actions' : '',
+      width: view === 'archived' ? '7rem' : '3.75rem',
       nowrap: true,
+      align: 'right',
       render: (h) =>
         h.archived_at ? (
-          <button type="button" onClick={() => restore(h)} disabled={restoring === h.agency_key} className={`${actionButton} text-[#3F6F2C] hover:bg-[#61A644]/10`}>
+          <button
+            type="button"
+            onClick={() => restore(h)}
+            disabled={restoring === h.agency_key}
+            className="whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold text-[#3F6F2C] transition hover:bg-[#61A644]/10 disabled:opacity-60"
+          >
             {restoring === h.agency_key ? 'Restoring…' : '↺ Restore'}
           </button>
         ) : (
-          <button type="button" onClick={() => setArchiving(h)} className={`${actionButton} text-black/62 hover:bg-[#1EA0DA]/8 hover:text-[#12769F]`}>
-            <ArchiveIcon className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
-            Archive
-          </button>
+          <RowMenu
+            label={h.name}
+            items={[
+              { label: 'Edit', icon: <PencilIcon className="h-3.5 w-3.5" />, onClick: () => setEditing({ hospital: h }) },
+              { label: 'Message', icon: <MailIcon className="h-3.5 w-3.5" />, onClick: () => setMessaging({ only: h.agency_key }) },
+              { label: 'Archive', icon: <ArchiveIcon className="h-3.5 w-3.5" />, onClick: () => setArchiving(h) },
+            ]}
+          />
         ),
     },
   ];
+
+  // The panel under an opened row: every other contact (name, role, number) and the other e-mail addresses
+  const expanded = (h) => {
+    if (!open.has(h.agency_key) || !extraOf(h)) return null;
+    const others = contactsOf(h).slice(1);
+    return (
+      <div className="space-y-3">
+        {others.length > 0 && (
+          <section>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-black/50">
+              Other contacts ({others.length})
+            </p>
+            <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white">
+              <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4 border-b border-[#EEF1F5] px-3.5 py-2 text-[11px] font-medium text-black/50 sm:grid">
+                <span>Name</span>
+                <span>Role / Department</span>
+                <span>WhatsApp / Phone</span>
+              </div>
+              <ul className="divide-y divide-[#EEF1F5]">
+                {others.map((c, i) => (
+                  <li key={i} className="grid grid-cols-1 gap-x-4 gap-y-0.5 px-3.5 py-2 text-xs sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-center">
+                    <span className="truncate font-semibold text-black" title={c.name || ''}>
+                      {c.name || '—'}
+                    </span>
+                    <span className="truncate text-black/62" title={c.role || ''}>
+                      {c.role || <span className="text-black/46">—</span>}
+                    </span>
+                    <span className="min-w-0 tabular-nums">
+                      {c.phone ? (
+                        <Copyable value={c.phone} label="number">
+                          <PhoneNumber value={c.phone} />
+                        </Copyable>
+                      ) : (
+                        <span className="text-black/46">—</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        )}
+        {h.emails.length > 1 && (
+          <section>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-black/50">Other e-mails ({h.emails.length - 1})</p>
+            <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
+              {h.emails.slice(1).map((e) => (
+                <li key={e} className="min-w-0">
+                  <Copyable value={e} label="e-mail address">
+                    <a href={`mailto:${e}`} className="text-[#12769F] hover:text-[#0E5C7C] hover:underline">
+                      {e}
+                    </a>
+                  </Copyable>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+    );
+  };
+
+  const kpi = (value, label, tone, note) => ({
+    label,
+    tone,
+    note,
+    value: hospitals ? (value === 'noemail' ? noEmailList.length : byStatus(value).length) : '—',
+    active: view === value,
+    onClick: () => changeView(view === value && value === 'noemail' ? 'active' : value),
+  });
 
   return (
     <div className="min-h-screen bg-white text-black antialiased">
@@ -243,11 +506,7 @@ export default function HospitalsPage() {
                   load();
                 }}
               />
-              <button
-                onClick={() => setMessaging(true)}
-                disabled={!hospitals}
-                className={plainAction}
-              >
+              <button onClick={() => setMessaging({})} disabled={!hospitals} className={plainAction}>
                 ✉ Message Hospitals
               </button>
               <button
@@ -255,7 +514,7 @@ export default function HospitalsPage() {
                   setAdding(true);
                   setAdded('');
                 }}
-                className={blueAction}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#61A644] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#4F8F35] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#61A644]/40"
               >
                 + Add Hospital
               </button>
@@ -264,10 +523,10 @@ export default function HospitalsPage() {
         />
         <KpiRow
           items={[
-            { label: 'Active tender', value: hospitals ? byStatus('active').length : '—', tone: 'green', note: 'hospitals we bid for' },
-            { label: 'RFQ', value: hospitals ? byStatus('rfq').length : '—', tone: 'blue', note: 'requests for quotation' },
-            { label: 'Prospects', value: hospitals ? byStatus('prospect').length : '—', note: 'not bidding yet' },
-            { label: 'No e-mail yet', value: hospitals ? noEmail : '—', tone: 'docs', note: 'active or RFQ, no address' },
+            kpi('active', 'Active tender', 'green', 'hospitals we bid for'),
+            kpi('rfq', 'RFQ', 'blue', 'requests for quotation'),
+            kpi('prospect', 'Prospects', undefined, 'not bidding yet'),
+            kpi('noemail', 'No e-mail yet', 'docs', 'active or RFQ, no address'),
           ]}
         />
 
@@ -280,12 +539,24 @@ export default function HospitalsPage() {
             onAdded={(hospital) => {
               setAdding(false);
               setAdded(`${hospital.name} was added to the list.`);
-              setView(hospital.status);
+              changeView(hospital.status);
               load();
             }}
           />
         )}
-        {messaging && <MessageHospitals hospitals={all} onClose={() => setMessaging(false)} />}
+        {editing && (
+          <EditHospital
+            hospital={editing.hospital}
+            focus={editing.focus}
+            onCancel={() => setEditing(null)}
+            onSaved={(hospital) => {
+              setEditing(null);
+              setAdded(`${hospital.name} was saved.`);
+              load();
+            }}
+          />
+        )}
+        {messaging && <MessageHospitals hospitals={all} only={messaging.only} onClose={() => setMessaging(null)} />}
         {archiving && (
           <ArchiveHospital
             hospital={archiving}
@@ -297,36 +568,60 @@ export default function HospitalsPage() {
           />
         )}
 
-        <div ref={listTop} className="flex scroll-mt-4 flex-col gap-3 sm:flex-row sm:items-center">
+        <div ref={listTop} className="flex scroll-mt-4 flex-col gap-3 lg:flex-row lg:items-center">
           <SegmentedTabs
             label="Show"
             value={view}
-            onChange={(next) => {
-              setView(next);
-              setPage(1);
-            }}
+            onChange={changeView}
             options={[
               ...Object.entries(STATUS).map(([value, s]) => ({ value, label: s.tab, count: byStatus(value).length })),
               { value: 'archived', label: 'Archived', count: archived.length },
             ]}
           />
-          <input
-            type="text"
-            placeholder="Search by hospital, contact person, number or e-mail..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="w-full flex-1 bg-white border border-[#CBD5E1] text-black placeholder:text-black/46 rounded-[14px] px-4 py-3 text-sm focus:outline-none focus:border-[#1EA0DA] focus:ring-2 focus:ring-[#1EA0DA]/25 transition"
-          />
+          <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+            <CustomSelect
+              label="Role"
+              value={role}
+              defaultValue="all"
+              onChange={(next) => {
+                setRole(next);
+                setPage(1);
+              }}
+              options={[{ value: 'all', label: 'All roles' }, ...ROLES.map(({ value, label }) => ({ value, label })), { value: 'other', label: 'Other roles' }]}
+              className="shrink-0"
+            />
+            <input
+              type="text"
+              placeholder="Search by hospital, contact person, number or e-mail..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full min-w-0 flex-1 rounded-full border border-[#CBD5E1] bg-white px-4 py-2.5 text-sm text-black placeholder:text-black/46 transition focus:border-[#1EA0DA] focus:outline-none focus:ring-2 focus:ring-[#1EA0DA]/25"
+            />
+          </div>
         </div>
+        {view === 'noemail' && (
+          <p className="-mt-2 text-xs text-black/62">
+            Showing active and RFQ hospitals with no e-mail address ({noEmailList.length}).{' '}
+            <button type="button" onClick={() => changeView('active')} className="font-medium text-[#1EA0DA] hover:text-[#12769F] hover:underline">
+              Show all active
+            </button>
+          </p>
+        )}
 
         {!hospitals ? (
           <p className="py-12 text-center text-black/46">{error ? '' : 'Loading the hospital list...'}</p>
         ) : rows.length ? (
           <>
-            <ResponsiveTable columns={columns} rows={pageRows} rowKey={(h) => h.agency_key} />
+            <ResponsiveTable
+              columns={columns}
+              rows={pageRows}
+              rowKey={(h) => h.agency_key}
+              expanded={expanded}
+              onRowClick={(h) => extraOf(h) && toggleOpen(h.agency_key)}
+            />
             {rows.length > PAGE_SIZES[0] && (
               <Pagination
                 page={currentPage}
@@ -342,7 +637,13 @@ export default function HospitalsPage() {
           </>
         ) : (
           <p className="py-12 text-center text-black/46">
-            {query ? 'No hospital matches the search.' : view === 'archived' ? 'Nothing is archived.' : 'No hospitals here yet.'}
+            {query || role !== 'all'
+              ? 'No hospital matches the search or role.'
+              : view === 'archived'
+                ? 'Nothing is archived.'
+                : view === 'noemail'
+                  ? 'Every active and RFQ hospital has an e-mail address.'
+                  : 'No hospitals here yet.'}
           </p>
         )}
       </div>
@@ -356,6 +657,149 @@ function WhatsAppIcon({ className }) {
       <path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4l-4.5 1.1z" />
       <path d="M9 8.5c0 3.5 2.6 6.5 6.5 6.5l1-1.5-2-1-1 .8c-1.2-.5-2.3-1.6-2.8-2.8l.8-1-1-2L9 8.5z" />
     </svg>
+  );
+}
+
+function PencilIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />
+    </svg>
+  );
+}
+
+function MailIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3.5 6.5l8.5 6 8.5-6" />
+    </svg>
+  );
+}
+
+// ••• → Edit, or "+ Add email": status, note, e-mail addresses and contacts (PATCH /api/hospitals { agency_key, edit })
+function EditHospital({ hospital, focus, onCancel, onSaved }) {
+  const [status, setStatus] = useState(hospital.status);
+  const [note, setNote] = useState(hospital.list_note || '');
+  const [emails, setEmails] = useState(() => (hospital.emails.length ? [...hospital.emails] : ['']));
+  const [contacts, setContacts] = useState(() => hospital.contacts.map((c) => ({ ...c })));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const firstEmail = useRef(null);
+  useEffect(() => {
+    if (focus === 'email') firstEmail.current?.focus();
+  }, [focus]);
+
+  const field =
+    'w-full min-w-0 rounded-full border border-[#CBD5E1] bg-white px-4 py-2 text-sm text-black placeholder:text-black/46 transition focus:border-[#1EA0DA] focus:outline-none focus:ring-2 focus:ring-[#1EA0DA]/25';
+  const label = 'text-xs font-semibold uppercase tracking-wider text-black/62';
+  const removeButton = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black/46 transition hover:bg-[#B3312C]/8 hover:text-[#B3312C]';
+  const addLink = 'mt-2 text-xs font-medium text-[#1EA0DA] hover:text-[#12769F] hover:underline';
+  const setContact = (i, key, value) => setContacts(contacts.map((c, j) => (j === i ? { ...c, [key]: value } : c)));
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const edit = {
+        status,
+        list_note: note,
+        emails: emails.map((x) => x.trim()).filter(Boolean),
+        contacts: contacts.filter((c) => (c.name || '').trim() || (c.phone || '').trim()),
+      };
+      const res = await authFetch('/api/hospitals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agency_key: hospital.agency_key, edit }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      onSaved(data.hospital);
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={focus === 'email' ? 'Add e-mail' : 'Edit hospital'}
+      subtitle={hospital.name.toUpperCase()}
+      busy={saving}
+      onClose={onCancel}
+      width="sm:max-w-2xl"
+      icon={<PencilIcon className="h-5 w-5" />}
+      footer={
+        <>
+          <button type="button" onClick={onCancel} disabled={saving} className={cancelButton}>
+            Cancel
+          </button>
+          <button type="submit" form="edit-hospital" disabled={saving} className={saveButton}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </>
+      }
+    >
+      <form id="edit-hospital" onSubmit={save} noValidate className="space-y-4">
+        <div>
+          <span className={`mb-1.5 block ${label}`}>Status</span>
+          <SegmentedTabs label="Status" value={status} onChange={setStatus} options={Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }))} />
+        </div>
+        <label className="block">
+          <span className={label}>Note</span>
+          <input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Needs a product presentation first" className={`mt-1.5 ${field}`} />
+        </label>
+        <section>
+          <span className={label}>Hospital e-mails</span>
+          <ul className="mt-1.5 space-y-2">
+            {emails.map((value, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <input
+                  ref={i === 0 ? firstEmail : undefined}
+                  type="email"
+                  value={value}
+                  maxLength={200}
+                  onChange={(e) => setEmails(emails.map((x, j) => (j === i ? e.target.value : x)))}
+                  placeholder="e.g. bac@hospital.doh.gov.ph"
+                  aria-label={`E-mail ${i + 1}`}
+                  className={field}
+                />
+                <button type="button" onClick={() => setEmails(emails.length > 1 ? emails.filter((_, j) => j !== i) : [''])} aria-label={`Remove e-mail ${i + 1}`} className={removeButton}>
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+          {emails.length < 10 && (
+            <button type="button" onClick={() => setEmails([...emails, ''])} className={addLink}>
+              + Add another e-mail
+            </button>
+          )}
+        </section>
+        <section>
+          <span className={label}>Contacts</span>
+          {contacts.length ? (
+            <ul className="mt-1.5 space-y-2">
+              {contacts.map((c, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
+                    <input value={c.name || ''} maxLength={200} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Name" aria-label={`Contact ${i + 1} name`} className={field} />
+                    <input value={c.role || ''} maxLength={200} onChange={(e) => setContact(i, 'role', e.target.value)} placeholder="Role / Department" aria-label={`Contact ${i + 1} role`} className={field} />
+                    <input value={c.phone || ''} maxLength={80} onChange={(e) => setContact(i, 'phone', e.target.value)} placeholder="WhatsApp / Phone" aria-label={`Contact ${i + 1} number`} className={field} />
+                  </div>
+                  <button type="button" onClick={() => setContacts(contacts.filter((_, j) => j !== i))} aria-label={`Remove contact ${i + 1}`} className={`${removeButton} mt-0.5`}>
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1.5 text-xs text-black/46">No contacts yet.</p>
+          )}
+          <button type="button" onClick={() => setContacts([...contacts, { name: '', role: '', phone: '', source: 'added' }])} className={addLink}>
+            + Add contact
+          </button>
+        </section>
+      </form>
+      {error && <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">{error}</p>}
+    </Modal>
   );
 }
 

@@ -27,10 +27,10 @@ const field = 'mt-1.5 w-full border border-[#CBD5E1] bg-white px-4 py-2.5 text-s
 // Test mode: the hospitals are deactivated (none ticked, none can be ticked); one test e-mail goes to MESSAGE_TEST_TO
 const TEST = !!MESSAGE_TEST_TO;
 
-export default function MessageHospitals({ hospitals, onClose }) {
+export default function MessageHospitals({ hospitals, onClose, only }) {
   const reachable = hospitals.filter((h) => !h.archived_at && h.emails.length);
   const noEmail = hospitals.filter((h) => !h.archived_at && !h.emails.length).length;
-  const [chosen, setChosen] = useState(() => (TEST ? new Set() : new Set(reachable.filter((h) => h.status !== 'prospect').map((h) => h.agency_key))));
+  const [chosen, setChosen] = useState(() => (TEST ? new Set() : only ? new Set([only]) : new Set(reachable.filter((h) => h.status !== 'prospect').map((h) => h.agency_key))));
   // Opens with this month's season and its greeting (the standard design, empty, outside the season months)
   const [subject, setSubject] = useState(() => THEMES[themeFor()].sample?.subject || '');
   const [message, setMessage] = useState(() => THEMES[themeFor()].sample?.message || '');
