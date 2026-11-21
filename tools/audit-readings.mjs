@@ -18,13 +18,15 @@ const { createClient } = req('@supabase/supabase-js');
 const { loadMatcher } = await import(pathToFileURL(`${root}/src/lib/products.mjs`).href);
 const { rowAhead } = await import(pathToFileURL(`${root}/src/lib/psDocs.mjs`).href);
 const { lineIssues } = await import(pathToFileURL(`${root}/src/lib/readingAccuracy.mjs`).href);
+const { allRows } = await import(pathToFileURL(`${root}/src/lib/allRows.mjs`).href);
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { auth: { persistSession: false } });
 const match = await loadMatcher(sb);
 
 // Every open tender's document lines, both portals
 const lines = [];
 const { data: snap } = await sb.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').single();
-const { data: readings } = await sb.from('ps_tender_analysis').select('ref, result');
+// Page by page: one request stops at 1,000 rows (lib/allRows.mjs)
+const { data: readings } = await allRows(() => sb.from('ps_tender_analysis').select('ref, result').order('ref'));
 // (Lines without a quantity or ABC are set aside by the reader, psDocs.mjs: outside_table with a why. They count here
 // as empty lines, so a half-filled table still shows up)
 const aside = (list) => (list || []).filter((x) => x.why).map((x) => ({ our_products: x.our_products, written: x.line, source: x.source }));
