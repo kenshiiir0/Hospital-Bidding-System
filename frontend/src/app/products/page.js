@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/authFetch';
 import { matchName } from '@/lib/products.mjs';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import Modal from '@/components/Modal';
+import RowMenu, { EyeIcon } from '@/components/RowMenu';
 import { SegmentedTabs } from '@/components/FilterControls';
 import Pagination, { PAGE_SIZES } from '@/components/Pagination';
 import PageHeader, { KpiRow, blueAction } from '@/components/PageHeader';
@@ -23,6 +24,7 @@ export default function ProductsPage() {
   const [view, setView] = useState('active');
   const [archiving, setArchiving] = useState(null);
   const [restoring, setRestoring] = useState(null);
+  const [viewing, setViewing] = useState(null); // the product shown in the View details window
   // Page shown (1-based) and rows per page, as on the PhilGEPS list; a search or tab change goes back to page 1
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
@@ -113,18 +115,22 @@ export default function ProductsPage() {
       : { label: 'Source', width: '7rem', render: (p) => SOURCES[p.source] || `Added${p.added_by ? ` by ${p.added_by.split('@')[0]}` : ''}` },
     {
       label: 'Actions',
-      width: '7rem',
+      width: '5rem',
       nowrap: true,
+      // ••• → View details, Archive (Restore under Archived), as on the Hospital List
       render: (p) =>
-        p.archived_at ? (
-          <button type="button" onClick={() => restore(p)} disabled={restoring === p.id} className={`${actionButton} text-[#3F6F2C] hover:bg-[#61A644]/10`}>
-            {restoring === p.id ? 'Restoring…' : '↺ Restore'}
-          </button>
+        restoring === p.id ? (
+          <span className={`${actionButton} text-[#3F6F2C]`}>Restoring…</span>
         ) : (
-          <button type="button" onClick={() => setArchiving(p)} className={`${actionButton} text-black/62 hover:bg-[#1EA0DA]/8 hover:text-[#12769F]`}>
-            <ArchiveIcon className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
-            Archive
-          </button>
+          <RowMenu
+            label={`${p.generic_name} ${p.brand_name}`}
+            items={[
+              { label: 'View details', icon: <EyeIcon className="h-3.5 w-3.5" />, onClick: () => setViewing(p) },
+              p.archived_at
+                ? { label: 'Restore', icon: <span className="inline-block w-3.5 text-center">↺</span>, onClick: () => restore(p) }
+                : { label: 'Archive', icon: <ArchiveIcon className="h-3.5 w-3.5" />, onClick: () => setArchiving(p) },
+            ]}
+          />
         ),
     },
   ];
@@ -167,6 +173,29 @@ export default function ProductsPage() {
               setView('active');
               load();
             }}
+          />
+        )}
+        {viewing && (
+          <ProductDetails
+            product={viewing}
+            sameMolecule={(products || []).filter((p) => p.id !== viewing.id && matchName(p.generic_name) === matchName(viewing.generic_name))}
+            onClose={() => setViewing(null)}
+            onArchive={
+              viewing.archived_at
+                ? null
+                : () => {
+                    setArchiving(viewing);
+                    setViewing(null);
+                  }
+            }
+            onRestore={
+              viewing.archived_at
+                ? () => {
+                    restore(viewing);
+                    setViewing(null);
+                  }
+                : null
+            }
           />
         )}
         {archiving && (
@@ -247,6 +276,99 @@ function ArchiveIcon({ className }) {
       <rect x="3" y="4" width="18" height="5" rx="1.5" />
       <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" />
     </svg>
+  );
+}
+
+const shortDate = (v) => (v ? new Date(v).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+
+// View details: every field of one product row, how tenders are matched to it, and the molecule's other brands and
+// dosages on the list
+function ProductDetails({ product: p, sameMolecule, onClose, onArchive, onRestore }) {
+  const heading = 'mb-2 text-[11px] font-semibold uppercase tracking-wider text-black/50';
+  const fields = [
+    ['Generic Name', p.generic_name],
+    ['Brand Name', p.brand_name],
+    ['Dosage', p.dosage],
+    ['Dosage Form', p.dosage_form],
+    ['Unit', p.unit],
+    ['Pack Size', p.pack_size],
+    ['Account', p.account],
+    ['Classification', p.classification],
+    ['Tax', p.tax],
+  ];
+  const from = [SOURCES[p.source] || 'Added', p.added_by && `by ${p.added_by.split('@')[0]}`, shortDate(p.created_at)].filter(Boolean).join(' · ');
+  const button = 'rounded-lg px-4 py-2 text-xs transition';
+  return (
+    <Modal
+      title={p.generic_name}
+      subtitle={`${p.brand_name} · ${p.dosage}`}
+      onClose={onClose}
+      width="sm:max-w-2xl"
+      icon={<EyeIcon className="h-5 w-5" />}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className={`${button} border border-[#CBD5E1] font-medium text-black/62 hover:bg-[#1EA0DA]/6`}>
+            Close
+          </button>
+          {onRestore && (
+            <button type="button" onClick={onRestore} className={`${button} border border-[#61A644]/40 font-semibold text-[#3F6F2C] hover:bg-[#61A644]/10`}>
+              ↺ Restore
+            </button>
+          )}
+          {onArchive && (
+            <button type="button" onClick={onArchive} className={`${button} bg-[#1EA0DA] font-semibold text-white hover:bg-[#1790C5]`}>
+              Archive
+            </button>
+          )}
+        </>
+      }
+    >
+      <section className="rounded-[14px] border border-[#E2E8F0] p-4">
+        <dl className="grid grid-cols-[minmax(0,7.5rem)_1fr] gap-x-3 gap-y-1.5 text-xs">
+          {fields.map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-black/62">{label}</dt>
+              <dd className="break-words font-medium text-black">{value || '—'}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      <section className="mt-3 grid grid-cols-1 gap-4 rounded-[14px] border border-[#E2E8F0] p-4 text-xs sm:grid-cols-2">
+        <div>
+          <p className={heading}>Matched as</p>
+          <span className={`rounded-full px-2 py-0.5 ${p.archived_at ? 'bg-[#E2E8F0]/60 text-black/46 line-through' : 'bg-[#61A644]/10 text-[#3F6F2C]'}`}>{matchName(p.generic_name)}</span>
+          <p className="mt-2 text-black/62">
+            {p.archived_at ? 'Archived: tenders are not screened for it.' : `Tenders count when they ask for ${matchName(p.generic_name)} ${p.dosage} in this form.`}
+          </p>
+        </div>
+        <div>
+          <p className={heading}>Status</p>
+          <p className="text-black">
+            {p.archived_at ? `Archived ${shortDate(p.archived_at)}${p.archived_by ? ` by ${p.archived_by.split('@')[0]}` : ''}` : 'Active'}
+          </p>
+          <p className="mt-1 text-black/62">From {from}</p>
+        </div>
+      </section>
+      <section className="mt-3 rounded-[14px] border border-[#E2E8F0] p-4 text-xs">
+        <p className={heading}>Other {matchName(p.generic_name)} products on our list ({sameMolecule.length})</p>
+        {sameMolecule.length ? (
+          <ul className="divide-y divide-[#E2E8F0]">
+            {sameMolecule.map((o) => (
+              <li key={o.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+                <span className="font-medium text-black">
+                  {o.brand_name} <span className="font-normal text-black/62">· {o.dosage}</span>
+                </span>
+                <span className={o.archived_at ? 'text-black/46' : 'text-black/62'}>
+                  {[o.dosage_form, o.account, o.tax, o.archived_at && 'Archived'].filter(Boolean).join(' · ')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-black/62">None: this is the only one.</p>
+        )}
+      </section>
+    </Modal>
   );
 }
 
