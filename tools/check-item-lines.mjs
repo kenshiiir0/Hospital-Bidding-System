@@ -8,7 +8,7 @@ import { withOcrUnits } from '../frontend/src/lib/products.mjs';
 import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
 import { needsDocuments, supplementNos } from '../frontend/src/lib/philgepsSync.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, itemisedLots, isReferenceListPage, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning, withoutTextAfterTotal, withWrappedDescription } from '../frontend/src/lib/psDocs.mjs';
+import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, itemisedLots, isReferenceListPage, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning, withoutTextAfterTotal, withWrappedDescription, readDocuments } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -637,4 +637,32 @@ assert.equal(isReferenceListPage(['Price list', 'a', 'b', 'c', 'd', 'e', 'Hazard
   assert.equal(rows[6].text, 'ANTI RABIES SERUM (EQUINE 200IU/ML, 5ML', 'a bracket the scan left open ends with its line');
   assert.deepEqual(rows[15], { text: 'FLUOROURACIL 50MG/ ML, 10ML', quantity: 4200, unit_price: 57.81, total: 242802 }, 'page 69 row 33');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5} rows).`);
+// PS 121806 (user 2026-11-21): the Technical Specifications row ends in the bidder's "Brand:" field (Bidder's Offer
+// column) after its total; the row is read without it, so the priced copy is kept over the Delivery Schedule's
+assert.equal(withoutTextAfterTotal('17 FILGRASTIM, 300mcg/1.2 mL (IV, SC) Vial 25 47,040.00 Brand:'), '17 FILGRASTIM, 300mcg/1.2 mL (IV, SC) Vial 25 47,040.00', 'a bidder field after the amount is cut');
+assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a bidder field with no amount before it stays');
+{
+  const SPEC = ['Complete Specifications:', '17 FILGRASTIM, 300mcg/1.2 mL (IV, SC) Vial 25 47,040.00 Brand:', 'Manufacturer:', 'Country of Origin:', 'CPR No./COE No.', 'Complete Specifications:', '18 FLUCONAZOLE, 150 mg capsule Capsule 100 2,500.00 Brand:', 'Manufacturer:'];
+  const row = parseItemRow(SPEC, 1);
+  expect(row, { item_no: '17', quantity: 25 }, SPEC[1]);
+  assert.equal(row.total ?? row.unit_price, 47040, 'the amount before the bidder field is read');
+}
+// PS 119747 (user 2026-11-21): the priced row is our molecule in another form ("55 Folic acid 5mg capsule 5000 2.65
+// 13,250.00", ours is the tablet), so its copy with no numbers in the Technical Specifications ("55 Folic acid 5mg") is
+// not a blank row of ours: it goes with the priced row
+{
+  const filler = 'The Procuring Entity invites bids for the supply and delivery of drugs and medicines described below. '.repeat(3);
+  const pages = [
+    [filler, 'Item Description Unit Qty Unit Cost Total Cost', '54 Finasteride 5mg tablet 1200 7.10 8,520.00', '55 Folic acid 5mg capsule 5000 2.65 13,250.00', '56 Furosemide 40mg tablet 2,000 1.58 3,160.00'].join('\n'),
+    [filler, 'Technical Specifications', '54 Finasteride 5mg', '55 Folic acid 5mg', '56 Furosemide 40mg'].join('\n'),
+  ];
+  const { gzipSync } = await import('node:zlib');
+  const text = gzipSync(Buffer.from(JSON.stringify({ pages, ocrPages: 0, pdf: true }))).toString('base64');
+  const q = { select: () => q, eq: () => q, in: async () => ({ data: [{ path: 'x/bid.pdf', size: 1, version: 'text-1', text }], error: null }), upsert: () => Promise.resolve({}) };
+  const folic = (l) => /folic acid/i.test(l);
+  const matcher = { key: 'check', line: (l) => (folic(l) && /5\s*mg/i.test(l) && !/capsule/i.test(l) ? ['Folic Acid'] : []), named: (l) => (folic(l) ? ['Folic Acid'] : []) };
+  const out = await readDocuments({ from: () => q }, 'ps-documents', [{ name: 'bid.pdf', path: 'x/bid.pdf', size: 1 }], matcher);
+  assert.equal(out.result.items.length, 0, 'the capsule row is not ours');
+  assert.equal(out.result.outside_table.filter((x) => x.why).length, 0, 'its copy with no numbers is not a blank row of ours');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5} rows).`);
