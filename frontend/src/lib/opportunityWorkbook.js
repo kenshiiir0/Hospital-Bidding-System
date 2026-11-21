@@ -250,9 +250,9 @@ function moleculeRows(noticeItems, documentItems, productNames) {
   const fromNotice = (noticeItems || []).filter((item) => !(item.products || []).length || !item.products.every((p) => inDocuments.has(p)));
   const rows = [...fromDocs, ...fromNotice];
   if (rows.length) return rows.map(itemRow);
-  // No item lines read yet (e.g. scanned documents still being read with OCR)
-  // None of our products (or a package or lot tender): no rows, so the export leaves the tender out
-  return productNames.length ? [[productNames.join(', '), '', null, null]] : [];
+  // No item lines read yet (e.g. scanned documents still being read with OCR): one row per product, as the team
+  // writes one molecule per line. None of our products (or a package or lot tender): no rows, so the export leaves the tender out
+  return productNames.map((name) => [name, '', null, null, null]);
 }
 
 // A PhilGEPS tender (philgeps_opportunities row)
