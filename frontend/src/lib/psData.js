@@ -1,6 +1,7 @@
 'use client';
 
 import { supabase } from '@/lib/supabase';
+import { allRows } from '@/lib/allRows.mjs';
 
 // PS-PhilGEPS data on the dashboard, kept once per open tab and brought up to date with only what changed
 // (user 2026-11-19, Supabase egress over the free plan: "load only what changed"). Shared by the Bid Match,
@@ -44,9 +45,12 @@ export function psSnapshot() {
 /** Every reading by ref: all once, then only the ones read since the last load */
 export function psReadings() {
   loadingReadings ||= (async () => {
-    let query = supabase.from('ps_tender_analysis').select(READING_COLUMNS);
-    if (readings && readingsSince) query = query.gte('analyzed_at', readingsSince);
-    const { data, error } = await query;
+    // Page by page (allRows): one request stops at 1,000 rows, and there are more readings than that
+    const since = readings && readingsSince;
+    const { data, error } = await allRows(() => {
+      const query = supabase.from('ps_tender_analysis').select(READING_COLUMNS).order('ref');
+      return since ? query.gte('analyzed_at', since) : query;
+    });
     if (error) throw new Error(error.message);
     if (!readings) readings = new Map();
     for (const r of data || []) {

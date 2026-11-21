@@ -4,6 +4,7 @@ import { loadMatcher } from './products.mjs';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
 import { analyzePending, rememberDownload } from './psDocs.mjs';
+import { allRows } from './allRows.mjs';
 import { notifyPendingAwards } from './awardNotify.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
 
@@ -636,7 +637,7 @@ export async function runSync() {
     const readAt = (ref) => previous?.notices?.[ref]?.read_at || 0;
     const refs = [...new Set(lists.bidMatch.rows.map(refOf).filter(Boolean))].sort((a, b) => Number(readBefore(a)) - Number(readBefore(b)) || readAt(a) - readAt(b));
     // Files deleted after reading as not ours (lib/documentKeep.mjs): not downloaded again
-    const { data: analyses } = await supabase.from('ps_tender_analysis').select('ref, result->files_removed');
+    const { data: analyses } = await allRows(() => supabase.from('ps_tender_analysis').select('ref, result->files_removed').order('ref'));
     const notKept = new Map((analyses || []).filter((a) => a.files_removed?.length).map((a) => [a.ref, new Map(a.files_removed.map((f) => [f.name, f]))]));
     const notices = {};
     const keepPrevious = (ref, why) => {

@@ -9,6 +9,7 @@ import { dropFiles, fullyRead } from './documentKeep.mjs';
 import { DOWNLOAD_BUDGET_MESSAGE, countDownload, downloadsOverBudget } from './usageMeter.mjs';
 import { docsIdle, docsStamp, markDocsIdle } from './docsIdle.mjs';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import { allRows } from './allRows.mjs';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -1919,7 +1920,7 @@ export async function analyzePending({ maxMs = 200000, refs: only, notices: give
 
   const notices = given || (await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle()).data?.notices;
   // What was read in each file is needed only where OCR runs (ocrPending); elsewhere whether there is a reading
-  const { data: done } = await supabase.from('ps_tender_analysis').select(OCR_ENABLED ? 'ref, documents_key, documents_read' : 'ref, documents_key, documents_read:documents_read->0');
+  const { data: done } = await allRows(() => supabase.from('ps_tender_analysis').select(OCR_ENABLED ? 'ref, documents_key, documents_read' : 'ref, documents_key, documents_read:documents_read->0').order('ref'));
   const known = new Map((done || []).map((r) => [r.ref, r]));
   // Screened tenders first (user, 2026-10-27): the ones the team bids on
   const { data: screened } = await supabase.from('screened_tenders').select('ref').eq('source', 'ps');

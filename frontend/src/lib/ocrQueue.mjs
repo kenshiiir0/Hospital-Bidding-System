@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { OCR_VERSION } from './ocr.mjs';
 import { wakeDocs } from './docsIdle.mjs';
+import { allRows } from './allRows.mjs';
 
 // Scanned documents still waiting to be read with OCR, on both sides, and the ocr_status row the dashboard
 // reads (schema.sql). A document "waits" when the last reading listed it as scanned without OCR text
@@ -31,7 +32,7 @@ export async function scannedWaiting(supabase, { includeTried = false } = {}) {
 
   // PS-PhilGEPS: ps_tender_analysis (what was read) + the snapshot's notices (where the files are), only the
   // documents of the tenders with scanned files, not every notice (~0.8 MB each time: Supabase egress, 2026-11-19)
-  const { data: readings } = await supabase.from('ps_tender_analysis').select('ref, documents_read, analyzed_at');
+  const { data: readings } = await allRows(() => supabase.from('ps_tender_analysis').select('ref, documents_read, analyzed_at').order('ref'));
   const scanned = (readings || []).filter((r) => scannedIn(r.documents_read).length);
   const docsOf = new Map();
   for (let i = 0; i < scanned.length; i += 40) {
