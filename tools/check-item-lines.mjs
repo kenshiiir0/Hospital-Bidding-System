@@ -8,7 +8,7 @@ import { withOcrUnits } from '../frontend/src/lib/products.mjs';
 import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
 import { needsDocuments, supplementNos } from '../frontend/src/lib/philgepsSync.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, itemisedLots, isReferenceListPage, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, itemisedLots, isReferenceListPage, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning, withoutTextAfterTotal, withWrappedDescription } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -604,4 +604,37 @@ assert.equal(isReferenceListPage(['LIST OF HAZARDOUS PHARMACEUTICALS', 'ANTINEOP
 assert.equal(isReferenceListPage(['List of High-Alert Medications', '1. Heparin 1000 IU/mL']), true, 'high-alert medications list page holds no rows');
 assert.equal(isReferenceListPage(['HAZARDOUS DRUGS', 'Item Description Qty Unit ABC', '1 Vincristine 1mg vial 10 vial 100.00 1,000.00']), false, 'a priced lot headed HAZARDOUS DRUGS keeps its rows');
 assert.equal(isReferenceListPage(['Price list', 'a', 'b', 'c', 'd', 'e', 'Hazardous drugs list attached']), false, 'a mention below the heading is not a list page');
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4} rows).`);
+// PS 121823 (user 2026-11-21, LOT_12 Schedule of Requirements, a scan): a Delivery Schedule cell spanning rows 8-12 runs
+// its words onto the rows after their Total ("delivery", "‘urchase"), and descriptions wrap in their cells with the
+// item code's digits ("2 PH ABIRATERONE ..." / "1141 250MG"). Rows 2, 9 and 10 were lost and 5 and 6 lost their volume.
+{
+  const PAGE_68 = ["1 PH989 DOCETAXEL 40MG/ML, 2ML VIAL 560 806.96 451,897.60","VIAL","2 PH ABIRATERONE ACETATE TAB 70440 79.00 5,564,760.00","1141 250MG","3 PH BICALUTAMIDE 50MG TAB/ TAB 14340 20.94 300,279.60","1005 FILM COATED","4 PH932 CAPECITABINE 500MG TAB 47600 19.60 932,960.00","5 PH CARBOPLATIN 10MG/ML VIAL 210 750.00 157,500.00","1102 15ML","6 PH944 CARBOPLATIN 10MG/ML VIAL 600 1,571.25 942,750.00","| 45ML","7 PH 946 CISPLATIN 1MG/ML,50ML VIAL 300 480.00 144,000.00","8 PH CYCLOPHOSPHAMIDE1G VIAL 70 288.50 20,195.00","© 1105 POWDER Staggered","9 PH 093 CYCLOPHOSPHAMIDE VIAL 420 150.00 63,000.00 delivery","500MG POWDER based on","10 PH949 GEMCITABINE 1G/VIAL (AS VIAL 420 1,051.00 441,420.00 ‘urchase","| HYDROCHLORIDE) to within","ten","11 PH GOSERELIN 10.8 MG PRE- PFS 300 14,077.89 4,223,367.00 yo kine days","1138 FILLED SYRINGE upon","12 PH GOSERELIN 3.6 MG PRE- PFS 420 4,118.80 1,729,896.00 receipt thereof.","© 1139 FILLED SYRINGE","13 PH 953 IRINOTECAN 100MG/5ML (AS VIAL 700 920.00 644,000.00","HYDROCHLORIDE)VIAL","14 PH LETROZOLE 2.5MG TAB 54960 8.29 455,618.40"];
+  assert.equal(withoutTextAfterTotal(PAGE_68[14]), '9 PH 093 CYCLOPHOSPHAMIDE VIAL 420 150.00 63,000.00', 'a word of the next column after the Total is cut');
+  assert.equal(withoutTextAfterTotal(PAGE_68[16]), '10 PH949 GEMCITABINE 1G/VIAL (AS VIAL 420 1,051.00 441,420.00', 'a cut-off word of the next column after the Total is cut');
+  assert.equal(withoutTextAfterTotal('5 Cefazolin 1g vial 100 20.00 3,000.00 Brand X'), '5 Cefazolin 1g vial 100 20.00 3,000.00 Brand X', 'amounts that do not multiply out: nothing cut');
+  assert.equal(withoutTextAfterTotal('5 Cefazolin 1g vial 100 20.00 2,000.00 15 days'), '5 Cefazolin 1g vial 100 20.00 2,000.00 15 days', 'text with numbers after the Total is left to the delivery rules');
+  for (const [n, want] of [[14, { item_no: '9', quantity: 420, unit_price: 150, total: 63000 }], [16, { item_no: '10', quantity: 420, unit_price: 1051, total: 441420 }]]) expect(parseItemRow(PAGE_68, n), want, PAGE_68[n]);
+  assert.match(rowAhead(PAGE_68, 2), /250MG/, 'the item code going on with the strength belongs to the row, not to a row 1141');
+  assert.match(rowAhead(PAGE_68, 7), /15ML/, 'the item code going on with the pack volume belongs to the row');
+  assert.doesNotMatch(rowAhead(PAGE_68, 3), /CAPECITABINE/, 'the next row still ends the look-ahead');
+  const written = (n) => withWrappedDescription(PAGE_68, n, parseItemRow(PAGE_68, n)).written;
+  assert.equal(written(2), '2 PH ABIRATERONE ACETATE TAB 250MG 70440 79.00 5,564,760.00', 'wrapped strength joins the row before its numbers');
+  assert.equal(written(7), '5 PH CARBOPLATIN 10MG/ML VIAL 15ML 210 750.00 157,500.00', 'wrapped pack volume joins the row');
+  assert.equal(written(9), '6 PH944 CARBOPLATIN 10MG/ML VIAL 45ML 600 1,571.25 942,750.00', 'wrapped volume after a table rule joins the row');
+  assert.match(written(14), /CYCLOPHOSPHAMIDE VIAL 500MG POWDER .*420 150\.00 63,000\.00$/, 'wrapped strength and form join the row');
+  assert.equal(written(6), PAGE_68[6], 'a row with no wrapped line stays as it is');
+  assert.equal(withWrappedDescription(['1 Cefazolin 1g vial 100 20.00 2,000.00', 'Delivery shall be made within thirty days of the purchase order'], 0, { quantity: 100, written: '1 Cefazolin 1g vial 100 20.00 2,000.00' }).written, '1 Cefazolin 1g vial 100 20.00 2,000.00', 'a long sentence under the table is not part of the row');
+}
+// ... and its page 69, scanned column by column with every description in capitals: row numbers, item codes,
+// descriptions, units, quantities, unit costs, totals. Each description is put back with its numbers.
+{
+  const PAGE_69 = ["18","19","20","21","22","23","24","25","26","27","28","29","30","31","32","33","PH 937","PH","1121","PH 970","PH 879","PH 881","PH","1029","PH","1166","PH 884","PH 701","PH 876","PH 689","| PH 891","PH 826","PH","1151","PH","1054","PH 099","OXALIPLATIN 50MG POWDER","OXALIPLATIN 5MG/ML","CONCENTRATE SOLUTION,","20ML (IV INFUSION)","PACLITAXEL 6MG/ML,","16.7ML","PACLITAXEL 6MG/ML ,5ML","RITUXIMAB 10MG/ML, 50ML","500MG/VIAL","TRASTUZUMAB 150MG","LYOPHILIZED POWDER","ANTI RABIES SERUM (EQUINE","200IU/ML, 5ML","FILGRASTIM (G-CSF)","300MCG/ML","INFLUENZA POLY VALENT","VACCINE 0.5ML","SUSPENSION IN A PRE-","FILLED SYRINGE","PNEUMOCOCCAL","CONJUGATE VACCINE 13","VALENT ,0.5ML. SINGLE","DOSE","PNEUMOCOCCAL VACCINE","POLYVALENT 25MCG/0.5-ML.","(POLYSACCHARIDE","FR.EACH.CAPSULAR TYPE","0.5ML PREF. SYRINGE)/vl","RABIES VACCINE-,VERO","CELL (PURIFIED) -","LYOPHILIZED POWDER","2.51U7 0.5ML + DILUENT","(IM,ID)","SODIUM HYALURONATE","OPHTHALMIC SOLUTION","0.1%(1MG/ML) 5SML","TETANUS","IMMUNOGLOBULIN, HUMAN","2501U/ML, IML.","TOLVAPTAN 15MG TAB","FLUOROURACIL 50MG/ ML,","10ML","VIAL","VIAL","VIAL","VIAL","VIAL","VIAL","VIAL","VIAL","VIAL/PFS","PFS","PFS","VIAL","BOTTLE","PFS","TAB","VIAL","1555","830","400","300","100","960","310","2800","2380","500","1000","2680","46240","1896","1500","4200","538.00","1,050.00","728.34","302.16","33,150.00","26,025.24","2,000.00","900.00","578.05","2,950.00","1,615.57","1,302.00","121.81","830.29","686.09","57.81","836,590.00","871,500.00","291,336.00","90,648.00","3,315,000.00","24,984,230.40","620,000.00","2,520,000.00","1,375,759.00","1,475,000.00","1,615,570.00","3,489,360.00","5,632,494.40","1,574,229.84","1,029,135.00","242,802.00"];
+  const rows = [...(columnRows(PAGE_69)?.rows.values() || [])];
+  assert.equal(rows.length, 16, 'page 69: one row per amount');
+  assert.deepEqual(rows[0], { text: 'OXALIPLATIN 50MG POWDER', quantity: 1555, unit_price: 538, total: 836590 }, 'page 69 row 18');
+  assert.deepEqual(rows[2], { text: 'PACLITAXEL 6MG/ML, 16.7ML', quantity: 400, unit_price: 728.34, total: 291336 }, 'page 69 row 20');
+  assert.deepEqual(rows[3], { text: 'PACLITAXEL 6MG/ML ,5ML', quantity: 300, unit_price: 302.16, total: 90648 }, 'page 69 row 21');
+  assert.equal(rows[6].text, 'ANTI RABIES SERUM (EQUINE 200IU/ML, 5ML', 'a bracket the scan left open ends with its line');
+  assert.deepEqual(rows[15], { text: 'FLUOROURACIL 50MG/ ML, 10ML', quantity: 4200, unit_price: 57.81, total: 242802 }, 'page 69 row 33');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5} rows).`);

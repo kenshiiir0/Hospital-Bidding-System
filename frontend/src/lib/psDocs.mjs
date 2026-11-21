@@ -24,7 +24,7 @@ import { allRows } from './allRows.mjs';
 // A tender is read again only when its documents, RULES_VERSION or our product list (matcher.key) change.
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
-// (2026-11-21, same rules-64, no re-read: the month's reading budget was used up; PhilGEPS 13318682 corrected by hand) a page headed as a hazardous / high-alert / cytotoxic drugs list holds no rows. (2026-11-14, same rules-64, affected tenders re-read by hand: in a tender of lots, a row without Qty/ABC is set aside when its lot is priced row by row, itemisedLots.) rules-64: scanned margin marks after the last amount; a total on its own line, or the total of a row, corrects a one-digit misread of the price or quantity; a one-digit price cell (PS 114413). rules-63: a lot's rows by Item No. unless only a few have one. rules-62: a list of lots with amounts opens no lot; a lot's rows by Item No. only when most have one. rules-61: lot headings with a title in capitals or a letter (LOT 10 ANTINEOPLASTIC, LOT 8-A). rules-60: a lot ends at its subtotal or a LINE ITEMS heading; a lot's rows counted by Item No. rules-59: of several lots only those with every molecule ours count. rules-58: one lot with line items is shown, a lot's rows show without their ABC, their Source to check. rules-57: only one whole lot is hidden; several lots, or line items with lots, are read, each row tagged with its lot. rules-56: amounts without centavos (an Excel list) read when they multiply out. rules-55: the peso sign scanned as P; pages scanned column by column put back together when they add up; a row cut mid-phrase goes on past a blank line. rules-54: a product only in a "with ..." after another of ours is an accessory. rules-53: price-first numbers lines and a row number two lines above end/start a row; scanned peso signs, stray end marks and cut totals; 'mi' = mL. rules-52: bid dates from their own sentence only, never a form's revision date or a long-past date; month names only. rules-51: only a table row with its quantity and ABC counts as ours (the rest set aside for checking). rules-50: the Bid Data Sheet's "number of lot(s): One (1)" makes a tender a lot (hidden), checked first. rules-49: a page's amount meaning only where it makes sense for the row (box prices, garbled totals); quantity-first next rows end a row. rules-48: a row's look-ahead ends at the next row's number; a scan's dotted thousands, 'rna' for mg and 'droDs' for drops; a loose mark after a row number; a strength-less priced row paired with its Item No.'s listing; a row's numbers after its bidder field; marks before the next row's name; a carried header naming one amount column checked against its page's rows. rules-47: a priced copy of a row is read even when an unpriced copy starts alike; Item | Qty | Unit | ABC | Description; '-' cells empty; the Price Schedule form's and offer/in-words columns are the bidder's; one amount meaning per page without a header; a row ends at its numbers and a lot heading; a '/' partner is a combination; the row's own form wins; a Schedule of Requirements quantity of 1 lot/package (or a price list headed by the whole as one lot) makes the tender a lot. rules-46: an ABC column that doesn't say per unit or total is read one way for its whole table, by which reading gives sensible unit prices; "ABC Unit Price" and "ABC Total" are one column each. rules-39: a chewable line only for a product our list states as chewable (Loratadine is a plain tablet). rules-38: our Bupivacaine is 0.5% as the Product List gives it, a line adding another percent strength (8% dextrose) is not ours, isobaric is. rules-37: concentration and our pack volume (bracket total ignored), whole row checked again (unit column form), rejected rows' copies dropped, a row's next lines read up to 8. rules-36: a volume-only product never against another strength, a product "in dextrose" needs dextrose. rules-35: our concentration x volume must give our amount, hospitals' shorthand (250MG/2ML), dosage form strict, a scan's "10 mg ml". rules-34: exact dosages (no concentration read as an amount, no concentration x volume), the same row kept once by its own number. rules-33: a quantity and amount alone on a row's last line end the row above. rules-32: a Price Schedule's bidder fields end a row, a dosage only from the row's own lines, delivery plan copies dropped. rules-31: big single amount is the total, unit price from total when they disagree, garbled amounts set aside, next row on a line cut, heading after the amounts, rows read once (best file first), package Schedule of Requirements. rules-30: only a table's rows are fetched (isTableRow; others kept as outside_table), a header starts at its own first line. rules-29: a row's price on its wrapped next line (with or without a header). rules-28: "Unit PR Price" and the bidder's empty bid columns, an empty Brand column keeps the description, Item | Qty | Unit | Description | amount, quantity on a scan's second line, dots in amounts, quantity written twice; worked-out amounts marked computed. rules-27: numbers lines below a row with no header, "... 100's box 50" rows, "Within twenty (20)" delivery; missing ABC/Unit or Total worked out. rules-26: a description going on with a strength ("100 mg tablet") is not the next row. rules-25: an ABC/unit of 100,000 or more is the ABC total. rules-24: one amount after the quantity (unit price for injectables, total for cheap tablets), delivery text and -do- set aside, only real unit words as units. rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
+// (2026-11-21, same rules-64, PS 121823 re-read by hand, the others at their next reading: the month's download budget is used up) words of another column after a row's Total are cut; an item code's digits and a description wrapped in its cell on the lines below are the row's (strength, pack volume, form); a page scanned column by column with descriptions all in capitals is put back together. // (2026-11-21, same rules-64, no re-read: the month's reading budget was used up; PhilGEPS 13318682 corrected by hand) a page headed as a hazardous / high-alert / cytotoxic drugs list holds no rows. (2026-11-14, same rules-64, affected tenders re-read by hand: in a tender of lots, a row without Qty/ABC is set aside when its lot is priced row by row, itemisedLots.) rules-64: scanned margin marks after the last amount; a total on its own line, or the total of a row, corrects a one-digit misread of the price or quantity; a one-digit price cell (PS 114413). rules-63: a lot's rows by Item No. unless only a few have one. rules-62: a list of lots with amounts opens no lot; a lot's rows by Item No. only when most have one. rules-61: lot headings with a title in capitals or a letter (LOT 10 ANTINEOPLASTIC, LOT 8-A). rules-60: a lot ends at its subtotal or a LINE ITEMS heading; a lot's rows counted by Item No. rules-59: of several lots only those with every molecule ours count. rules-58: one lot with line items is shown, a lot's rows show without their ABC, their Source to check. rules-57: only one whole lot is hidden; several lots, or line items with lots, are read, each row tagged with its lot. rules-56: amounts without centavos (an Excel list) read when they multiply out. rules-55: the peso sign scanned as P; pages scanned column by column put back together when they add up; a row cut mid-phrase goes on past a blank line. rules-54: a product only in a "with ..." after another of ours is an accessory. rules-53: price-first numbers lines and a row number two lines above end/start a row; scanned peso signs, stray end marks and cut totals; 'mi' = mL. rules-52: bid dates from their own sentence only, never a form's revision date or a long-past date; month names only. rules-51: only a table row with its quantity and ABC counts as ours (the rest set aside for checking). rules-50: the Bid Data Sheet's "number of lot(s): One (1)" makes a tender a lot (hidden), checked first. rules-49: a page's amount meaning only where it makes sense for the row (box prices, garbled totals); quantity-first next rows end a row. rules-48: a row's look-ahead ends at the next row's number; a scan's dotted thousands, 'rna' for mg and 'droDs' for drops; a loose mark after a row number; a strength-less priced row paired with its Item No.'s listing; a row's numbers after its bidder field; marks before the next row's name; a carried header naming one amount column checked against its page's rows. rules-47: a priced copy of a row is read even when an unpriced copy starts alike; Item | Qty | Unit | ABC | Description; '-' cells empty; the Price Schedule form's and offer/in-words columns are the bidder's; one amount meaning per page without a header; a row ends at its numbers and a lot heading; a '/' partner is a combination; the row's own form wins; a Schedule of Requirements quantity of 1 lot/package (or a price list headed by the whole as one lot) makes the tender a lot. rules-46: an ABC column that doesn't say per unit or total is read one way for its whole table, by which reading gives sensible unit prices; "ABC Unit Price" and "ABC Total" are one column each. rules-39: a chewable line only for a product our list states as chewable (Loratadine is a plain tablet). rules-38: our Bupivacaine is 0.5% as the Product List gives it, a line adding another percent strength (8% dextrose) is not ours, isobaric is. rules-37: concentration and our pack volume (bracket total ignored), whole row checked again (unit column form), rejected rows' copies dropped, a row's next lines read up to 8. rules-36: a volume-only product never against another strength, a product "in dextrose" needs dextrose. rules-35: our concentration x volume must give our amount, hospitals' shorthand (250MG/2ML), dosage form strict, a scan's "10 mg ml". rules-34: exact dosages (no concentration read as an amount, no concentration x volume), the same row kept once by its own number. rules-33: a quantity and amount alone on a row's last line end the row above. rules-32: a Price Schedule's bidder fields end a row, a dosage only from the row's own lines, delivery plan copies dropped. rules-31: big single amount is the total, unit price from total when they disagree, garbled amounts set aside, next row on a line cut, heading after the amounts, rows read once (best file first), package Schedule of Requirements. rules-30: only a table's rows are fetched (isTableRow; others kept as outside_table), a header starts at its own first line. rules-29: a row's price on its wrapped next line (with or without a header). rules-28: "Unit PR Price" and the bidder's empty bid columns, an empty Brand column keeps the description, Item | Qty | Unit | Description | amount, quantity on a scan's second line, dots in amounts, quantity written twice; worked-out amounts marked computed. rules-27: numbers lines below a row with no header, "... 100's box 50" rows, "Within twenty (20)" delivery; missing ABC/Unit or Total worked out. rules-26: a description going on with a strength ("100 mg tablet") is not the next row. rules-25: an ABC/unit of 100,000 or more is the ABC total. rules-24: one amount after the quantity (unit price for injectables, total for cheap tablets), delivery text and -do- set aside, only real unit words as units. rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
 const RULES_VERSION = 'rules-64';
 const READABLE = /\.(pdf|docx|xlsx)$/i;
 const BUCKET = 'ps-documents';
@@ -197,9 +197,21 @@ const withCommaThousands = (line) => line.replace(/(?<![\d.,])\d{1,3}(?:\.\d{3})
 // A scanned amount with dots for its thousands and a space before its centavos ("1.817.000 00" for 1,817,000.00, PCMC
 // RFQ 2026-1020, PhilGEPS 13314319)
 const withScannedAmounts = (line) => line.replace(/(?<![\d.,])(\d{1,3}(?:\.\d{3})+)\s(\d{2})(?![\d.,])/g, (m, whole, cents) => `${whole.replace(/\./g, ',')}.${cents}`);
+/** Words of the next column run onto a row after its Total ("9 PH 093 CYCLOPHOSPHAMIDE VIAL 420 150.00 63,000.00
+ * delivery", "... 441,420.00 ‘urchase": a Delivery Schedule cell spanning several rows, "Staggered delivery based on
+ * Purchase Order/s ...", PS 121823; user 2026-11-21 "The purchase on the side is in a different column"): cut. Only
+ * after a quantity, unit price and total that multiply out, and only words (no numbers) after them, so a row whose
+ * own text follows its numbers is never cut short. */
+const AFTER_TOTAL = /^(.*[A-Za-z]{3}.*?\s(\d[\d,]*)(?:\s+[A-Za-z][A-Za-z/.'’-]*){0,2}\s+(\d[\d,]*\.\d{2})\s+(\d[\d,]*\.\d{2}))\s+([^\d\s][^\d]{0,40})$/;
+export const withoutTextAfterTotal = (line) => {
+  const m = AFTER_TOTAL.exec(line || '');
+  if (!m) return line;
+  const [quantity, price, total] = [m[2], m[3], m[4]].map((s) => Number(s.replace(/,/g, '')));
+  return quantity > 0 && Math.abs(quantity * price - total) <= Math.max(1, total * 0.005) ? m[1] : line;
+};
 const cleanLines = (rawLines) => {
   let lines = cleanedCache.get(rawLines);
-  if (!lines) cleanedCache.set(rawLines, (lines = joinSplitAmounts(rawLines.map((line) => withCentavos(withoutEmptyCells(withCommaThousands(withoutNextRow(withoutRules(withScannedAmounts(line))))))))));
+  if (!lines) cleanedCache.set(rawLines, (lines = joinSplitAmounts(rawLines.map((line) => withCentavos(withoutEmptyCells(withCommaThousands(withoutTextAfterTotal(withoutNextRow(withoutRules(withScannedAmounts(line)))))))))));
   return lines;
 };
 
@@ -1263,14 +1275,54 @@ export function rowAhead(lines, n) {
   // The next row's number alone on its line, after this row's own (on the row or alone above it): "10" / "Cetirizi" /
   // "ne" / "syrup" / "288" / "11" / "Dapagli" / "flozin" / "10mg" - the 10 mg is row 11's (PhilGEPS 13305194)
   const own = leadingNumber(lines[n]) ?? (LONE_NUMBER.test(lines[n - 1] || '') ? Number(lines[n - 1]) : null);
-  for (const next of lines.slice(n + 1, n + 1 + ROW_AHEAD)) {
+  for (const [k, next] of lines.slice(n + 1, n + 1 + ROW_AHEAD).entries()) {
     // (also a row starting with its unit: "tablet Ferrous Salt ..." / "tablet/capsule Folic Acid 5mg", PhilGEPS 13286049)
-    if (!next || ROW_START.test(withoutRules(next)) || FORM_TEXT.test(next) || UNIT_FIRST_ROW.test(next)) break;
+    // ... except the row's item code going on with its description (codeGoesOn)
+    if (!next || (ROW_START.test(withoutRules(next)) && !(k === 0 && codeGoesOn(lines[n], next, own))) || FORM_TEXT.test(next) || UNIT_FIRST_ROW.test(next)) break;
     if (complete && ENDS_IN_NUMBERS.test(next) && /[A-Za-z]{4,}/.test(next)) break;
     if (own != null && LONE_NUMBER.test(next) && Number(next) === own + 1) break;
     ahead.push(next);
   }
   return ahead.join('\n');
+}
+
+/** A row's item code cut by its cell, its digits going on the next line with the description ("2 PH ABIRATERONE
+ * ACETATE TAB 70440 79.00 5,564,760.00" / "1141 250MG": item code PH 1141, the strength 250MG; PS 121823): the
+ * next line is this row's, not a row numbered 1141. Only under a row with its number and a letters-only code
+ * before its description, the next line's number a code (3 to 5 digits, not the next row's number) and no amount */
+const BARE_CODE_ROW = /^\W{0,2}\d{1,4}[.)]?\s+[A-Z]{1,4}\s+[A-Z]{3,}/;
+const CODE_TAIL = /^\W{0,3}(\d{3,5})\s+(?=\S)/;
+function codeGoesOn(line, next, own) {
+  const tail = CODE_TAIL.exec(next || '');
+  return Boolean(tail) && BARE_CODE_ROW.test(withoutRules(line)) && Number(tail[1]) !== (own ?? -2) + 1 && !/\d\.\d{2}\b/.test(next);
+}
+
+/** A row read whole on its first line whose description wraps in its cell onto the lines below ("5 PH CARBOPLATIN
+ * 10MG/ML VIAL 210 750.00 157,500.00" / "1102 15ML"; "9 PH 093 CYCLOPHOSPHAMIDE VIAL 420 150.00 63,000.00" / "500MG
+ * POWDER"; PS 121823, user 2026-11-21): the wrapped words (no numbers of their own) join its description and its
+ * text as written, before its numbers, so its strength, pack volume and form are checked and shown. At most three
+ * short lines, and only up to the next row */
+const WRAP_MAX_LINES = 3;
+const WRAP_MAX_CHARS = 45;
+export function withWrappedDescription(lines, n, row) {
+  const base = row.written || lines[n] || '';
+  // (where its numbers start: its quantity, then up to two unit words and its amounts)
+  const numbers = /\s\d[\d,]*(?:\s+[A-Za-z][A-Za-z/.'’-]*){0,2}(?:\s+\d[\d,]*\.\d{2}){1,3}\s*$/.exec(base);
+  if (row.quantity == null || !numbers) return row;
+  const own = leadingNumber(lines[n]);
+  const wraps = [];
+  for (const [k, raw] of rowAhead(lines, n).split('\n').entries()) {
+    let next = withoutRules(raw).replace(/^[^A-Za-z\d(]+/, '');
+    if (k === 0 && codeGoesOn(lines[n], raw, own)) next = next.replace(CODE_TAIL, '');
+    if (!next || wraps.length >= WRAP_MAX_LINES || next.length > WRAP_MAX_CHARS || /\d\.\d{2}\b/.test(next) || LONE_NUMBER.test(next) || !/[A-Za-z]/.test(next)) return row;
+    wraps.push(next);
+  }
+  // Only when the next row (or the page's end) follows the wrapped lines: never a paragraph below the table
+  const after = lines[n + 1 + wraps.length];
+  if (!wraps.length || (after && !ROW_START.test(withoutRules(after)) && !LONE_NUMBER.test(after))) return row;
+  const text = wraps.join(' ');
+  const written = `${base.slice(0, numbers.index).trim()} ${text}${base.slice(numbers.index)}`;
+  return { ...row, written, ...(row.description && { description: `${row.description} ${text}` }) };
 }
 
 /** A page that only lists medicines for their handling, headed "LIST OF HAZARDOUS PHARMACEUTICALS" (in the Terms and
@@ -1471,6 +1523,8 @@ export async function documentPages(supabase, bucket, doc) {
 const COLUMN_AMOUNT = /^(?:(?:P|PHP|Php|₱|\$|£|€)\s?[\d,.]+|[\d,]*\d[.,]\d{2})$/;
 const COLUMN_QUANTITY = /^(?:\d{1,3}(?:,\d{3})+|\d+)$/;
 const NUMBERED_ROW = /^(?:[A-Za-z]\s+)?\d{1,4}\s+(?=.*[A-Za-z]{2})/;
+// Words that only go on a row's description (its form or pack), never start one: "LYOPHILIZED POWDER", "FILLED SYRINGE"
+const COLUMN_FORM_WORD = /^(?:lyophili[sz]ed|powder|concentrate|solution|suspension|emulsion|for|in|a|pre|filled|prefilled|syringe|dose|single|vial|ampule|ampoule|injection|inj|infusion|tablet|tab|capsule|cap|film|coated|oral|iv|im|sc|with|diluent|and)$/i;
 export function columnRows(rawLines) {
   const lines = rawLines.map((l) => withoutRules(l).trim());
   const amountAt = rawLines.map((l, k) => (COLUMN_AMOUNT.test(String(l).trim()) ? k : -1)).filter((k) => k >= 0);
@@ -1493,15 +1547,39 @@ export function columnRows(rawLines) {
   }
   // The rows: descriptions before the quantity column (a row goes on over lines starting in small letters, digits
   // or marks, and over a ")" closing its bracket); else numbered rows with their quantity at the end
-  const groups = [];
   const named = quantities.length >= 5;
   const until = named ? k + 1 : amountAt[0];
-  for (let j = 0; j < until; j++) {
-    const line = lines[j];
-    if (!line || COLUMN_QUANTITY.test(line)) continue;
-    const starts = named ? /^[A-Z]/.test(line) && !/^\S*\)/.test(line) : NUMBERED_ROW.test(line);
-    if (starts) groups.push({ at: j, lines: [j] });
-    else if (groups.length) groups.at(-1).lines.push(j);
+  const groupBy = (starts, skip = () => false) => {
+    const out = [];
+    for (let j = 0; j < until; j++) {
+      const line = lines[j];
+      if (!line || COLUMN_QUANTITY.test(line) || skip(line)) continue;
+      if (starts(line, out.at(-1))) out.push({ at: j, lines: [j] });
+      else if (out.length) out.at(-1).lines.push(j);
+    }
+    return out;
+  };
+  let groups = groupBy((line) => (named ? /^[A-Z]/.test(line) && !/^\S*\)/.test(line) : NUMBERED_ROW.test(line)));
+  // Descriptions all in capitals, so every line starts with one ("OXALIPLATIN 5MG/ML" / "CONCENTRATE SOLUTION," /
+  // "20ML (IV INFUSION)" / "PACLITAXEL 6MG/ML," / "16.7ML", PS 121823 page 69): a line goes on the row above while
+  // that row has no strength yet, its last line is cut ("," "-" "(" or a bracket left open on it) or the line holds only
+  // form words (LYOPHILIZED POWDER, FILLED SYRINGE). The item code and unit columns are skipped. Used only when it
+  // gives one row per amount and every row its strength.
+  if (named && groups.length !== n) {
+    const dosed = (g) => g.lines.some((j) => STRENGTH_IN_TEXT.test(lines[j]) || /^\d/.test(lines[j]));
+    // (a bracket left open on the row's last line only: a scan drops closing brackets, "ANTI RABIES SERUM (EQUINE")
+    const cut = (g) => {
+      const last = lines[g.lines.at(-1)];
+      return /[,(/+-]$/.test(last) || (last.match(/\(/g) || []).length > (last.match(/\)/g) || []).length;
+    };
+    const formOnly = (line) => line.split(/[\s/,.-]+/).filter(Boolean).every((w) => COLUMN_FORM_WORD.test(w));
+    const unitOnly = (line) => line.split('/').every((w) => KNOWN_UNIT_WORD.test(w.trim()));
+    const codeOnly = (line) => /^\W*(?:[A-Z]{1,4}\s*\d{0,5}|\d{3,5})$/.test(line);
+    const capitals = groupBy(
+      (line, last) => /^[A-Z]/.test(line) && !(last && (!dosed(last) || cut(last) || formOnly(line))),
+      (line) => unitOnly(line) || codeOnly(line)
+    );
+    if (capitals.length === n && capitals.every(dosed)) groups = capitals;
   }
   if (!named) {
     quantities = groups.map((g) => {
@@ -1674,7 +1752,7 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
           const money = (x) => x.toLocaleString('en-US', { minimumFractionDigits: 2 });
           const cells = [new RegExp(`${numbers.quantity.toLocaleString('en-US')}$`).test(text) ? null : numbers.quantity.toLocaleString('en-US'), numbers.unit_price != null && money(numbers.unit_price), money(numbers.total)];
           row = { ...row, description: row.description || text, ...numbers, written: [text, ...cells.filter(Boolean)].join(' '), from_columns: true };
-        }
+        } else row = withWrappedDescription(lines, n, row);
         // The same reading met again (a copy of the row in another file) is read once; a copy whose first line is the
         // same but whose numbers differ is read too, keepBestReading chooses (the priced Gemcitabine row behind its
         // unpriced Schedule of Requirements copy, PhilGEPS 13300871; rows 75-77 starting alike, PhilGEPS 13282462)
