@@ -8,7 +8,7 @@ import { withOcrUnits } from '../frontend/src/lib/products.mjs';
 import { fullyRead } from '../frontend/src/lib/documentKeep.mjs';
 import { needsDocuments, supplementNos } from '../frontend/src/lib/philgepsSync.mjs';
 import { PACKAGE_ROW, isPackageTender } from '../frontend/src/lib/packageTender.js';
-import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, itemisedLots, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
+import { ocrPending, strayTotal, carryHeader, dropRepeatedRows, expandVariants, isVariantParent, parseItemLine, parseItemRow, isTableRow, keepBestReading, lotSchedule, columnRows, manyLots, lotHeading, wholeLot, completeLots, lotRowKey, inLotList, hasLineItems, itemisedLots, isReferenceListPage, readBidDataSheet, rowAhead, withBothAmounts, withPageMeaning } from '../frontend/src/lib/psDocs.mjs';
 
 const pick = ({ item_no, quantity, unit, unit_price, total, computed, description }) => ({ item_no, quantity, unit, unit_price, total, computed, description });
 const expect = (got, want, label) => {
@@ -597,4 +597,11 @@ assert.equal(ocrPending([{ kind: 'text', ocr_error: 'OCR failed' }]), false, 'a 
   assert.equal(lots.has('Lot 1'), true, 'a lot priced row by row');
   assert.equal(lots.has('Lot 2'), false, 'a lot with no priced row is priced as a whole: its rows stay');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4} rows).`);
+// PhilGEPS 13318682 (user 2026-11-21 "Why this says that vincristine is suspicious"): the Terms and Conditions' "LIST
+// OF HAZARDOUS PHARMACEUTICALS" names medicines for their handling, no Qty or prices: no rows, so not counted as rows
+// missing their numbers (the reading showed 42%). A priced lot headed "HAZARDOUS DRUGS" keeps its rows.
+assert.equal(isReferenceListPage(['LIST OF HAZARDOUS PHARMACEUTICALS', 'ANTINEOPLASTICS', 'l. Bleomycin Sulfate 15 mg inj.', '26. Vincristine I mg and2 mg inj.']), true, 'hazardous pharmaceuticals list page holds no rows');
+assert.equal(isReferenceListPage(['List of High-Alert Medications', '1. Heparin 1000 IU/mL']), true, 'high-alert medications list page holds no rows');
+assert.equal(isReferenceListPage(['HAZARDOUS DRUGS', 'Item Description Qty Unit ABC', '1 Vincristine 1mg vial 10 vial 100.00 1,000.00']), false, 'a priced lot headed HAZARDOUS DRUGS keeps its rows');
+assert.equal(isReferenceListPage(['Price list', 'a', 'b', 'c', 'd', 'e', 'Hazardous drugs list attached']), false, 'a mention below the heading is not a list page');
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4} rows).`);

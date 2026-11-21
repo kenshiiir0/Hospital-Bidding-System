@@ -156,6 +156,12 @@ What the document reader (`frontend/src/lib/psDocs.mjs` for tables, `frontend/sr
 | "LOT 10 ANTINEOPLASTIC", "LOT 8-A ..." | PhilGEPS 13316934 | `lotHeading`: title in capitals, letter kept |
 | A lot with some molecules not ours | PS 119068 Lot 2 (item 9 ours, item 10 not) | `completeLots`: the whole lot left out and listed |
 
+### Reference lists (2026-11-21, same rules-64: no re-read while the month's reading budget was used up; PhilGEPS 13318682 corrected by hand)
+
+| Document does | Example | Rule |
+|---|---|---|
+| Terms and Conditions' "LIST OF HAZARDOUS PHARMACEUTICALS": numbered medicines for their handling ("26. Vincristine I mg and2 mg inj."), no Qty or prices. Counted as 11 rows missing their numbers: "Check reading" at 42% | PCMC 13318682 page 62 (user, 2026-11-21) | `isReferenceListPage`: a page headed as a hazardous / high-alert / cytotoxic / look-alike drugs list, with no amount on it, holds no rows; its lines go aside as text (no `why`), so they don't lower the accuracy. A priced lot headed "HAZARDOUS DRUGS" keeps its rows |
+
 ## Not reader problems
 
 - **No prices in the document:** a request for quotation with blank price columns (PS 114030), or a lot price list with ceiling prices only (PhilGEPS 13299815). Shown empty and said so.
