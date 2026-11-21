@@ -375,6 +375,52 @@ const noticeIsComplete = (root, ref) => root.structuredText.includes(ref) && (/c
 
 // notKept: the files of this notice deleted after reading as not ours, by name (psDocs.mjs analyzePending): listed,
 // not downloaded again
+// The notice page's own "Line Item Details" table (Item No. | UNSPSC | Lot Name | Lot Description | Quantity | Unit of
+// Measure | ABC(Estimated Budget)): its rows naming our products, the same fields as PhilGEPS's matched_items (lib/
+// philgepsUpdate.mjs). Shown in the Molecule tracker and the Excel only for the products the documents give no line
+// for (user 2026-11-21, PS 153359: 25 molecules matched on the notice page, but the only file was the bidding
+// documents' template with no item list, so the tracker was empty). ABC/Unit is worked out: ABC ÷ Quantity.
+const cellText = (td) => td.text.replace(/\s+/g, ' ').trim();
+const amountOf = (text) => {
+  const n = Number(String(text || '').replace(/[^\d.]/g, ''));
+  return text && /\d/.test(text) && Number.isFinite(n) ? n : null;
+};
+export function readLineItems(root, matchMolecules) {
+  const out = [];
+  for (const table of root.querySelectorAll('table')) {
+    const headers = table.querySelectorAll('th').map(cellText);
+    const col = (re) => headers.findIndex((h) => re.test(h));
+    const desc = col(/description/i);
+    const qty = col(/quantity/i);
+    if (desc < 0 || qty < 0) continue;
+    const no = col(/item\s*no/i);
+    const unit = col(/unit\s+of\s+measure|^uom$|^unit$/i);
+    const abc = col(/abc|budget/i);
+    for (const tr of table.querySelectorAll('tr')) {
+      const cells = tr.querySelectorAll('td').map(cellText);
+      if (cells.length < headers.length || !cells[desc]) continue;
+      const line = cells[desc];
+      const unitText = unit >= 0 ? cells[unit] : '';
+      // The unit column counts for the form, as in a document's row (products.mjs)
+      const products = matchMolecules.line(`${line} ${unitText}`.trim(), []);
+      if (!products.length) continue;
+      const quantity = amountOf(cells[qty]);
+      const total = abc >= 0 ? amountOf(cells[abc]) : null;
+      out.push({
+        line,
+        products,
+        item_no: no >= 0 ? cells[no] : null,
+        quantity,
+        unit: unitText || null,
+        total,
+        unit_price: quantity && total != null ? Math.round((total / quantity) * 100) / 100 : null,
+        computed: 'unit_price',
+      });
+    }
+  }
+  return out;
+}
+
 async function readNotice(session, supabase, ref, matchMolecules, notKept = new Map()) {
   let root;
   for (let attempt = 1; ; attempt++) {
@@ -462,7 +508,7 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
       errors.push(`${name}: ${e.message}`);
     }
   }
-  return { matched, schedule, address: readAgencyAddress(root), documents, errors };
+  return { matched, matched_items: readLineItems(root, matchMolecules), schedule, address: readAgencyAddress(root), documents, errors };
 }
 
 async function inBatches(items, size, fn) {

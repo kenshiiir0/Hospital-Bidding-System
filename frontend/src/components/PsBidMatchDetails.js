@@ -63,7 +63,7 @@ export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose }) {
       <PanelSection title="Our products" count={products.length} plain>
         <ProductPills names={products} />
       </PanelSection>
-      <FromDocuments reading={reading} tenderRef={ref} documents={notice?.documents} />
+      <FromDocuments reading={reading} tenderRef={ref} documents={notice?.documents} noticeItems={notice?.matched_items} />
       <PsDocuments ref_={ref} notice={notice} syncedAt={data.syncedAt} />
     </PsDetailsPanel>
   );
@@ -113,7 +113,26 @@ const BDS_FIELDS = [
 ];
 const peso = (n) => (n == null ? '—' : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 }));
 
-function FromDocuments({ reading, tenderRef, documents }) {
+// The notice page's own line items (psSync.mjs readLineItems) for the products the documents give no line for:
+// documents first, the notice as fallback (user 2026-11-21, PS 153359: only the bidding documents' template was
+// attached, so the tracker was empty though the notice lists 27 of our lines)
+function trackerItems(reading, noticeItems) {
+  const fromDocs = reading?.status === 'done' ? reading.result.items : [];
+  const inDocuments = new Set(fromDocs.filter((i) => i.quantity != null).flatMap((i) => i.our_products || []));
+  const fromNotice = (noticeItems || [])
+    .filter((i) => !(i.products || []).every((p) => inDocuments.has(p)))
+    .map((i) => ({
+      ...i,
+      description: i.line,
+      our_products: i.products,
+      written: [i.item_no, i.line, i.quantity?.toLocaleString('en-PH'), i.unit, i.total != null && peso(i.total)].filter(Boolean).join(' '),
+      source: 'Notice page (Line Item Details)',
+    }));
+  return { items: [...fromDocs, ...fromNotice], fromNotice: fromNotice.length };
+}
+
+function FromDocuments({ reading, tenderRef, documents, noticeItems }) {
+  const { items, fromNotice } = trackerItems(reading, noticeItems);
   return (
     <>
       <PanelSection title="Bid data sheet (from the documents)">
@@ -131,16 +150,22 @@ function FromDocuments({ reading, tenderRef, documents }) {
         )}
       </PanelSection>
       {/* Always shown, as on PhilGEPS, so Attached documents sits in the same place on both portals */}
-      <PanelSection title={`Molecule tracker${reading?.status === 'done' && reading.result.items.length ? ` (${reading.result.items.length} lines naming our products)` : ''}`}>
+      <PanelSection title={`Molecule tracker${items.length ? ` (${items.length} lines naming our products)` : ''}`}>
         <ReadingAlertBox accuracy={reading?.result?.accuracy} reading={stillReading(reading?.documents_read)} />
-        {reading?.status !== 'done' ? (
+        {fromNotice > 0 && (
+          <p className="mb-2 text-xs text-black/62">
+            {fromNotice === items.length ? 'The documents give no item lines for our products; these' : `${fromNotice} of these lines`} come from the notice page&rsquo;s Line Item Details (ABC/Unit worked out as ABC ÷ Qty).
+          </p>
+        )}
+        {items.length ? null : reading?.status !== 'done' ? (
           <p className="text-sm text-black/46">
             {reading ? 'The documents could not be read, so no item lines were picked out.' : 'The item lines naming our products show here once the documents are read.'}
           </p>
-        ) : reading.result.items.length === 0 ? (
-          <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
         ) : (
-          <LotGroups items={reading.result.items} leftOut={reading.result.lots_left_out}>{(rows) => <ResponsiveTable
+          <p className="text-sm text-black/46">No line in the readable documents names our products.</p>
+        )}
+        {items.length > 0 && (
+          <LotGroups items={items} leftOut={reading?.result?.lots_left_out}>{(rows) => <ResponsiveTable
             size="xs"
             rows={rows}
             columns={[
@@ -156,7 +181,7 @@ function FromDocuments({ reading, tenderRef, documents }) {
             ]}
           />}</LotGroups>
         )}
-        {reading?.status === 'done' && <ComputedNote items={reading.result.items} abcOf={abcOf} />}
+        {items.length > 0 && <ComputedNote items={items} abcOf={abcOf} />}
       </PanelSection>
     </>
   );

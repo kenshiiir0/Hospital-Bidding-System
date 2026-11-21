@@ -316,7 +316,8 @@ export function psTender(row, headers, notice, reading) {
     published: psDate(cell('Publish Date'))?.iso || '',
     hospital: cell('Agency name'),
     ref: psRefOf(row) || '',
-    molecules: moleculeRows(null, done?.items, products),
+    // The notice page's own line items fill in the products the documents give no line for (psSync.mjs readLineItems)
+    molecules: moleculeRows(notice?.matched_items, done?.items, products),
     // Date and time only, like the team's sheet (the venue is in View details)
     preBid: schedule.prebid || bidDateText(bds.prebid_conference) || '',
     bidOpening: schedule.bidOpening || bidDateText(bds.bid_opening) || '',
