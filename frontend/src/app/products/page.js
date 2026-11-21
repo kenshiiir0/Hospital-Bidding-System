@@ -91,6 +91,7 @@ export default function ProductsPage() {
     { label: 'Brand Name', render: (p) => p.brand_name },
     { label: 'Dosage', width: '10rem', render: (p) => p.dosage },
     { label: 'Dosage Form', render: (p) => p.dosage_form || '—' },
+    { label: 'Tax', width: '4.5rem', render: (p) => p.tax || '—' },
     {
       label: 'Matched as',
       width: '9rem',

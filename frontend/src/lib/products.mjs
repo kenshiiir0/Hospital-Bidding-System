@@ -15,7 +15,7 @@ import { createClient } from '@supabase/supabase-js';
 // ---------- names ----------
 
 // Salt and form words after the molecule ("Enoxaparin sodium", "Palonosetron Hydrochloride")
-const SALT = String.raw`(?:hydrochloride|hcl|sodium|potassium|carbonate|monohydrate|besilate|besylate|mesylate|citrate|phosphate|acetate|maleate|tartrate|trihydrate|dihydrate)`;
+const SALT = String.raw`(?:hydrochloride|hcl|sodium|potassium|carbonate|monohydrate|besilate|besylate|mesylate|citrate|phosphate|acetate|maleate|tartrate|trihydrate|dihydrate|olamine)`;
 // "(as X)" starting with a salt ("as sodium", "as hydrochloride with arginine"): dropped. Otherwise X is the
 // molecule itself ("Iodine (as Iohexol)")
 const AS_SALT = new RegExp(`^${SALT}\\b`, 'i');
@@ -45,6 +45,7 @@ export const OTHER_NAMES = {
   fluorouracil: ['5-fu'],
   hydroxyurea: ['hydroxycarbamide'],
   'zoledronic acid': ['zoledronic'],
+  'l-asparaginase': ['asparaginase'],
   'epoetin alfa': ['epoetin', 'erythropoietin'],
   'polymyxin b': ['polymyxin', 'polymixin'],
   'blood transfusion set': ['blood set'],

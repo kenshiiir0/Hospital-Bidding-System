@@ -43,6 +43,9 @@ const products = [
   P('Enoxaparin sodium*', '6000 IU/0.6 mL (60 mg/0.6 ml)'),
   P('Cisplatin', '1 mg/ml (50 mg/50 ml)', "Conc. Sol'n for IV Infusion"),
   P('Dacarbazine [COLD CHAIN]', '200 mg', 'Lyo. Powder for Inj. (IV)'),
+  P('Cisplatin', '1mg/mL (10mg/10mL)', 'Concentrate Solution for IV Infusion'),
+  P('L-Asparaginase', '10,000 IU', 'Lyophilized Powder for Injection (IM/IV/SC)'),
+  P('Eltrombopag (as olamine)', '25 mg', 'Film-coated Tablet'),
 ];
 const match = buildMatcher(products);
 
@@ -53,6 +56,12 @@ const MUST_MATCH = [
   ['CISPLATIN 50MG VIAL', 'Cisplatin'],
   ['Dacarbazine 200 mg Lyophilized Powder for Injection vial', 'Dacarbazine'],
   ['DACARBAZINE 200MG/VIAL', 'Dacarbazine'],
+  // Cizigla 10 (Meds_2MG_vs_Getmeds.xlsx, user 2026-11-21): 1 mg/mL in a 10 mL vial is ours too
+  ['Cisplatin 1 mg/mL, 10 mL vial', 'Cisplatin'],
+  ['Cisplatin 10 mg/10 mL vial', 'Cisplatin'],
+  ['L-Asparaginase 10,000 IU vial', 'L-Asparaginase'],
+  ['Asparaginase 10000 IU powder for injection', 'L-Asparaginase'],
+  ['Eltrombopag 25 mg tablet', 'Eltrombopag'],
   ['Paclitaxel 300mg/50mL vial', 'Paclitaxel'],
   ['15 vials Paclitaxel 6mg/ml, 50 ml vial', 'Paclitaxel'],
   ['PACLITAXEL 100 MG', 'Paclitaxel'],
@@ -112,9 +121,10 @@ const MUST_MATCH = [
 ];
 const MUST_NOT_MATCH = [
   // Our 50 mL pack and our 200 mg only (the CPRs, user 2026-10-31)
-  ['Cisplatin 1 mg/mL, 10 mL vial', 'Cisplatin'],
-  ['Cisplatin 10 mg/10 mL vial', 'Cisplatin'],
+  ['Cisplatin 1 mg/mL, 20 mL vial', 'Cisplatin'],
   ['Cisplatin 50 mg tablet', 'Cisplatin'],
+  ['L-Asparaginase 5,000 IU vial', 'L-Asparaginase'],
+  ['Eltrombopag 50 mg tablet', 'Eltrombopag'],
   ['Dacarbazine 100 mg vial', 'Dacarbazine'],
   ['Dacarbazine 500 mg vial', 'Dacarbazine'],
   // Chewable only when our row says so (user, 2026-10-27): our Loratadine is a plain tablet

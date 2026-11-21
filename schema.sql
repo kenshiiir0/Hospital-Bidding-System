@@ -335,6 +335,8 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON products FROM authenticated;
 -- Restore brings it back. The matcher only reads rows with archived_at NULL (loadProducts).
 ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS archived_by TEXT;
+-- TAX as on the team's list (Meds_2MG_vs_Getmeds.xlsx): VAT or VE (VAT-exempt). Shown only, not used in matching
+ALTER TABLE products ADD COLUMN IF NOT EXISTS tax TEXT;
 
 -- Award notices "Pending for Acceptance" emailed to the hospital's representative by the PS-PhilGEPS Sync
 -- (frontend/src/lib/awardNotify.mjs, routing in awardRouting.mjs): one row per award; status sent | failed
