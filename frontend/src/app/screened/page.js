@@ -383,7 +383,8 @@ function SavedDetails({ r, loading, error, onClose }) {
       <PanelSection title="Molecules (as exported)">
         <ResponsiveTable
           size="xs"
-          rows={t.molecules || []}
+          // A to Z, as in the live drawers' Molecule tracker (LotGroups)
+          rows={[...(t.molecules || [])].sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'en', { numeric: true, sensitivity: 'base' }))}
           columns={[
             { label: 'Molecule', title: true, render: (m) => m[0] },
             { label: 'Qty', nowrap: true, render: (m) => m[1] || '—' },
