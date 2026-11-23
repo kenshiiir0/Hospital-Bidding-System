@@ -17,3 +17,6 @@ captures/
 
 # Build output of the pre-push safety gate (tools/safety-gate.sh)
 .safety-build.log
+
+# One-off check lists (contain tender data)
+set-aside-open-tenders.csv
