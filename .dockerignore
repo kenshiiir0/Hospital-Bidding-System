@@ -1,0 +1,28 @@
+# Secrets: settings come from Coolify's environment variables, never from a file in the image
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Installed / built inside the image
+**/node_modules
+frontend/.next
+frontend/out
+*.tsbuildinfo
+
+# Team-computer state and tender data
+.philgeps/
+.ps-philgeps/
+.schema-applied
+documents/
+captures/
+set-aside-open-tenders.csv
+.safety-build.log
+
+# Not needed in the image
+.git
+.github
+.claude
+*.vbs
+Dockerfile
+.dockerignore
