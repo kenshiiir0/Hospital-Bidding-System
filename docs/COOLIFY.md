@@ -40,6 +40,17 @@ Copy the values from the current Vercel project settings.
   Run it only once you switch over; both sites being called would run each update twice.
 - Set `DASHBOARD_URL` to the Coolify domain.
 
+## Dashboard accounts
+
+From the application's **Terminal** in Coolify (it opens in `/app/frontend`):
+
+```sh
+node ../tools/add-user.js someone@company.com          # new account, random password printed once
+node ../tools/add-user.js someuser "Password123"       # username account with a chosen password
+```
+
+Running it for an existing account resets its password. It uses the container's `SUPABASE_URL` and `SUPABASE_KEY`.
+
 ## How this differs from Vercel
 
 - **No PhilGEPS fetching in the container**: like the Vercel copy, the image has no `scraper.js`/Chrome, so

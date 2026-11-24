@@ -39,12 +39,14 @@ ENV NODE_ENV=production \
     PORT=3000
 WORKDIR /app
 
-# Root packages for tools/apply-schema.js only (pg, dotenv), not the scraper's puppeteer/Chrome
+# Root packages for the two tools below (pg, dotenv, supabase-js), not the scraper's puppeteer/Chrome
 RUN echo '{"private":true}' > package.json \
- && npm install --omit=dev --no-audit --no-fund --no-package-lock pg@^8.23.1 dotenv@^18.0.8 \
+ && npm install --omit=dev --no-audit --no-fund --no-package-lock pg@^8.23.1 dotenv@^18.0.8 @supabase/supabase-js@^2.118.0 \
  && npm cache clean --force
 COPY schema.sql ./
-COPY tools/apply-schema.js ./tools/
+# apply-schema.js: run on start (lib/schema.js). add-user.js: create a dashboard account or reset its password
+# from Coolify's terminal: node ../tools/add-user.js <username or email> [password] (uses SUPABASE_URL/SUPABASE_KEY)
+COPY tools/apply-schema.js tools/add-user.js ./tools/
 COPY --from=build /app/frontend ./frontend
 
 # Next writes its runtime cache under .next; apply-schema writes /app/.schema-applied
