@@ -357,3 +357,37 @@ export async function ocrPdfPages(pdf, pageNumbers, { until = Infinity, onPage }
   }
   return { texts, done: Object.keys(texts).length };
 }
+
+/** A photo of a document posted as the tender's file (.jpg, .png: "DRUGS_2026.jpg", PS 166581; a Purchase Request
+ * photographed, PS 159580; user 2026-11-26), read the way a scanned page is. Returns its readings, each as a page:
+ * - the picture straightened, its table rules taken out, a small one enlarged (toPgm; decoded by sharp, installed
+ *   with Next.js), with the page's Quantity column read on its own like a scan's, and
+ * - the file as it is.
+ * Each reads some rows the other garbles (159580's "1 200 box Finasteride 5mg tab ... 875.00 175,000.00" only the
+ * first way, 166581's "21 1,000 piece Cetirizine 10 mg Tablet 33.60 33,600.00" only the second), so both are kept: a
+ * row found in either is read, the same row read both ways counts once (psDocs.mjs keepBestReading). */
+export async function ocrImage(bytes) {
+  let worker;
+  try {
+    worker = await startWorker();
+    let cleaned = '';
+    try {
+      const sharp = (await import('sharp')).default;
+      // (rotate(): the way up the camera recorded)
+      const { data, info } = await sharp(Buffer.from(bytes)).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      const pgm = toPgm({ data, width: info.width, height: info.height });
+      const read = await worker.recognize(pgm, {}, { blocks: true });
+      cleaned = read.data.text || '';
+      if (/quantity/i.test(cleaned)) {
+        const column = await quantityColumn(worker, pgm, read.data.blocks || []).catch(() => null);
+        if (column) cleaned += `\n${QUANTITY_COLUMN_MARK} ${column.start} ${column.values.join(' ')}`;
+      }
+    } catch {
+      // not decoded: only the file as it is
+    }
+    const plain = (await worker.recognize(Buffer.from(bytes)).catch(() => null))?.data?.text || '';
+    return [...new Set([cleaned, plain].map(fixDosages).filter((text) => letterCount(text) >= FEW_LETTERS))];
+  } finally {
+    await worker?.terminate();
+  }
+}

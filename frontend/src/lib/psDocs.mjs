@@ -3,7 +3,7 @@ import { readingAccuracy } from './readingAccuracy.mjs';
 import { loadMatcher, withOcrUnits } from './products.mjs';
 import JSZip from 'jszip';
 import { extractText, getDocumentProxy } from 'unpdf';
-import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrPdfPages } from './ocr.mjs';
+import { OCR_STILL_GOOD, OCR_VERSION, QUANTITY_COLUMN_MARK, ocrImage, ocrPdfPages } from './ocr.mjs';
 import { BDS_ONE_LOT, PACKAGE_ROW } from './packageTender.js';
 import { dropFiles, fullyRead } from './documentKeep.mjs';
 import { DOWNLOAD_BUDGET_MESSAGE, countDownload, downloadsOverBudget } from './usageMeter.mjs';
@@ -27,7 +27,9 @@ import { noticeClosed, readAgain } from './readAgain.mjs';
 
 // (2026-11-21, same rules-64, PS 119747 and 121806 re-read by hand) a bidder's field ("Brand:") after a row's amount is cut; a priced row of our molecule in another form takes its unpriced copies with the same Item No. with it. // (2026-11-21, same rules-64, PS 121823 re-read by hand, the others at their next reading: the month's download budget is used up) words of another column after a row's Total are cut; an item code's digits and a description wrapped in its cell on the lines below are the row's (strength, pack volume, form); a page scanned column by column with descriptions all in capitals is put back together. // (2026-11-21, same rules-64, no re-read: the month's reading budget was used up; PhilGEPS 13318682 corrected by hand) a page headed as a hazardous / high-alert / cytotoxic drugs list holds no rows. (2026-11-14, same rules-64, affected tenders re-read by hand: in a tender of lots, a row without Qty/ABC is set aside when its lot is priced row by row, itemisedLots.) rules-64: scanned margin marks after the last amount; a total on its own line, or the total of a row, corrects a one-digit misread of the price or quantity; a one-digit price cell (PS 114413). rules-63: a lot's rows by Item No. unless only a few have one. rules-62: a list of lots with amounts opens no lot; a lot's rows by Item No. only when most have one. rules-61: lot headings with a title in capitals or a letter (LOT 10 ANTINEOPLASTIC, LOT 8-A). rules-60: a lot ends at its subtotal or a LINE ITEMS heading; a lot's rows counted by Item No. rules-59: of several lots only those with every molecule ours count. rules-58: one lot with line items is shown, a lot's rows show without their ABC, their Source to check. rules-57: only one whole lot is hidden; several lots, or line items with lots, are read, each row tagged with its lot. rules-56: amounts without centavos (an Excel list) read when they multiply out. rules-55: the peso sign scanned as P; pages scanned column by column put back together when they add up; a row cut mid-phrase goes on past a blank line. rules-54: a product only in a "with ..." after another of ours is an accessory. rules-53: price-first numbers lines and a row number two lines above end/start a row; scanned peso signs, stray end marks and cut totals; 'mi' = mL. rules-52: bid dates from their own sentence only, never a form's revision date or a long-past date; month names only. rules-51: only a table row with its quantity and ABC counts as ours (the rest set aside for checking). rules-50: the Bid Data Sheet's "number of lot(s): One (1)" makes a tender a lot (hidden), checked first. rules-49: a page's amount meaning only where it makes sense for the row (box prices, garbled totals); quantity-first next rows end a row. rules-48: a row's look-ahead ends at the next row's number; a scan's dotted thousands, 'rna' for mg and 'droDs' for drops; a loose mark after a row number; a strength-less priced row paired with its Item No.'s listing; a row's numbers after its bidder field; marks before the next row's name; a carried header naming one amount column checked against its page's rows. rules-47: a priced copy of a row is read even when an unpriced copy starts alike; Item | Qty | Unit | ABC | Description; '-' cells empty; the Price Schedule form's and offer/in-words columns are the bidder's; one amount meaning per page without a header; a row ends at its numbers and a lot heading; a '/' partner is a combination; the row's own form wins; a Schedule of Requirements quantity of 1 lot/package (or a price list headed by the whole as one lot) makes the tender a lot. rules-46: an ABC column that doesn't say per unit or total is read one way for its whole table, by which reading gives sensible unit prices; "ABC Unit Price" and "ABC Total" are one column each. rules-39: a chewable line only for a product our list states as chewable (Loratadine is a plain tablet). rules-38: our Bupivacaine is 0.5% as the Product List gives it, a line adding another percent strength (8% dextrose) is not ours, isobaric is. rules-37: concentration and our pack volume (bracket total ignored), whole row checked again (unit column form), rejected rows' copies dropped, a row's next lines read up to 8. rules-36: a volume-only product never against another strength, a product "in dextrose" needs dextrose. rules-35: our concentration x volume must give our amount, hospitals' shorthand (250MG/2ML), dosage form strict, a scan's "10 mg ml". rules-34: exact dosages (no concentration read as an amount, no concentration x volume), the same row kept once by its own number. rules-33: a quantity and amount alone on a row's last line end the row above. rules-32: a Price Schedule's bidder fields end a row, a dosage only from the row's own lines, delivery plan copies dropped. rules-31: big single amount is the total, unit price from total when they disagree, garbled amounts set aside, next row on a line cut, heading after the amounts, rows read once (best file first), package Schedule of Requirements. rules-30: only a table's rows are fetched (isTableRow; others kept as outside_table), a header starts at its own first line. rules-29: a row's price on its wrapped next line (with or without a header). rules-28: "Unit PR Price" and the bidder's empty bid columns, an empty Brand column keeps the description, Item | Qty | Unit | Description | amount, quantity on a scan's second line, dots in amounts, quantity written twice; worked-out amounts marked computed. rules-27: numbers lines below a row with no header, "... 100's box 50" rows, "Within twenty (20)" delivery; missing ABC/Unit or Total worked out. rules-26: a description going on with a strength ("100 mg tablet") is not the next row. rules-25: an ABC/unit of 100,000 or more is the ABC total. rules-24: one amount after the quantity (unit price for injectables, total for cheap tablets), delivery text and -do- set aside, only real unit words as units. rules-23: a long table's header carried to its next pages, rows read through their numbers line (up to 12 lines), delivery split and text columns after the numbers, ₱ signs, repeated rows without a quantity dropped. rules-22: a molecule's sub-rows (".01 250mg/ml ... 2,000 235.00 5,640,000.00") read as rows of their own; quantity before unit price when the total doesn't multiply out. rules-21: a dosage counts only in its molecule's own part of the line (lib/products.mjs ownPart). rules-20: several rows on one line never read by a header; Item No. + Unit on the line above a row; quantity above only under a Quantity-first header. rules-19: rows read by their table's header first (columns before the description from the left, after it from the right). rules-18: layouts Item | Description | Unit Price | Qty | Unit, Item | ABC Total | Description | Qty | Unit, Item | Unit | Description | Qty | Price, quantity on the line above ("200 PFS" / product / ABC per unit). rules-17: a Quantity column read on its own is used only when it agrees with the rows and never over a row whose quantity × price = total; "7.826" read as 7,826 when the total adds up. rules-16: a number whose next line starts with a strength unit ("1" / "g Vial") is never the quantity. rules-15: a quantity is a whole number (never an amount with centavos), unit "Ampule/Vial", numbered rows with no quantity read again without the Item No. (a bare number at the end; of two, the first). rules-14: an Item No. needs three rows numbered in order and is set aside only when it was read as the quantity; layouts Unit | Qty | Description, price before quantity, "pfs". rules-13: Item No. never the quantity. rules-12: each item keeps its row's text (written) for "As written". rules-11: the form under a table ("Purpose:", "Requested By") is never part of its last row. rules-10: scans straightened and table rules removed (ocr-3), rules left in a line, two-word units ("prefilled syringe"), a row's number when its quantity cell is empty, "Amikacide", "125mmg". rules-9: "<row no.> <unit> <description> <qty>" rows and rows broken over lines (the row number was read as the quantity). rules-8: misspelled names ("Rocorunium", "Epoeitin"). rules-7: molecule AND dosage (lib/products.mjs; B2B price list + PRODUCT LIST). rules-6: table products. rules-4: Word and Excel files, item codes like "DM14"
 const RULES_VERSION = 'rules-64';
-const READABLE = /\.(pdf|docx|xlsx)$/i;
+const READABLE = /\.(pdf|docx|xlsx|jpe?g|png)$/i;
+// A photo of the document posted as the tender's file, read by OCR like a scanned page (photoText)
+const PHOTO = /\.(jpe?g|png)$/i;
 const BUCKET = 'ps-documents';
 const TEXT_PAGE_MIN_CHARS = 200; // fewer letters per page than this on average = scanned
 const TENDERS_AT_ONCE = 3;
@@ -1521,6 +1523,38 @@ async function withOcr(supabase, bucket, doc, pdf, pages, until) {
   return { pages: merged, ocrPages: scanned.filter((n) => letterCount(cached[n]) > letterCount(pages[n - 1])).length, version, complete };
 }
 
+/** A photo's text: its OCR readings as pages (lib/ocr.mjs ocrImage), kept beside the file like a scan's (_ocr/<path>
+ * .json) so it is read once. Where OCR doesn't run (the deployed Vercel server) only a kept reading is used; without
+ * one the file counts as a scan waiting for OCR, which the OCR job then reads. */
+async function photoText(supabase, bucket, doc, bytes) {
+  const { data: blob } = await supabase.storage.from(bucket).download(ocrCachePath(doc));
+  if (blob) {
+    try {
+      const saved = JSON.parse(await blob.text());
+      const pages = Object.keys(saved.pages || {}).sort((a, b) => a - b).map((k) => saved.pages[k]);
+      if (saved.size === doc.size && pages.length && (saved.version === OCR_VERSION || !OCR_ENABLED)) return { pages, ocrPages: pages.length, version: saved.version };
+    } catch {
+      // unreadable: read again below
+    }
+  }
+  if (!OCR_ENABLED) return { pages: [''], ocrPages: 0, error: 'OCR is off on the server' };
+  let pages;
+  try {
+    pages = await ocrImage(bytes);
+  } catch (e) {
+    return { pages: [''], ocrPages: 0, error: e.message };
+  }
+  if (!pages.length) return { pages: [''], ocrPages: 0, version: OCR_VERSION };
+  await supabase.storage
+    .from(bucket)
+    .upload(ocrCachePath(doc), JSON.stringify({ version: OCR_VERSION, size: doc.size, pages: Object.fromEntries(pages.map((text, i) => [i + 1, text])) }), { contentType: 'application/json', upsert: true })
+    .then(
+      () => {},
+      () => {}
+    );
+  return { pages, ocrPages: pages.length, version: OCR_VERSION };
+}
+
 // Documents read before OCR, or by an older OCR, that were scanned: read them again
 // (never while OCR is off here: they would be queued again every few minutes)
 // (ocr_waiting: a text file with scanned pages OCR couldn't run on where it was read, e.g. the deployed server)
@@ -1737,13 +1771,19 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     } else {
       const { data: blob, error } = await downloadWithRetry(supabase, bucket, doc.path);
       if (error) throw new Error(`${doc.name}: ${error.message}`);
-      try {
-        ({ pages, pdf } = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer())));
-      } catch {
-        read.push({ name: doc.name, kind: 'unreadable' });
-        continue;
+      if (PHOTO.test(doc.name)) {
+        ({ pages, ocrPages, error: ocrError, version: ocrVersion } = await photoText(supabase, bucket, doc, new Uint8Array(await blob.arrayBuffer())));
+        // (read by OCR, as a scanned PDF is: what follows treats it alike)
+        pdf = true;
+      } else {
+        try {
+          ({ pages, pdf } = await fileText(doc.name, new Uint8Array(await blob.arrayBuffer())));
+        } catch {
+          read.push({ name: doc.name, kind: 'unreadable' });
+          continue;
+        }
       }
-      if (pdf) {
+      if (pdf && pdf !== true) {
         const ocr = await withOcr(supabase, bucket, doc, pdf, pages, ocrUntil);
         if (!ocr.complete) throw new Error(`${doc.name}: scanned pages are still being read (OCR); the next run continues.`);
         ({ pages, ocrPages, error: ocrError, version: ocrVersion } = ocr);
@@ -1819,7 +1859,7 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
           if (named.length) {
             const row = withPageMeaning(lines, n, parseItemRow(lines, n));
             const itemNo = row.item_no ?? leadingNumber(line);
-            if (itemNo != null && row.quantity != null && (row.unit_price != null || row.total != null) && !STRENGTH_IN_TEXT.test(row.written || line)) undosed.push({ named, item_no: String(itemNo), row, line, source: `${doc.name}, ${isPdf ? `page ${i + 1}` : 'Word/Excel file'}` });
+            if (itemNo != null && row.quantity != null && (row.unit_price != null || row.total != null) && !STRENGTH_IN_TEXT.test(row.written || line)) undosed.push({ named, item_no: String(itemNo), row, line, source: `${doc.name}, ${isPdf ? `page ${i + 1}` : PHOTO.test(doc.name) ? 'photo' : 'Word/Excel file'}` });
           }
           // A priced row naming our molecule with a strength, in a form or strength not ours ("55 Folic acid 5mg capsule
           // 5000 2.65 13,250.00": our Folic Acid is the tablet; PS 119747, user 2026-11-21): its copies with the same
@@ -1872,7 +1912,7 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
           const unit = row.unit || new RegExp(`^\\d{1,4}[.)]*\\s+(${KNOWN_UNIT_RE})\\s`, 'i').exec(row.written || line)?.[1];
           Object.assign(row, { quantity: fromColumn, quantity_from: 'column', ...(unit && { unit }) });
         }
-        const source = `${doc.name}, ${isPdf ? `page ${i + 1}` : 'Word/Excel file'}`;
+        const source = `${doc.name}, ${isPdf ? `page ${i + 1}` : PHOTO.test(doc.name) ? 'photo' : 'Word/Excel file'}`;
         // Only a table's rows (user, 2026-10-27: "As long as they are not in table then dont fetch them"), not
         // specifications, bullet points or terms that name our products (PS 112460)
         if (referenceList || (!row.from_columns && !isTableRow(lines, n, row))) {
