@@ -424,15 +424,12 @@ export function buildOpportunitySheet(workbook, tenders) {
       if (item.sumComputed) I.fill = COMPUTED_FILL;
       for (const cell of [H, I]) cell.numFmt = '#,##0.00';
     } else {
-      // Several: numbered lines of text, computed ones green; the tender's ABC total in red as ABC Total's last line
+      // Several: numbered lines of text, computed ones green
       const lines = (key, computed) =>
         items.flatMap((item, i) => (item[key] == null ? [] : [{ text: no(i) + money(item[key]), font: item[computed] ? COMPUTED_FONT : ITEM_FONT }]));
       const richText = (runs) => (runs.length ? { richText: runs.flatMap((run, i) => (i ? [{ text: '\n', font: ITEM_FONT }, run] : [run])) } : null);
       H.value = richText(lines('unit', 'unitComputed'));
-      const totals = items.map((item) => item.sum).filter((v) => v != null);
-      const sumLines = lines('sum', 'sumComputed');
-      if (totals.length >= 2) sumLines.push({ text: money(totals.reduce((a, b) => a + b, 0)), font: TOTAL_FONT });
-      I.value = richText(sumLines);
+      I.value = richText(lines('sum', 'sumComputed'));
     }
     for (const cell of [F, G, H, I]) {
       cell.font = ITEM_FONT;
@@ -452,6 +449,20 @@ export function buildOpportunitySheet(workbook, tenders) {
     const tenderLines = Math.max(...TENDER_COLUMNS.map((col) => wrappedLines(facts[col] instanceof Date ? 'mm/dd/yy hh:mm' : facts[col], WIDTH[col], 0.9)));
     ws.getRow(r).height = Math.max(20, lines * SEGOE_LINE + 4, tenderLines * CALIBRI_LINE + 8);
     r++;
+
+    // The tender's ABC total on its own row under it, in red under ABC Total, when 2 or more ABC totals add up
+    // (user, 2026-11-26; as the original sheet's separator row). A real number, so Excel can add it up
+    const totals = items.map((item) => item.sum).filter((v) => v != null);
+    if (totals.length >= 2) {
+      const total = ws.getCell(`I${r}`);
+      total.value = totals.reduce((a, b) => a + b, 0);
+      total.font = TOTAL_FONT;
+      total.numFmt = '#,##0.00';
+      total.alignment = { horizontal: 'left', vertical: 'middle' };
+      total.border = BOX;
+      ws.getRow(r).height = 20;
+      r++;
+    }
   }
   return ws;
 }
