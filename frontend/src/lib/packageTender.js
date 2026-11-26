@@ -33,4 +33,8 @@ export function isPackageTender(description, documentsPackage) {
 export const LOT_UNIT = /^\s*(?:lots?|packages?|lump[\s-]*sums?)\s*$/i;
 // ... or whose "Lot Type" field says "Single Lot" (psSync.mjs readLotType; PS 166581)
 export const SINGLE_LOT = /^\s*single\s+lot\s*$/i;
+/** What the website's own "Lot Type" field says, when the Sync has read it: 'single', 'multi' or null. The website's
+ * field is the authority (user 2026-11-26, PS 161025: its Bid Data Sheet's template clause said single lot, the notice
+ * says Multi Lot): a tender it lists as several lots is shown whatever the documents' wording */
+export const noticeLotType = (notice) => (SINGLE_LOT.test(notice?.lot_type || '') ? 'single' : notice?.lot_type ? 'multi' : null);
 export const noticeOneLot = (notice) => SINGLE_LOT.test(notice?.lot_type || '') || (notice?.matched_items || []).some((i) => Number(i.quantity) === 1 && LOT_UNIT.test(i.unit || ''));

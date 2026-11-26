@@ -3,7 +3,7 @@
 // Match, Screened and the export (user, 2026-11-26: "I told u to not include if it says 1 lot"; PS 163216, 164641,
 // 165710). Notices listing items one by one stay.
 import assert from 'node:assert/strict';
-import { noticeOneLot } from '../frontend/src/lib/packageTender.js';
+import { noticeLotType, noticeOneLot } from '../frontend/src/lib/packageTender.js';
 import { readLotType } from '../frontend/src/lib/psSync.mjs';
 
 const cases = [
@@ -27,4 +27,8 @@ assert.equal(readLotType('Bid Validity Period:\n120\nControl Number:\n2026112500
 assert.equal(readLotType('Control Number: 20261125001 Lot Type: Single Lot Approved Budget of the Contract: 6,673,840.00'), 'Single Lot', 'labels run together on one line');
 assert.equal(readLotType('Lot Type: Multiple Lot'), 'Multiple Lot', 'several lots');
 assert.equal(readLotType('Approved Budget of the Contract: 100.00'), null, 'no Lot Type field');
-console.log(`One-lot notice check passed (${cases.length + 4} checks).`);
+// The website's Lot Type is the authority over the documents' wording (PS 161025: Multi Lot on the notice)
+assert.equal(noticeLotType({ lot_type: 'Multi Lot' }), 'multi', 'Multi Lot');
+assert.equal(noticeLotType({ lot_type: 'Single Lot' }), 'single', 'Single Lot');
+assert.equal(noticeLotType({}), null, 'not read yet');
+console.log(`One-lot notice check passed (${cases.length + 7} checks).`);

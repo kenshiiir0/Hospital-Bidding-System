@@ -310,6 +310,22 @@ const UNFINISHED = /(?:\b(?:for|of|in|with|and|or|to|as|per)|[,(/+-])$/i;
  * below ("7" / "Epoetin alfa 4000iu/0.4ml OR" / "4000iu/1ml,IV,SC (Recombinant Human" / ... / "syringe/vial 10,000
  * 450.00 4,500,000.00", PS 107172): read whole from the row's first line (its number before it or on it), up to
  * the next row; null otherwise */
+/** The row's number alone on a line, then its unit over one to three short lines, then its name: the narrow cells
+ * of a "Summary of Bid Prices" table ("9" / "Sterile Twist" / "Cap Plastic" / "Vial" / "BUPIVACAINE" / "ISOBARIC as" /
+ * "Hydrochloride 0.5%," / "10ml" / "540 435.53 235,186.20", PS 166098 page 85; user 2026-11-26). Returns [, number,
+ * unit] like the other forms, or null */
+const UNIT_CELL_LINE = /^[A-Za-z][A-Za-z /-]{0,22}$/;
+function numberOverUnit(lines, n) {
+  const words = [];
+  for (let k = n - 1; k >= Math.max(0, n - 4); k--) {
+    const line = lines[k] || '';
+    if (/^\d{1,4}[.)]?$/.test(line)) return words.length ? [line, line.replace(/[.)]+$/, ''), words.reverse().join(' ')] : null;
+    if (!UNIT_CELL_LINE.test(line)) return null;
+    words.push(line);
+  }
+  return null;
+}
+
 function rowBelow(lines, n) {
   const before = lines[n - 1] || '';
   const ownNumber = /^\d{1,4}[.)]*\s+[A-Za-z]/.test(lines[n]);
@@ -319,7 +335,8 @@ function rowBelow(lines, n) {
   // the Item No. | UOM | Item/Specification | Qty. | ABC/Unit RFQ of PhilGEPS 13321259)
   const numberAbove =
     (!ownNumber && /^[A-Za-z][A-Za-z/-]*$/.test(before) && /^(\d{1,4})[.)]?\s+[A-Za-z][A-Za-z/-]*$/.exec(lines[n - 2] || '')) ||
-    (!ownNumber && /^(\d{1,4})[.)]?\s+([A-Za-z][A-Za-z/-]*)$/.exec(before));
+    (!ownNumber && /^(\d{1,4})[.)]?\s+([A-Za-z][A-Za-z/-]*)$/.exec(before)) ||
+    (!ownNumber && numberOverUnit(lines, n));
   if (!(ownNumber || numberAbove || !before || LONE_NUMBER.test(before) || /\d\.\d{2}$/.test(before))) return null;
   const parts = [lines[n]];
   let found = false;
@@ -1263,7 +1280,10 @@ export function keepBestReading(items) {
     const m = BULLETIN_FILE.exec(i.source || '');
     return m && i.quantity != null && (i.unit_price != null || i.total != null) ? 16 + Number(m[1] || 0) : 0;
   };
-  const score = (i) => bulletin(i) + (i.quantity != null ? 8 : 0) + (i.unit_price != null && i.computed !== 'unit_price' ? 2 : 0) + (i.total != null && i.computed !== 'total' ? 2 : 0) + (TABLE_FILE.test(i.source || '') ? 1 : 0);
+  // The "Summary of Bid Prices" table (the agency's own ABC per line beside the bidder's empty offer columns) is the
+  // table to go by when a document has it (user, 2026-11-26, PS 166098: "There are complete datas here in the summary
+  // of bid prices. Please add that to priority to check")
+  const score = (i) => bulletin(i) + (i.table === 'summary' ? 4 : 0) + (i.quantity != null ? 8 : 0) + (i.unit_price != null && i.computed !== 'unit_price' ? 2 : 0) + (i.total != null && i.computed !== 'total' ? 2 : 0) + (TABLE_FILE.test(i.source || '') ? 1 : 0);
   const best = new Map();
   for (const i of items) {
     const key = keyOf(i);
@@ -1280,15 +1300,28 @@ export function keepBestReading(items) {
   // A copy of a row with no amounts (a delivery schedule, a compliance form) goes when a priced reading names the
   // same products, strength and quantity, numbered or not (user, 2026-10-28: one table can't be half filled)
   const sameRow = (i) => `${[...i.our_products].sort().join('+')}|${flat(DOSE.exec(withOcrUnits(i.written || i.line || i.description || ""))?.[0])}|${i.quantity}`;
-  const priced = new Set(items.filter((i) => i.quantity != null && (i.unit_price != null || i.total != null)).map(sameRow));
-  // and a priced row read twice (the Price Schedule and the delivery schedule) is kept once
-  const amounts = new Set();
+  const isPriced = (i) => i.quantity != null && (i.unit_price != null || i.total != null);
+  const priced = new Set(items.filter(isPriced).map(sameRow));
+  // ... also a copy whose own text gives no strength, the description wrapping below its first line ("9 BUPIVACAINE
+  // ISOBARIC as" / "Hydrochloride 0.5%, 10ml" / ... / "540" on a bidder's price form, PS 166098 page 83, read at 50%
+  // beside the priced row): the same products and quantity
+  const doseOf = (i) => flat(DOSE.exec(withOcrUnits(i.written || i.line || i.description || ''))?.[0]);
+  const loose = (i) => `${[...i.our_products].sort().join('+')}|${i.quantity}`;
+  const pricedLoose = new Set(items.filter(isPriced).map(loose));
+  // and a priced row read twice (the Price Schedule and the delivery schedule) is kept once: the better source's
+  const amounts = new Map();
   for (let k = 0; k < items.length; k++) {
     const i = items[k];
     const both = `${sameRow(i)}|${i.total}`;
-    if (i.quantity != null && i.unit_price == null && i.total == null && priced.has(sameRow(i))) items.splice(k--, 1);
-    else if (i.quantity != null && i.total != null && amounts.has(both)) items.splice(k--, 1);
-    else amounts.add(both);
+    if (i.quantity != null && i.unit_price == null && i.total == null && (priced.has(sameRow(i)) || (!doseOf(i) && pricedLoose.has(loose(i))))) items.splice(k--, 1);
+    else if (i.quantity != null && i.total != null && amounts.has(both)) {
+      const first = items.indexOf(amounts.get(both));
+      if (first >= 0 && score(i) > score(items[first])) {
+        items[first] = i;
+        amounts.set(both, i);
+      }
+      items.splice(k--, 1);
+    } else amounts.set(both, i);
   }
   return items;
 }
@@ -1352,6 +1385,8 @@ export function withWrappedDescription(lines, n, row) {
     let next = withoutRules(raw).replace(/^[^A-Za-z\d(]+/, '');
     if (k === 0 && codeGoesOn(lines[n], raw, own)) next = next.replace(CODE_TAIL, '');
     if (!next || wraps.length >= WRAP_MAX_LINES || next.length > WRAP_MAX_CHARS || /\d\.\d{2}\b/.test(next) || LONE_NUMBER.test(next) || !/[A-Za-z]/.test(next)) return row;
+    // (not a line the row's text already holds: a row read whole from its lines below)
+    if (base.includes(next)) continue;
     wraps.push(next);
   }
   // Only when the next row (or the page's end) follows the wrapped lines: never a paragraph below the table
@@ -1384,7 +1419,10 @@ export function isTableRow(lines, n, row) {
  * holds the other's text ("Rocuronium bromide 10mg/ml, 5ml" in "54 Rocuronium bromide 10mg/ml, 5ml vial 200
  * 70,000.00"). In place. */
 export function dropRepeatedRows(items) {
-  const flat = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  // (without the row's own number at its start: "9 BUPIVACAINE ISOBARIC as" on a bidder's form is the priced
+  // "BUPIVACAINE ISOBARIC as Hydrochloride 0.5%, 10ml 435.53 540 235,186.20", whose number is on the line above; PS
+  // 166098 page 83, counted as a row missing its Qty and ABC: read at 50%)
+  const flat = (s) => String(s || '').replace(/^\W*\d{1,4}[.)]?\s+(?=[A-Za-z])/, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const withQty = items.filter((i) => i.quantity != null);
   for (let k = items.length - 1; k >= 0; k--) {
     const item = items[k];
@@ -1653,6 +1691,7 @@ export function rowReadings(rawLines, n) {
 // result: { bid_data_sheet, items }, error }. A file that can't be opened is listed as "unreadable".
 // ocrUntil: time (ms) when OCR of scanned pages stops; when it stops before every scanned page is read, this
 // throws (the pages read so far are kept), so the caller reads the tender again on its next run.
+const SUMMARY_OF_BID_PRICES = /^\W*summary\s+of\s+bid\s+prices?\b/i;
 export async function readDocuments(supabase, bucket, documents, matchProducts, { ocrUntil = Date.now() + OCR_MAX_MS } = {}) {
   const items = [];
   // Lines naming our products outside any table: kept for checking, never shown (isTableRow)
@@ -1731,6 +1770,8 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
     texts.push(marked.map((m) => m.text).join('\n'));
     // A long table's header carried on to the pages it goes on to (carryHeader)
     let carried = null;
+    // The header of the "Summary of Bid Prices" table, while the pages read are that table's
+    let summaryHeader = null;
     // The lot of the rows below its heading
     let lotBelow = null;
     marked.forEach(({ text: page, quantities: column }, i) => {
@@ -1741,6 +1782,9 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       if ((/schedule\s+of\s+requirements/i.test(page) && raw.some((l) => PACKAGE_ROW.test(l))) || lotSchedule(raw)) isPackage = true;
       const lines = expandVariants(raw);
       carried = carryHeader(lines, carried);
+      // A "Summary of Bid Prices" page, and the pages its table goes on to (the header carried on)
+      if (raw.filter(Boolean).slice(0, 8).some((l) => SUMMARY_OF_BID_PRICES.test(l))) summaryHeader = carried;
+      const inSummary = Boolean(summaryHeader) && carried === summaryHeader;
       const quantities = column && columnAgrees(lines, column) ? column : null;
       // A page scanned column by column, put back together (columnRows)
       const columns = columnRows(lines);
@@ -1835,7 +1879,7 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
           outside.push({ our_products: products, line, source });
           return;
         }
-        items.push({ our_products: products, ...withBothAmounts(strayTotal(lines, n, row)), line, context, source, ...(lotBelow && { lot: lotBelow }) });
+        items.push({ our_products: products, ...withBothAmounts(strayTotal(lines, n, row)), line, context, source, ...(lotBelow && { lot: lotBelow }), ...(inSummary && { table: 'summary' }) });
       });
     });
   }
@@ -2034,12 +2078,16 @@ export const hasLineItems = (items) => items.some((i) => i.quantity != null && (
 export const wholeLot = (oneLot, many, items) => oneLot && !many;
 
 const SINGLE_LOT_TEXT = /\bsingle\s+lot\b|\bone\s*\(\s*1\s*\)\s*lot\b(?!s)|\blot\s+type\s*:?\s*single\b/i;
+const TEMPLATE_LOT_CLAUSE = /grouped\s+in\s+a\s+single\s+lot|partial\s+bids?\s+(?:is|are)\s+not\s+allowed|sub-?\s?lots/i;
 export function lotSchedule(lines) {
   // The Bid Data Sheet first: "The number of lot(s): One (1)" (user, 2026-10-30: "Always check the Bid Data Sheet
   // first because that is mostly where the Lot is indicated"; PS 107468 lists priced items but is one lot)
   if (lines.some((line, n) => BDS_ONE_LOT.test(line) || (/\b(?:number|no\.?)\s+of\s+lots?\s*(?:\(s\)|\/s)?\s*[:.-]?\s*$/i.test(line) && /^\s*(?:one\b|1\b|\(1\))/i.test(lines[n + 1] || '')))) return true;
   // "Single Lot", "one (1) lot", "Lot Type: Single" written anywhere (user, 2026-11-26)
-  if (lines.some((line) => SINGLE_LOT_TEXT.test(line))) return true;
+  // ... but not the Bid Data Sheet's template clause "Partial bid is not allowed. The goods are grouped in a single lot
+  // and the lot shall not be divided into sub-lots": left in tenders the website itself lists as Multi Lot (PS 161025,
+  // user 2026-11-26: "It says multi lot therefore we need to fetch it"; PS 165581 states 3 lots beside it)
+  if (lines.some((line) => SINGLE_LOT_TEXT.test(line) && !TEMPLATE_LOT_CLAUSE.test(line))) return true;
   if (lines.some((line) => LOT_TOTAL_ROW.test(line.trim()))) return true;
   let heading = -Infinity;
   const rows = lines.filter((line, n) => {

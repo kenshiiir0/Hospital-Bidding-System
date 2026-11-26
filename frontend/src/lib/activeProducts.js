@@ -3,7 +3,7 @@
 // show, so every screen keeps only the molecules on today's list (/api/products: active products' names).
 
 import { authFetch } from '@/lib/authFetch';
-import { isPackageTender, noticeOneLot } from '@/lib/packageTender';
+import { isPackageTender, noticeLotType, noticeOneLot } from '@/lib/packageTender';
 
 let cached = null;
 
@@ -41,7 +41,8 @@ export function activePsData(data, active) {
   // Tenders bought as one package or lot, by their documents or by the notice's Line Item Details giving "1 Lot"
   // (lib/packageTender.js); no products, no notice lines
   const packaged = new Set([
-    ...Object.entries(data.analysis || {}).filter(([, r]) => isPackageTender('', r?.result?.package)).map(([ref]) => ref),
+    // (the documents' word counts only while the website's Lot Type is unknown or says Single Lot)
+    ...Object.entries(data.analysis || {}).filter(([ref, r]) => isPackageTender('', r?.result?.package) && noticeLotType(data.notices?.[ref]) !== 'multi').map(([ref]) => ref),
     ...Object.entries(data.notices || {}).filter(([, n]) => noticeOneLot(n)).map(([ref]) => ref),
   ]);
   const keep = (ref, name) => !packaged.has(ref) && (!active || active.has(name));

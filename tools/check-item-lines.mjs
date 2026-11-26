@@ -560,8 +560,10 @@ assert.equal(lotSchedule(['Lot Type: Single Lot']), true, 'Single Lot written in
 // Bid Data Sheet's left-over "grouped in a single lot" clause says
 assert.equal(manyLots(['1.2 The number of lot(s): 3.']), true, 'a lot count ending in a full stop');
 assert.equal(manyLots(['1.2 The number of lot(s): 3.5']), false, 'a decimal is no lot count');
-assert.equal(wholeLot(lotSchedule(['Partial bid is not allowed. The goods are grouped in a single lot']), manyLots(['1.2 The number of lot(s): 3.']), []), false, 'three lots win over the single-lot clause');
-assert.equal(lotSchedule(['26.5(a) Partial bid is not allowed. The goods are grouped in a single lot and the lot']), true, 'the Bid Data Sheet clause "grouped in a single lot" is one lot');
+// The Bid Data Sheet's template clause proves nothing: PS 161025 carries it and the website lists it as Multi Lot
+// (user 2026-11-26: "It says multi lot therefore we need to fetch it")
+assert.equal(lotSchedule(['26.5(a) Partial bid is not allowed. The goods are grouped in a single lot and the lot', 'shall not be divided into sub-lots for the purpose of bidding, evaluation, and contract award.']), false, 'the template clause "grouped in a single lot" is not one lot');
+assert.equal(lotSchedule(['1.2 The number of lot(s): One (1) lot']), true, 'the lot count of the Bid Data Sheet still makes one lot');
 assert.equal(lotSchedule(['Supply and delivery of drugs and medicines, one (1) lot']), true, 'one (1) lot written in the documents');
 assert.equal(lotSchedule(['This is a single lot procurement']), true, 'a single lot procurement');
 assert.equal(lotSchedule(['Bids may be submitted for one (1) lots or more']), false, 'one or more lots is not one lot');
@@ -720,4 +722,19 @@ assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a b
   assert.notEqual(parseItemRow(DELIVERY, 2).quantity, 51131602, 'the item code is not the quantity');
   expect(parseItemLine('3 12000000 pcs Examination gloves'), { quantity: 12000000 }, 'a quantity-first row keeps its large quantity');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7 + 2} rows).`);
+// PS 166098 (user 2026-11-26: "There are complete datas here in the summary of bid prices. Please add that to priority
+// to check"): the Summary of Bid Prices table's narrow cells put the row's number alone on a line, its unit over three
+// lines, its name over four and its numbers last; a bidder's form two pages before repeats the row with no amounts
+{
+  const SUMMARY = ['Summary of Bid Prices', 'Item', 'No.', 'Unit of', 'Issue Item Description Quantity', 'Agency Budget for the', "Contract (ABC) Supplier's Offer", 'Unit ABC Total ABC Unit Price Total', '8 Vial ALBUMIN, HUMAN', '25%, 50ml 120 3,201.00 384,120.00', '9', 'Sterile Twist', 'Cap Plastic', 'Vial', 'BUPIVACAINE', 'ISOBARIC as', 'Hydrochloride 0.5%,', '10ml', '540 435.53 235,186.20', '10 Vial', 'ESMOLOL'];
+  expect(parseItemRow(SUMMARY, 14), { item_no: '9', quantity: 540, unit_price: 435.53, total: 235186.2, unit: 'Sterile Twist Cap Plastic Vial' }, 'Summary of Bid Prices row 9');
+  // The copy that starts with its row number is the priced row again
+  const priced = { our_products: ['Bupivacaine'], quantity: 540, unit_price: 435.53, total: 235186.2, written: 'BUPIVACAINE ISOBARIC as Hydrochloride 0.5%, 10ml 435.53 540 235,186.20', description: 'BUPIVACAINE ISOBARIC as Hydrochloride 0.5%, 10ml' };
+  assert.equal(dropRepeatedRows([{ ...priced }, { our_products: ['Bupivacaine'], line: '9 BUPIVACAINE ISOBARIC as', written: '9 BUPIVACAINE ISOBARIC as' }]).length, 1, 'a copy starting with its row number is dropped');
+  assert.equal(dropRepeatedRows([{ ...priced }, { our_products: ['Bupivacaine'], line: '12 BUPIVACAINE HEAVY 0.5%, 4ml', written: '12 BUPIVACAINE HEAVY 0.5%, 4ml' }]).length, 2, 'another row of the same molecule stays');
+  // Of the same priced row read on two pages, the Summary of Bid Prices one is kept
+  const kept = keepBestReading([{ ...priced, source: 'PBD.pdf, page 11' }, { ...priced, written: 'BUPIVACAINE ISOBARIC as Hydrochloride 0.5%, 10ml 540 435.53 235,186.20', item_no: '9', table: 'summary', source: 'PBD.pdf, page 85' }]);
+  assert.equal(kept.length, 1, 'the same priced row once');
+  assert.equal(kept[0].source, 'PBD.pdf, page 85', 'the Summary of Bid Prices row is the one kept');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7 + 2 + 5} rows).`);
