@@ -10,6 +10,7 @@ import { DOWNLOAD_BUDGET_MESSAGE, countDownload, downloadsOverBudget } from './u
 import { docsIdle, docsStamp, markDocsIdle } from './docsIdle.mjs';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { allRows } from './allRows.mjs';
+import { noticeClosed, readAgain } from './readAgain.mjs';
 
 // Reads each PS-PhilGEPS tender's bid documents (Storage bucket ps-documents) with free, rule-based text
 // reading and stores per tender in ps_tender_analysis:
@@ -1173,6 +1174,11 @@ async function savedTexts(supabase, bucket, documents) {
   }
   return out;
 }
+// The paths whose text is saved (paths only: a few kB)
+async function savedTextPaths(supabase, bucket) {
+  const { data } = await allRows(() => supabase.from('document_text').select('path').eq('bucket', bucket).eq('version', TEXT_VERSION).order('path'));
+  return new Set((data || []).map((r) => r.path));
+}
 async function saveTexts(supabase, bucket, entries) {
   if (!entries.length) return;
   const rows = entries.map(({ path, size, ...text }) => ({ bucket, path, size, version: TEXT_VERSION, text: gzipSync(Buffer.from(JSON.stringify(text), 'utf8')).toString('base64'), saved_at: new Date().toISOString() }));
@@ -2026,14 +2032,27 @@ export async function analyzePending({ maxMs = 200000, refs: only, notices: give
 
   const notices = given || (await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle()).data?.notices;
   // What was read in each file is needed only where OCR runs (ocrPending); elsewhere whether there is a reading
-  const { data: done } = await allRows(() => supabase.from('ps_tender_analysis').select(OCR_ENABLED ? 'ref, documents_key, documents_read' : 'ref, documents_key, documents_read:documents_read->0').order('ref'));
+  const { data: done } = await allRows(() => supabase.from('ps_tender_analysis').select(`ref, documents_key, accuracy:result->accuracy->percent, ${OCR_ENABLED ? 'documents_read' : 'documents_read:documents_read->0'}`).order('ref'));
   const known = new Map((done || []).map((r) => [r.ref, r]));
   // Screened tenders first (user, 2026-10-27): the ones the team bids on
   const { data: screened } = await supabase.from('screened_tenders').select('ref').eq('source', 'ps');
   const isScreened = new Set((screened || []).map((s) => String(s.ref)));
+  // Files whose text is saved (read again without a download) and, with the month's downloads used up, only the
+  // tenders whose files need none: the others wait for next month instead of failing at every run (220 tenders
+  // retried each hour in November 2026, each a write and time in the Sync)
+  const saved = await savedTextPaths(supabase, BUCKET);
+  const overBudget = await downloadsOverBudget(supabase);
+  const files = (n) => n.documents.filter((d) => d.path && !d.removed);
+  const noDownload = (n) => files(n).every((d) => saved.has(d.path) || justDownloaded.has(`${BUCKET}/${d.path}`));
   const queue = Object.entries(notices || {})
     .filter(([ref, n]) => (!only || only.includes(ref)) && n.documents?.some((d) => d.path))
-    .filter(([ref, n]) => known.get(ref)?.documents_key !== documentsKey(n, matchProducts.key) || ocrPending(known.get(ref).documents_read))
+    // Read again only when it can change something (lib/readAgain.mjs): never a closed tender, nor one read to 100%
+    // for a Product List or rules change alone unless its text is saved
+    .filter(([ref, n]) => {
+      const r = known.get(ref);
+      return readAgain({ stored: r ? r.documents_key : null, wanted: documentsKey(n, matchProducts.key), accuracy: r?.accuracy ?? null, closed: noticeClosed(n), textSaved: files(n).every((d) => saved.has(d.path)), ocrWaiting: Boolean(r) && ocrPending(r.documents_read) });
+    })
+    .filter(([, n]) => !overBudget || noDownload(n))
     // Screened tenders first, then those that mention our products
     .sort(([refA, a], [refB, b]) => Number(isScreened.has(refB)) - Number(isScreened.has(refA)) || (b.matched?.length || 0) - (a.matched?.length || 0));
 

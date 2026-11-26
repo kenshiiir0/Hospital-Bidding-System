@@ -5,6 +5,7 @@ import { logActivity } from './activityLog.mjs';
 import { loadMatcher, ocrPending, readDocuments, rememberDownload } from './psDocs.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
 import { isPackageTender } from './packageTender.js';
+import { readAgain } from './readAgain.mjs';
 import { dropFiles, fullyRead, screenedRefs } from './documentKeep.mjs';
 
 // PhilGEPS (notices.philgeps.gov.ph) document Sync without a browser, so it runs on the deployed dashboard's
@@ -634,9 +635,18 @@ export function wantsDocuments(o) {
 // listKey: the product list's fingerprint (matcher.key), so a changed product list reads the documents again
 const readKey = (documents, listKey = '') => `${READ_RULES}|${listKey}|${(documents || []).map((d) => `${d.path}:${d.size}`).sort().join('|')}`;
 
-// Downloaded documents not read yet (or changed since, or scanned and not read with OCR yet): no PhilGEPS log-in needed
+// Downloaded documents not read yet (or changed since, or scanned and not read with OCR yet): no PhilGEPS log-in needed.
+// Not again once read to 100% when only the Product List or the rules changed, nor once the tender closed
+// (lib/readAgain.mjs, user 2026-11-26: no reading the same tender twice)
 export const needsReading = (o, listKey) =>
-  (o.details?.documents || []).some((d) => d.path) && (o.details?.documents_read_key !== readKey(o.details.documents, listKey) || ocrPending(o.details?.documents_read));
+  (o.details?.documents || []).some((d) => d.path) &&
+  readAgain({
+    stored: o.details?.documents_read_key ?? null,
+    wanted: readKey(o.details.documents, listKey),
+    accuracy: o.details?.documents_accuracy?.percent ?? null,
+    closed: Boolean(o.closing_date) && new Date(o.closing_date).getTime() < Date.now(),
+    ocrWaiting: Boolean(o.details?.documents_read_key) && ocrPending(o.details?.documents_read),
+  });
 
 /** The tenders needsReading picks, found from the few fields it looks at; only those are loaded whole (every
  * tender whole is ~10 MB, loaded on each hourly OCR run: Supabase egress, 2026-11-19). Open tenders only. */
@@ -646,7 +656,7 @@ export async function tendersToRead(supabase, listKey) {
   for (let from = 0; ; from += PAGE_ROWS) {
     const { data, error } = await supabase
       .from('philgeps_opportunities')
-      .select('ref_no, documents:details->documents, documents_read_key:details->documents_read_key, documents_read:details->documents_read')
+      .select('ref_no, closing_date, documents:details->documents, documents_read_key:details->documents_read_key, documents_read:details->documents_read, documents_accuracy:details->documents_accuracy')
       .not('details->documents', 'is', null)
       .or(`closing_date.is.null,closing_date.gt.${now}`)
       .order('id')
@@ -655,7 +665,7 @@ export async function tendersToRead(supabase, listKey) {
     light.push(...data);
     if (data.length < PAGE_ROWS) break;
   }
-  const refs = light.filter((o) => needsReading({ details: o }, listKey)).map((o) => o.ref_no);
+  const refs = light.filter((o) => needsReading({ closing_date: o.closing_date, details: o }, listKey)).map((o) => o.ref_no);
   const rows = [];
   for (let i = 0; i < refs.length; i += 100) {
     const { data, error } = await supabase
