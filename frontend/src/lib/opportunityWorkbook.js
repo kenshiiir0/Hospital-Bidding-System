@@ -38,9 +38,8 @@ const COLUMNS = [
   ['Address', 35, 14], // widened from 13
 ];
 const WIDTH = Object.fromEntries(COLUMNS.map(([, width], i) => [String.fromCharCode(65 + i), width]));
-// Tender-level columns, merged down each block. The original merges A–E and J–Q; M and R–U are
-// merged too so long contact details get the block's full height instead of one cramped row.
-const MERGED = ['A', 'B', 'C', 'D', 'E', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'];
+// Tender-level columns (one row per tender, so nothing is merged)
+const TENDER_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'];
 
 // Rough line count of wrapped text: Excel doesn't grow rows for wrapped or merged cells on its own,
 // so heights are set from the text. charsPerUnit < 1 for wider fonts (Segoe UI, capitals).
@@ -86,8 +85,12 @@ const solid = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } 
 const HEADER_FILL = solid('FF70AD47'); // Office theme Accent 6
 const HOSPITAL_FILL = solid('FFF4B084'); // Accent 2, lighter 40%
 const MOLECULE_FILL = solid('FFFFFF00');
-// An ABC/Unit or ABC Total worked out by the sheet's formula, not read from the documents (user, 2026-10-27)
+// An ABC/Unit or ABC Total worked out from the other, not read from the documents (user, 2026-10-27): a green
+// cell for a lone number, green text for a line among several
 const COMPUTED_FILL = solid('FFC6EFCE');
+const COMPUTED_FONT = { name: 'Segoe UI', size: 11, color: { argb: 'FF2E7D32' } };
+const TOTAL_FONT = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFF0000' } };
+const money = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const WHITE_FILL = solid('FFFFFFFF'); // tender cells are filled white in the original (hides gridlines)
 const ITEM_FONT = { name: 'Segoe UI', size: 11, color: { argb: 'FF0D0D0D' } };
 const CENTER = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -362,13 +365,10 @@ export function buildOpportunitySheet(workbook, tenders) {
     cell.border = BOX;
   });
 
+  // One row per tender, so a tender is deleted with one row (user, 2026-11-26)
   let r = 3;
   for (const t of tenders) {
-    const rows = t.molecules;
-    const first = r;
-    const last = r + rows.length - 1;
-
-    // Tender facts on the block's first row
+    // Tender facts
     const facts = {
       A: t.type,
       B: t.solicitationNo,
@@ -386,85 +386,72 @@ export function buildOpportunitySheet(workbook, tenders) {
       T: t.email,
       U: t.address,
     };
-    for (const [col, value] of Object.entries(facts)) {
-      const cell = ws.getCell(`${col}${first}`);
-      cell.value = value || null;
+    for (const col of TENDER_COLUMNS) {
+      const cell = ws.getCell(`${col}${r}`);
+      // L (Assign Person) and M (Final Remarks) are filled in by the team
+      cell.value = facts[col] || null;
       cell.font = { name: 'Calibri', size: 11, bold: col === 'A' || col === 'D' || col === 'L' };
       cell.alignment = CENTER;
       cell.border = BOX;
       cell.fill = col === 'D' ? HOSPITAL_FILL : WHITE_FILL;
     }
-    const updated = ws.getCell(`O${first}`);
+    const updated = ws.getCell(`O${r}`);
     updated.font = { name: 'Tahoma', size: 9, color: { argb: 'FF333333' } };
     if (updated.value instanceof Date) updated.numFmt = DATE_TIME_FORMAT;
-    if (facts.P) ws.getCell(`P${first}`).numFmt = DATE_TIME_FORMAT;
-    // Filled in by the team
-    for (const col of ['L', 'M']) {
-      const cell = ws.getCell(`${col}${first}`);
-      cell.border = BOX;
-      cell.fill = WHITE_FILL;
-      cell.font = { name: 'Calibri', size: 11, bold: col === 'L' };
-      cell.alignment = CENTER;
-    }
+    if (facts.P) ws.getCell(`P${r}`).numFmt = DATE_TIME_FORMAT;
 
-    // Molecule rows
-    rows.forEach(([molecule, qty, unitPrice, total, quantity], i) => {
-      const row = r + i;
-      // The team's formulas for a missing price: ABC Total = Qty x ABC/Unit, ABC/Unit = ABC Total / Qty
-      // (Qty is text like "3,000 vial", so the number is written into the formula)
-      const cells = { F: molecule, G: qty, H: unitPrice, I: total };
-      if (quantity > 0 && total == null && typeof unitPrice === 'number') cells.I = { formula: `${quantity}*H${row}`, result: quantity * unitPrice };
-      else if (quantity > 0 && unitPrice == null && typeof total === 'number') cells.H = { formula: `I${row}/${quantity}`, result: total / quantity };
-      for (const [col, value] of Object.entries(cells)) {
-        const cell = ws.getCell(`${col}${row}`);
-        cell.value = value === '' ? null : value;
-        cell.font = ITEM_FONT;
-        // F, H and I carry the side borders (I's right edge closes the ABC Total column); G sits between them
-        const sides = col === 'F' || col === 'H' || col === 'I' ? { left: MEDIUM, right: MEDIUM } : {};
-        cell.border = { ...sides, top: i === 0 ? MEDIUM : undefined, bottom: row === last ? MEDIUM : undefined };
-      }
-      ws.getCell(`F${row}`).fill = MOLECULE_FILL;
-      for (const col of ['H', 'I']) if (cells[col]?.formula) ws.getCell(`${col}${row}`).fill = COMPUTED_FILL;
-      ws.getCell(`F${row}`).alignment = { vertical: 'middle', wrapText: true };
-      for (const col of ['G', 'H']) ws.getCell(`${col}${row}`).alignment = LEFT;
-      ws.getCell(`H${row}`).numFmt = '#,##0.00';
-      ws.getCell(`I${row}`).alignment = LEFT;
-      ws.getCell(`I${row}`).numFmt = '#,##0.00';
-
-      // Height for this molecule row's own text
-      const lines = Math.max(
-        segoeLines(molecule, WIDTH.F),
-        segoeLines(qty, WIDTH.G),
-        segoeLines(unitPrice, WIDTH.H)
-      );
-      ws.getRow(row).height = Math.max(20, lines * SEGOE_LINE + 4);
+    // Molecules: one line each in the Molecule cell, numbered when there are several, with the same number on its
+    // Qty, ABC/Unit and ABC Total lines. A missing price is worked out from the other (ABC Total = Qty x ABC/Unit,
+    // ABC/Unit = ABC Total / Qty) and shown green
+    const items = t.molecules.map(([molecule, qty, unitPrice, total, quantity]) => {
+      const unit = typeof unitPrice === 'number' ? unitPrice : quantity > 0 && typeof total === 'number' ? total / quantity : null;
+      const sum = typeof total === 'number' ? total : quantity > 0 && typeof unitPrice === 'number' ? quantity * unitPrice : null;
+      return { molecule, qty, unit, sum, unitComputed: typeof unitPrice !== 'number' && unit != null, sumComputed: typeof total !== 'number' && sum != null };
     });
+    const no = (i) => (items.length > 1 ? `${i + 1}. ` : '');
+    const F = ws.getCell(`F${r}`);
+    const G = ws.getCell(`G${r}`);
+    const H = ws.getCell(`H${r}`);
+    const I = ws.getCell(`I${r}`);
+    F.value = items.map((item, i) => no(i) + item.molecule).join('\n') || null;
+    G.value = items.flatMap((item, i) => (item.qty ? [no(i) + item.qty] : [])).join('\n') || null;
+    if (items.length === 1) {
+      // A lone price stays a number (sortable, sums in Excel)
+      const [item] = items;
+      H.value = item.unit;
+      I.value = item.sum;
+      if (item.unitComputed) H.fill = COMPUTED_FILL;
+      if (item.sumComputed) I.fill = COMPUTED_FILL;
+      for (const cell of [H, I]) cell.numFmt = '#,##0.00';
+    } else {
+      // Several: numbered lines of text, computed ones green; the tender's ABC total in red as ABC Total's last line
+      const lines = (key, computed) =>
+        items.flatMap((item, i) => (item[key] == null ? [] : [{ text: no(i) + money(item[key]), font: item[computed] ? COMPUTED_FONT : ITEM_FONT }]));
+      const richText = (runs) => (runs.length ? { richText: runs.flatMap((run, i) => (i ? [{ text: '\n', font: ITEM_FONT }, run] : [run])) } : null);
+      H.value = richText(lines('unit', 'unitComputed'));
+      const totals = items.map((item) => item.sum).filter((v) => v != null);
+      const sumLines = lines('sum', 'sumComputed');
+      if (totals.length >= 2) sumLines.push({ text: money(totals.reduce((a, b) => a + b, 0)), font: TOTAL_FONT });
+      I.value = richText(sumLines);
+    }
+    for (const cell of [F, G, H, I]) {
+      cell.font = ITEM_FONT;
+      cell.border = BOX;
+      cell.alignment = LEFT;
+    }
+    F.fill = MOLECULE_FILL;
 
-    if (last > first) for (const col of MERGED) ws.mergeCells(`${col}${first}:${col}${last}`);
-
-    // Grow the block if a merged tender cell (hospital, contact, address...) needs more room than the molecule rows give
-    const needed =
-      Math.max(...MERGED.map((col) => wrappedLines(facts[col] instanceof Date ? 'mm/dd/yy hh:mm' : facts[col], WIDTH[col], 0.9))) *
-        CALIBRI_LINE + 8;
-    const blockRows = rows.map((_, i) => ws.getRow(first + i));
-    const current = blockRows.reduce((sum, row) => sum + row.height, 0);
-    if (needed > current) for (const row of blockRows) row.height += (needed - current) / blockRows.length;
-
-    // Separator row: blank merged A:H and the tender's ABC total in I (as in the original)
-    const sep = last + 1;
-    ws.mergeCells(`A${sep}:H${sep}`);
-    ws.getCell(`A${sep}`).border = BOX;
-    const sum = ws.getCell(`I${sep}`);
-    // The ABC totals of the block, given or worked out above
-    const totals = rows.map(([, , unitPrice, total, quantity]) => total ?? (quantity > 0 && typeof unitPrice === 'number' ? quantity * unitPrice : null)).filter((v) => typeof v === 'number');
-    // The red sum only when there are 2 or more ABC totals to add up (as in the original); empty otherwise
-    if (totals.length >= 2) sum.value = { formula: `SUM(I${first}:I${last})`, result: totals.reduce((a, b) => a + b, 0) };
-    sum.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFF0000' } };
-    sum.alignment = { horizontal: 'left', vertical: 'middle' };
-    sum.numFmt = '#,##0.00';
-    sum.border = BOX;
-    ws.getRow(sep).height = 20;
-    r = sep + 1;
+    // Excel doesn't grow rows for wrapped text on its own: the height of the tallest cell
+    const textLines = (cell) => (cell.value?.richText ? cell.value.richText.map((run) => run.text).join('') : cell.value);
+    const lines = Math.max(
+      segoeLines(F.value, WIDTH.F),
+      segoeLines(G.value, WIDTH.G),
+      segoeLines(textLines(H), WIDTH.H),
+      segoeLines(textLines(I), WIDTH.I)
+    );
+    const tenderLines = Math.max(...TENDER_COLUMNS.map((col) => wrappedLines(facts[col] instanceof Date ? 'mm/dd/yy hh:mm' : facts[col], WIDTH[col], 0.9)));
+    ws.getRow(r).height = Math.max(20, lines * SEGOE_LINE + 4, tenderLines * CALIBRI_LINE + 8);
+    r++;
   }
   return ws;
 }
