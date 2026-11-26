@@ -548,12 +548,18 @@ assert.equal(lotHeading('Lot 1 shall be delivered within 30 days'), null, 'a sen
 
 // One lot with line items is shown; one lot with none is hidden; several lots are shown (user, 2026-10-31)
 // A line item has its own ABC (user, 2026-11-06, PhilGEPS 13307875: one lot listing quantities only is the lot)
-assert.equal(wholeLot(true, false, [{ quantity: 2000, unit: 'tablet', unit_price: 5 }]), false, 'one lot with a line item');
+// user 2026-11-26: one lot is skipped even with line items ("Single Lot" or "Lot One" in the documents)
+assert.equal(wholeLot(true, false, [{ quantity: 2000, unit: 'tablet', unit_price: 5 }]), true, 'one lot with a line item: still one lot, skipped');
 assert.equal(wholeLot(true, false, [{ quantity: 2000 }]), true, 'one lot listing a quantity but no ABC: the lot');
 assert.equal(wholeLot(true, false, []), true, 'one lot only');
 assert.equal(wholeLot(true, false, [{ quantity: null, line: 'Paclitaxel 6 mg/ml' }]), true, 'a name in a list is no line item');
 assert.equal(wholeLot(true, false, [{ quantity: 1, unit: 'lot' }]), true, '1 lot is no line item');
 assert.equal(wholeLot(true, true, []), false, 'several lots');
+assert.equal(lotSchedule(['Lot Type: Single Lot']), true, 'Single Lot written in the documents');
+assert.equal(lotSchedule(['Supply and delivery of drugs and medicines, one (1) lot']), true, 'one (1) lot written in the documents');
+assert.equal(lotSchedule(['This is a single lot procurement']), true, 'a single lot procurement');
+assert.equal(lotSchedule(['Bids may be submitted for one (1) lots or more']), false, 'one or more lots is not one lot');
+assert.equal(lotSchedule(['1 Cetirizine 10mg tablet 1000 2.00 2,000.00']), false, 'an itemised list alone is no lot');
 
 // Of several lots, only a lot with every molecule ours counts (user, 2026-10-31)
 const LOT_ROWS = new Map([['Lot 1', new Set(['#1', '#2', '#3'])], ['Lot 5', new Set(['#13', '#14', '#15'])], ['Lot 6', new Set(['#16'])]]);
@@ -680,4 +686,4 @@ assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a b
   assert.equal(withBothAmounts({ quantity: 51131508, unit: 'pre-filled syringe', total: 777000, written: '4 51131508 Epoetin alfa 4000 IU/1 mL, pre-filled syringe' }).computed, 'unit_price', 'an item code read as the quantity: no ₱777,000 syringe');
   assert.equal(withBothAmounts({ quantity: 74, unit: 'Erythromycin', total: 226.6, written: 'Erythropoetin) for injection 569.30' }).computed, 'unit_price', 'a garbled unit: left as read');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7} rows).`);
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5} rows).`);

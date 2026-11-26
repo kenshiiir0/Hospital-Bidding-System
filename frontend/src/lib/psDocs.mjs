@@ -2012,12 +2012,18 @@ export function completeLots(items, lotRows) {
 // (and its own ABC: a lot's list of contents with quantities only is the lot, not line items; user, 2026-11-06,
 // PhilGEPS 13307875 "This is a lot ... if it is a one single lot then do not include them")
 export const hasLineItems = (items) => items.some((i) => i.quantity != null && (i.unit_price != null || i.total != null) && !/^(?:lots?|packages?)\b/i.test(i.unit || ''));
-export const wholeLot = (oneLot, many, items) => oneLot && !many && !hasLineItems(items);
+// A tender the documents give as ONE lot is not ours to bid on, line items or not (user, 2026-11-26: "As long as it is
+// mark 'Single Lot' or 'Lot One' in the documents then skip and do not fetch them in bid match"; replaces 2026-10-31's
+// "one lot but has line items then still show it"). Several lots are still shown (manyLots). items: kept for the callers
+export const wholeLot = (oneLot, many, items) => oneLot && !many;
 
+const SINGLE_LOT_TEXT = /\bsingle\s+lot\b|\bone\s*\(\s*1\s*\)\s*lot\b(?!s)|\blot\s+type\s*:?\s*single\b/i;
 export function lotSchedule(lines) {
   // The Bid Data Sheet first: "The number of lot(s): One (1)" (user, 2026-10-30: "Always check the Bid Data Sheet
   // first because that is mostly where the Lot is indicated"; PS 107468 lists priced items but is one lot)
   if (lines.some((line, n) => BDS_ONE_LOT.test(line) || (/\b(?:number|no\.?)\s+of\s+lots?\s*(?:\(s\)|\/s)?\s*[:.-]?\s*$/i.test(line) && /^\s*(?:one\b|1\b|\(1\))/i.test(lines[n + 1] || '')))) return true;
+  // "Single Lot", "one (1) lot", "Lot Type: Single" written anywhere (user, 2026-11-26)
+  if (lines.some((line) => SINGLE_LOT_TEXT.test(line))) return true;
   if (lines.some((line) => LOT_TOTAL_ROW.test(line.trim()))) return true;
   let heading = -Infinity;
   const rows = lines.filter((line, n) => {
