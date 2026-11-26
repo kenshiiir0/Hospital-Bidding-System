@@ -23,7 +23,7 @@ async function main() {
   log('PS-PhilGEPS:', JSON.stringify(ps));
 
   // PhilGEPS: downloaded documents not read yet, or scanned and not read with OCR yet
-  const matchProducts = await loadMatcher();
+  const matchProducts = await loadMatcher(supabase);
   // Only the tenders to read are loaded whole (tendersToRead), Screened ones first
   const unread = await screenedFirst(supabase, await tendersToRead(supabase, matchProducts.key));
   let read = 0;

@@ -671,7 +671,7 @@ export async function runSync() {
     const { data: saved } = await supabase.from('ps_philgeps_session').select('cookies').eq('id', 'current').maybeSingle();
     if (!saved?.cookies?.length) throw new PsSyncError('NOT_CONNECTED', 'PS-PhilGEPS is not connected. A person must connect (captcha).');
     const session = new Session(saved.cookies);
-    const matchMolecules = await loadMatcher();
+    const matchMolecules = await loadMatcher(admin());
 
     // The saved session is shared (keep-alive, other computers). Keep the saved copy up to date while
     // reading, and if PhilGEPS shows the log-in page, first check whether someone saved a newer copy

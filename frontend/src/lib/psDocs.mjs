@@ -2200,7 +2200,7 @@ export function lotSchedule(lines) {
 export async function analyzePending({ maxMs = 200000, refs: only, notices: given, onProgress } = {}) {
   const started = Date.now();
   const supabase = admin();
-  const matchProducts = await loadMatcher();
+  const matchProducts = await loadMatcher(admin());
   const stamp = only ? null : await docsStamp(supabase, `${matchProducts.key}|${RULES_VERSION}|${OCR_ENABLED}`);
   if (await docsIdle(supabase, stamp)) return { read: 0, failed: 0, left: 0, idle: true };
 

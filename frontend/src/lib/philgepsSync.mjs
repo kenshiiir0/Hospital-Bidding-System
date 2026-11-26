@@ -838,7 +838,7 @@ export async function runSyncRound() {
     if (await cancelAsked()) return { more: false, cancelled: true };
     const data = await allTenders(supabase);
     // Without the product list the documents are still downloaded, just not read
-    const matchProducts = await optional(job, 'Loading our product list', () => loadMatcher());
+    const matchProducts = await optional(job, 'Loading our product list', () => loadMatcher(admin()));
 
     // Documents already downloaded but not read for our products yet: read them first (no log-in)
     if (job.round === 1 && matchProducts) {

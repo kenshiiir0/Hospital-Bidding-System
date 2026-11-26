@@ -242,7 +242,7 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
   const job = { status: 'running', percent: 2, stage: 'Opening PhilGEPS', startedAt: started, startedBy: by, finishedAt: null };
   await saveStatus(supabase, job);
   try {
-    const matchProducts = await loadMatcher();
+    const matchProducts = await loadMatcher(admin());
     // Products found in the documents count only while still on the list (archived ones drop out at once;
     // the documents are read again at the next Sync, philgepsSync readKey)
     const onList = (names) => (names || []).filter((name) => matchProducts.names.includes(name));

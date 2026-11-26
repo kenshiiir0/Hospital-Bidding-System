@@ -1,4 +1,3 @@
-import { serverDb } from './db/index.mjs';
 
 // Our products: table products (the B2B price list and the PRODUCT LIST, plus the dashboard's Add Molecule), the
 // only source of what tenders are screened for. A tender counts as ours only when it asks for one of our
@@ -478,15 +477,11 @@ function fingerprint(text) {
   return `list-${(h >>> 0).toString(16)}`;
 }
 
-function admin() {
-  const db = serverDb();
-  if (!db) throw new Error('The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server.');
-  return db;
-}
-
 // Every product row, sorted by generic name. Archived products are left out (never screened for) unless
-// includeArchived (the Product List page's Archived tab).
-export async function loadProducts(supabase = admin(), { includeArchived = false } = {}) {
+// includeArchived (the Product List page's Archived tab). supabase: the server's database client (lib/db), passed
+// in so this file stays free of database code: the Product List page uses matchName() from it in the browser.
+export async function loadProducts(supabase, { includeArchived = false } = {}) {
+  if (!supabase) throw new Error('loadProducts needs the database client.');
   let query = supabase.from('products').select('*');
   if (!includeArchived) query = query.is('archived_at', null);
   const { data, error } = await query.order('generic_name').order('brand_name');
