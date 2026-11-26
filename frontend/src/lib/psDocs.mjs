@@ -464,7 +464,8 @@ const HEADER_WORDS = [
   // An ABC column that doesn't say per unit or total ("ABC", "ABC per Item", "ABC Per Line Item"): hospitals put the
   // unit price in it (PS 106895) or the line's total (PhilGEPS 13300773); its table's rows decide (abcColumn)
   ['abc', /^abc(?:\s*(?:\/|per)\s*(?:line\s+)?item)?\b(?!\s+(?:total|amount)\b)/i],
-  ['total', /^(?:total\s+(?:cost|price|amount|abc|value)|abc\s+(?:total|amount)|total|amount|estimated\s+(?:cost|budget)|approved\s+budget)\b/i],
+  // (\"Total Cost Per Item\" is the line's total, one column: PS 160952, 166518)
+  ['total', /^(?:total\s+(?:cost|price|amount|abc|value)(?:\s+per\s+(?:line\s+)?item)?|abc\s+(?:total|amount)|total|amount|estimated\s+(?:cost|budget)|approved\s+budget)\b/i],
   ['quantity', /^(?:quantity|qty)\b\.?/i],
   ['unit', /^(?:unit\s+of\s+(?:issue|measure(?:ment)?)|uom|u\/m|unit)\b/i],
   ['item', /^(?:item\s*(?:no\.?|#|number)|stock\s*(?:\/\s*property\s*)?(?:no\.?|number)|property\s*no\.?|no\.|item|lot\s*no\.?)/i],
@@ -564,7 +565,10 @@ function headersOf(lines) {
         // of ..." / "Quantity Unit Item Description ...": no Item No. or Delivery column, PS 107166)
         let start = i;
         // A line starting with a column name is the header's own ("Item" / "Number Description Quantity ...")
-        const ownLine = (line) => HEADER_WORDS.some(([, re]) => re.test(line.trim()));
+        // ... unless it holds an amount: a header names columns, it gives no figures ("ABC: ₱ 68,404.00", a lot's budget
+        // above its table, was taken for an ABC column and made the table's own "Total Cost Per Item" the bidder's
+        // empty column: Cetirizine 2,000 tablets for ₱2,000.00 showed ₱2,000 a tablet; PS 160952, user 2026-11-26)
+        const ownLine = (line) => HEADER_WORDS.some(([, re]) => re.test(line.trim())) && !/\d[\d,]*\.\d{2}(?!\d)/.test(line);
         while (start < end - 1 && !ownLine(lines[start]) && headerColumns(lines.slice(start + 1, end).join(' '))) start++;
         columns = headerColumns(lines.slice(start, end).join(' '));
         // The longest reading of a header broken over lines
@@ -665,7 +669,13 @@ function byHeader(lines, n, given) {
         out.unit = tokens.pop();
         out.quantity = num(tokens.pop().replace(/\./g, ''));
       }
-      else if (key === 'unit' && WORD_TOKEN.test(token) && !STRENGTH_TOKEN.test(token) && out.quantity == null) out.unit = tokens.pop();
+      else if (key === 'unit' && WORD_TOKEN.test(token) && !STRENGTH_TOKEN.test(token) && out.quantity == null) {
+        out.unit = tokens.pop();
+        // A unit of two words right after the quantity ("3,000 Lump Sum 777,000.00", "6,000 Pre-filled Syringe ..."):
+        // with only its last word taken the quantity was not found and the row's item code was read as it
+        // ("4 51131508 Epoetin alfa": quantity 51,131,508; PS 161025)
+        if (WORD_TOKEN.test(tokens.at(-1) || '') && !STRENGTH_TOKEN.test(tokens.at(-1)) && COUNT_TOKEN.test(tokens.at(-2) || '')) out.unit = `${tokens.pop()} ${out.unit}`;
+      }
     }
     // A header the scan read only in part (no Unit Cost column found, PS 108640 "Item Nao."): an amount left ending
     // the description is the unit cost (a description never ends in an amount)
@@ -1955,7 +1965,7 @@ const LOT_TOTAL_ROW = /^\W{0,2}1[.)]?\s+(?:lots?|packages?|lump[\s-]*sum)\s+(?=.
 // said, so "1 lot/ Eighty Six (86) items" stays one lot
 const BDS_COUNT = /\b(?:number|no\.?)\s+of\s+(?:lots?|items?)\s*(?:\(s\)|\/s)?\s*[:.-]\s*(.+)$/i;
 const COUNT_WORDS = /^(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i;
-const countOf = (text) => /^\(?(\d{1,4})\)?(?![\d,.])/.exec(text)?.[1] ?? /^[a-z-]+\s*\((\d{1,4})\)/i.exec(text)?.[1] ?? (COUNT_WORDS.test(text) ? 2 : null);
+const countOf = (text) => /^\(?(\d{1,4})\)?(?![\d,]|\.\d)/.exec(text)?.[1] ?? /^[a-z-]+\s*\((\d{1,4})\)/i.exec(text)?.[1] ?? (COUNT_WORDS.test(text) ? 2 : null);
 export const manyLots = (lines) => !lines.some((line) => BDS_ONE_LOT.test(line)) && lines.some((line) => Number(countOf(BDS_COUNT.exec(line)?.[1]?.trim() || '')) >= 2);
 
 // The lot a line opens: "LOT 1 - (Item Nos. 6 & 7) the offered products must be of the same brand", "LOT 4 - (Item Nos.

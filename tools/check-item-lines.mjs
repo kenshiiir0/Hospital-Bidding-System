@@ -556,6 +556,12 @@ assert.equal(wholeLot(true, false, [{ quantity: null, line: 'Paclitaxel 6 mg/ml'
 assert.equal(wholeLot(true, false, [{ quantity: 1, unit: 'lot' }]), true, '1 lot is no line item');
 assert.equal(wholeLot(true, true, []), false, 'several lots');
 assert.equal(lotSchedule(['Lot Type: Single Lot']), true, 'Single Lot written in the documents');
+// PS 165581 (2026-11-26): "The number of lot(s): 3." ends in a full stop; three lots are several lots, whatever the
+// Bid Data Sheet's left-over "grouped in a single lot" clause says
+assert.equal(manyLots(['1.2 The number of lot(s): 3.']), true, 'a lot count ending in a full stop');
+assert.equal(manyLots(['1.2 The number of lot(s): 3.5']), false, 'a decimal is no lot count');
+assert.equal(wholeLot(lotSchedule(['Partial bid is not allowed. The goods are grouped in a single lot']), manyLots(['1.2 The number of lot(s): 3.']), []), false, 'three lots win over the single-lot clause');
+assert.equal(lotSchedule(['26.5(a) Partial bid is not allowed. The goods are grouped in a single lot and the lot']), true, 'the Bid Data Sheet clause "grouped in a single lot" is one lot');
 assert.equal(lotSchedule(['Supply and delivery of drugs and medicines, one (1) lot']), true, 'one (1) lot written in the documents');
 assert.equal(lotSchedule(['This is a single lot procurement']), true, 'a single lot procurement');
 assert.equal(lotSchedule(['Bids may be submitted for one (1) lots or more']), false, 'one or more lots is not one lot');
@@ -686,4 +692,25 @@ assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a b
   assert.equal(withBothAmounts({ quantity: 51131508, unit: 'pre-filled syringe', total: 777000, written: '4 51131508 Epoetin alfa 4000 IU/1 mL, pre-filled syringe' }).computed, 'unit_price', 'an item code read as the quantity: no ₱777,000 syringe');
   assert.equal(withBothAmounts({ quantity: 74, unit: 'Erythromycin', total: 226.6, written: 'Erythropoetin) for injection 569.30' }).computed, 'unit_price', 'a garbled unit: left as read');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5} rows).`);
+// PS 160952 / 166518 (Nueva Vizcaya, user 2026-11-26 "fetch again the 25-26 tenders"): a lot's budget line above its
+// table ("ABC: ₱ 68,404.00") is not a header column, and "Total Cost Per Item" is the line's total: Cetirizine 2,000
+// tablets for ₱2,000.00 showed ₱2,000 a tablet (₱4,000,000), Rocuronium 10 vials ₱13,000 each
+{
+  const LOT_PAGE = ['LOT 2: ORAL MEDICINES: TABLETS/CAPSULES', 'ABC: ₱ 68,404.00', 'Item Unit/s Description Quantity Total Cost', 'Per Item', 'Delivery', 'Schedule', '30 sac/tab Acetylcysteine 200 mg Oral Powder 200 1,800.00', '32 tab Allopurinol 100 mg 100 200.00', '42 tab Cefuroxime 500 mg 1000 12,000.00', '44 tab Cetirizine 10 mg 2000 2,000.00', '55 tab Loratadine 10mg 100 200.00', '59 vial Rocuronium 10 mg/mL, 5 mL Solution for Injection 10 13,000.00'];
+  const read = (n) => withBothAmounts(withPageMeaning(LOT_PAGE, n, parseItemRow(LOT_PAGE, n)));
+  expect(read(9), { quantity: 2000, total: 2000, unit_price: 1 }, LOT_PAGE[9]);
+  expect(read(10), { quantity: 100, total: 200, unit_price: 2 }, LOT_PAGE[10]);
+  expect(read(11), { quantity: 10, total: 13000, unit_price: 1300 }, LOT_PAGE[11]);
+  expect(read(8), { quantity: 1000, total: 12000, unit_price: 12 }, LOT_PAGE[8]);
+}
+// PS 161025 (Western Visayas Medical Center): a unit of two words after the quantity ("3,000 Lump Sum 777,000.00",
+// "Pre-filled Syringe"): the row's 8-digit item code was read as its quantity (51,131,508 syringes)
+{
+  const CODES = (unit) => ['Sr.No. Item', 'Code Lot Name Lot Description Quantity Unit of Measure Estimated Budget', '3 51131602 Heparin', 'Heparin 5000 IU/mL, 5', 'mL vial (IV infusion, SC)', '(bovine origin)', '10,000 Vial 1,790,000.00', '4 51131508 Epoetin alfa', 'Epoetin alfa 4000 IU/1', 'mL, pre‐filled syringe', '(IV, SC)', `3,000 ${unit} 777,000.00`, '5 51131508 Epoetin alfa', 'Epoetin alfa 4000 IU/0.4', 'mL, pre‐filled syringe', '(IV, SC)', `6,000 ${unit} 2,280,000.00`, '6 51131909 Albumin human'];
+  for (const unit of ['Lump Sum', 'Pre-filled Syringe', 'Syringe']) {
+    expect(parseItemRow(CODES(unit), 7), { quantity: 3000, total: 777000 }, `Epoetin row 4, unit ${unit}`);
+    expect(parseItemRow(CODES(unit), 12), { quantity: 6000, total: 2280000 }, `Epoetin row 5, unit ${unit}`);
+  }
+  expect(parseItemRow(CODES('Lump Sum'), 2), { quantity: 10000, unit: 'Vial', total: 1790000 }, 'Heparin row keeps its one-word unit');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7} rows).`);
