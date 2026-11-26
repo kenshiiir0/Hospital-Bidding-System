@@ -245,7 +245,10 @@ function itemRow(item) {
 // with a quantity; others are context such as "Project Name: ...") gets those, and the notice's own item lines
 // fill in only the products the documents don't give; else just our product names
 function moleculeRows(noticeItems, documentItems, productNames) {
-  const fromDocs = (documentItems || []).filter((item) => item.quantity != null);
+  // (a document row with its quantity and no ABC, psDocs.mjs no_abc, gives way to the notice's line for the product
+  // when that one has its budget: PS 159390)
+  const noticePriced = new Set((noticeItems || []).filter((item) => item.total != null || item.unit_price != null).flatMap((item) => item.products || []));
+  const fromDocs = (documentItems || []).filter((item) => item.quantity != null && !(item.no_abc && (item.our_products || []).every((p) => noticePriced.has(p))));
   const inDocuments = new Set(fromDocs.flatMap((item) => item.our_products || []));
   const fromNotice = (noticeItems || []).filter((item) => !(item.products || []).length || !item.products.every((p) => inDocuments.has(p)));
   const rows = [...fromDocs, ...fromNotice];

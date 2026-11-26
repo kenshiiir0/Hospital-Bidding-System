@@ -117,7 +117,11 @@ const peso = (n) => (n == null ? '—' : Number(n).toLocaleString('en-PH', { min
 // documents first, the notice as fallback (user 2026-11-21, PS 153359: only the bidding documents' template was
 // attached, so the tracker was empty though the notice lists 27 of our lines)
 function trackerItems(reading, noticeItems) {
-  const fromDocs = reading?.status === 'done' ? reading.result.items : [];
+  // A document row with its quantity and no ABC (a request for quotation, psDocs.mjs no_abc) gives way to the notice
+  // page's own line for the product when that one has its budget (PS 159390: the Excel file lists quantities, the
+  // notice's Line Item Details the ABC)
+  const noticePriced = new Set((noticeItems || []).filter((i) => i.total != null || i.unit_price != null).flatMap((i) => i.products || []));
+  const fromDocs = (reading?.status === 'done' ? reading.result.items : []).filter((i) => !(i.no_abc && (i.our_products || []).every((p) => noticePriced.has(p))));
   const inDocuments = new Set(fromDocs.filter((i) => i.quantity != null).flatMap((i) => i.our_products || []));
   const fromNotice = (noticeItems || [])
     .filter((i) => !(i.products || []).every((p) => inDocuments.has(p)))

@@ -322,6 +322,25 @@ async function quantityColumn(worker, pgm, blocks) {
   return { start: best.start, values };
 }
 
+/** A page fed into the scanner upside down reads as letters with no words ("ADVINEVHA NHY AO SIT TddNS ANIDIAHN" for
+ * "MEDICINE SUPPLIES OF RHU PHARMACY", PS 163223: four pages, no row found; user 2026-11-26). A page tesseract is
+ * unsure of (its confidence under UNSURE) is read again turned round, and the surer reading kept. Returns { pgm, data }:
+ * the picture the right way up and its reading. */
+const UNSURE = 75;
+const SURER_BY = 8;
+const turnedRound = (pgm) => {
+  // (the PGM's header ends with its "255" line; the picture's bytes follow)
+  const head = pgm.indexOf('\n255\n') + 5;
+  return Buffer.concat([pgm.subarray(0, head), Buffer.from(pgm.subarray(head)).reverse()]);
+};
+async function readUpright(worker, pgm) {
+  const { data } = await worker.recognize(pgm, {}, { blocks: true });
+  if (!(data.confidence < UNSURE) || letterCount(data.text || '') < FEW_LETTERS) return { pgm, data };
+  const turned = turnedRound(pgm);
+  const again = (await worker.recognize(turned, {}, { blocks: true }).catch(() => null))?.data;
+  return again && again.confidence >= data.confidence + SURER_BY ? { pgm: turned, data: again } : { pgm, data };
+}
+
 // Each page: its biggest scanned picture first; when there is none (or it gives almost no text), the whole
 // page drawn as a picture.
 export async function ocrPdfPages(pdf, pageNumbers, { until = Infinity, onPage } = {}) {
@@ -335,8 +354,7 @@ export async function ocrPdfPages(pdf, pageNumbers, { until = Infinity, onPage }
       let text = '';
       if (image) {
         worker ||= await startWorker();
-        const pgm = toPgm(image);
-        const { data } = await worker.recognize(pgm, {}, { blocks: true });
+        const { pgm, data } = await readUpright(worker, toPgm(image));
         text = data.text || '';
         if (/quantity/i.test(text)) {
           const column = await quantityColumn(worker, pgm, data.blocks || []).catch(() => null);
@@ -377,8 +395,8 @@ export async function ocrImage(bytes) {
       const sharp = (await import('sharp')).default;
       // (rotate(): the way up the camera recorded)
       const { data, info } = await sharp(Buffer.from(bytes)).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
-      const pgm = toPgm({ data, width: info.width, height: info.height });
-      const read = await worker.recognize(pgm, {}, { blocks: true });
+      const { pgm, data: readData } = await readUpright(worker, toPgm({ data, width: info.width, height: info.height }));
+      const read = { data: readData };
       cleaned = read.data.text || '';
       if (/quantity/i.test(cleaned)) {
         const column = await quantityColumn(worker, pgm, read.data.blocks || []).catch(() => null);
