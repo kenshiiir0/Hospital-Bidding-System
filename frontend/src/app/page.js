@@ -826,8 +826,10 @@ function BidMatch() {
   // screened yet goes to Screened Tenders, saved as "Add to Screened" in View details saves it. A window first says
   // how many; nothing is saved before "Screen".
   // (a PS-PhilGEPS row without a notice number can't be screened in View details either)
-  const toScreen = screened.rows ? filtered.filter((t) => !screened.has(t.source, t.ref) && (t.source !== 'ps' || psRefOf(t.row))) : [];
-  const alreadyScreened = filtered.length - toScreen.length;
+  // Never a tender bought as one lot (lib/packageTender.js): not an opportunity (user, 2026-11-26, PS 163216 "Why did we
+  // fetched this? It says single lot": Screen All had screened it, and a screened tender always stays listed)
+  const toScreen = screened.rows ? filtered.filter((t) => !t.lot && !screened.has(t.source, t.ref) && (t.source !== 'ps' || psRefOf(t.row))) : [];
+  const alreadyScreened = screened.rows ? filtered.filter((t) => screened.has(t.source, t.ref)).length : 0;
   const screenAll = async () => {
     setScreening((s) => ({ ...s, saving: true, error: '' }));
     try {
