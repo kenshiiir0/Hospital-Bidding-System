@@ -1920,6 +1920,12 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
   // (the same row in two files, written a little differently, once: "Box of 100's) ..." / "Box of 100's ...")
   const copies = new Set();
   const itemised = itemisedLots(items);
+  // A request for quotation: the hospital lists what it needs with quantities and leaves every price to the bidders,
+  // so no row of the documents has an ABC at all ("9 Cefazolin 1g vial 300", PS 161624; "23 1000 TABLET/S Cetirizine
+  // 10mg", PS 160753). Its rows are kept with their quantity, marked no_abc, the ABC left empty: set aside, the Excel
+  // and View details showed the molecules' names with nothing beside them (user, 2026-11-26: "The problem is still
+  // there"). A document with SOME rows priced is different: there a row without its ABC is a reading to check.
+  const noPrices = !items.some(hasNumbers);
   for (let k = items.length - 1; k >= 0; k--) {
     const i = items[k];
     if (ofLots) {
@@ -1932,6 +1938,10 @@ export async function readDocuments(supabase, bucket, documents, matchProducts, 
       }
       if (hasNumbers(i) || !itemised.has(i.lot ?? '')) continue;
     } else if (hasNumbers(i)) continue;
+    else if (noPrices && Number.isInteger(i.quantity) && i.quantity > 0) {
+      i.no_abc = true;
+      continue;
+    }
     outside.push({ our_products: i.our_products, line: i.written || i.line, source: i.source, why: i.quantity == null ? 'no quantity' : 'no ABC' });
     items.splice(k, 1);
   }

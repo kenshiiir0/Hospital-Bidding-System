@@ -737,4 +737,23 @@ assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a b
   assert.equal(kept.length, 1, 'the same priced row once');
   assert.equal(kept[0].source, 'PBD.pdf, page 85', 'the Summary of Bid Prices row is the one kept');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7 + 2 + 5} rows).`);
+// A request for quotation gives quantities and no ABC at all (user 2026-11-26, PS 161624 / 160753: the Excel showed the
+// molecules' names with nothing beside them): its rows are kept with their quantity, marked no_abc. A document with
+// some rows priced keeps setting a row without its ABC aside (a reading to check)
+{
+  const filler = 'The Procuring Entity requests quotations for the supply and delivery of the medicines listed below. '.repeat(3);
+  const { gzipSync } = await import('node:zlib');
+  const reader = async (rows) => {
+    const text = gzipSync(Buffer.from(JSON.stringify({ pages: [[filler, 'Item Description Unit Qty', ...rows].join('\n')], ocrPages: 0, pdf: true }))).toString('base64');
+    const q = { select: () => q, eq: () => q, in: async () => ({ data: [{ path: 'x/rfq.pdf', size: 1, version: 'text-1', text }], error: null }), upsert: () => Promise.resolve({}) };
+    const ours = (l) => (/cefazolin 1g|amiodarone 50mg/i.test(l) ? [/cefazolin/i.test(l) ? 'Cefazolin' : 'Amiodarone'] : []);
+    return (await readDocuments({ from: () => q }, 'ps-documents', [{ name: 'rfq.pdf', path: 'x/rfq.pdf', size: 1 }], { key: 'check', line: ours, named: ours })).result;
+  };
+  const rfq = await reader(['7 Amiodarone 50mg/ml - 3ml amp 150', '8 Bisacodyl 5mg tab 500', '9 Cefazolin 1g vial 300']);
+  assert.deepEqual(rfq.items.map((i) => [i.our_products[0], i.quantity, i.no_abc, i.unit_price ?? null, i.total ?? null]), [['Amiodarone', 150, true, null, null], ['Cefazolin', 300, true, null, null]], 'an RFQ keeps its rows with their quantities');
+  assert.equal(rfq.accuracy.percent, 100, 'an RFQ without prices is not a bad reading');
+  const mixed = await reader(['7 Amiodarone 50mg/ml - 3ml amp 150 65.00 9,750.00', '8 Bisacodyl 5mg tab 500 2.00 1,000.00', '9 Cefazolin 1g vial 300']);
+  assert.deepEqual(mixed.items.map((i) => i.our_products[0]), ['Amiodarone'], 'beside priced rows, a row without its ABC is still set aside');
+  assert.equal(mixed.outside_table.filter((x) => x.why === 'no ABC').length, 1, 'and counted as a row to check');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7 + 2 + 5 + 4} rows).`);

@@ -152,6 +152,12 @@ function FromDocuments({ reading, tenderRef, documents, noticeItems, lot, lotTyp
       {/* Always shown, as on PhilGEPS, so Attached documents sits in the same place on both portals */}
       <PanelSection title={`Molecule tracker${items.length ? ` (${items.length} lines naming our products)` : ''}`}>
         <ReadingAlertBox accuracy={reading?.result?.accuracy} reading={stillReading(reading?.documents_read)} />
+        {/* A request for quotation: quantities and no budget per item (psDocs.mjs no_abc) */}
+        {items.some((i) => i.no_abc) && (
+          <p className="mb-2 text-xs text-black/62">
+            The documents give the quantities and no ABC for these lines (a request for quotation: the bidders give the prices), so ABC/Unit and ABC Total are empty.
+          </p>
+        )}
         {fromNotice > 0 && (
           <p className="mb-2 text-xs text-black/62">
             {fromNotice === items.length ? 'The documents give no item lines for our products; these' : `${fromNotice} of these lines`} come from the notice page&rsquo;s Line Item Details (ABC/Unit worked out as ABC ÷ Qty).
