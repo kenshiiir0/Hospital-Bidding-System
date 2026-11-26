@@ -4,6 +4,7 @@ import { Session, getPage, postBack, postbackLinks } from './philgepsSync.mjs';
 import { expandVariants, isVariantParent, loadMatcher, parseItemRow, rowAhead, withBothAmounts } from './psDocs.mjs';
 import { extractSchedule } from './schedule.mjs';
 import { logActivity } from './activityLog.mjs';
+import { removeScreenedLots } from './screenedLots.mjs';
 import { isPackageTender } from './packageTender.js';
 
 // The hourly public PhilGEPS update (6 AM–5 PM) on the deployed server, without a browser: the same steps as
@@ -396,6 +397,8 @@ export async function runPublicUpdate({ by = 'schedule' } = {}) {
     Object.assign(job, { status: 'success', percent: 100, stage: summary, finishedAt: Date.now() });
     await saveStatus(supabase, job);
     await logActivity({ event: 'scrape', status: 'success', by, summary, details: stats });
+    // Screened tenders bought as one lot or package leave Screened Tenders (lib/screenedLots.mjs)
+    await removeScreenedLots(supabase);
     return stats;
   } catch (e) {
     Object.assign(job, { status: 'failed', error: e.message, finishedAt: Date.now() });

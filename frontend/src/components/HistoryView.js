@@ -13,10 +13,10 @@ import { displayName } from '@/lib/username';
 // 'scrape' = public PhilGEPS update (scraper.js), 'documents' = PhilGEPS Sync (philgepsSync.mjs),
 // 'ps-sync' = PS-PhilGEPS Sync (psSync.mjs), 'ps-award' = an award accepted / refused from the dashboard (psAward.mjs)
 const SITES = {
-  philgeps: { href: '/history', label: 'PhilGEPS', events: ['scrape', 'documents'], about: 'Every PhilGEPS update and Sync, and every tender the system has screened' },
-  'ps-philgeps': { href: '/history/ps-philgeps', label: 'PS-PhilGEPS', events: ['ps-sync', 'ps-award'], about: 'Every PS-PhilGEPS Sync, and every award accepted or refused from here' },
+  philgeps: { href: '/history', label: 'PhilGEPS', events: ['scrape', 'documents', 'screened'], about: 'Every PhilGEPS update and Sync, and every tender the system has screened' },
+  'ps-philgeps': { href: '/history/ps-philgeps', label: 'PS-PhilGEPS', events: ['ps-sync', 'ps-award', 'screened'], about: 'Every PS-PhilGEPS Sync, and every award accepted or refused from here' },
 };
-const EVENT_TITLES = { scrape: 'PhilGEPS update', documents: 'PhilGEPS Sync (documents)', 'ps-sync': 'PS-PhilGEPS Sync', 'ps-award': 'Award notice answer' };
+const EVENT_TITLES = { scrape: 'PhilGEPS update', documents: 'PhilGEPS Sync (documents)', 'ps-sync': 'PS-PhilGEPS Sync', 'ps-award': 'Award notice answer', screened: 'One-lot tenders taken out of Screened' };
 const COUNT_LABELS = { downloaded: 'downloaded', 'pick-up': 'pick-up', 'no-documents': 'no documents', 'needs-payment': 'needs payment', failed: 'failed', 'not-reached': 'not reached', 'order-flow-changed': 'stopped (order page changed)' };
 
 // Screened tenders are read in pages of this size (Supabase returns at most 1000 rows per request)

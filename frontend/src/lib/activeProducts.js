@@ -31,7 +31,8 @@ export function activeTender(bid, active) {
 /** PhilGEPS tenders that still ask for one of our active products (not package or lot tenders). A screened tender
  * (screened: has('philgeps', ref)) always stays, so the team can still find and search it (user, 2026-10-27). */
 export function activeTenders(bids, active, screened) {
-  return bids.map((bid) => activeTender(bid, active)).filter((bid) => bid.matched_molecules?.length || screened?.has('philgeps', bid.ref_no));
+  // (not a one-lot or package tender, screened or not: user 2026-11-26)
+  return bids.map((bid) => activeTender(bid, active)).filter((bid) => bid.matched_molecules?.length || (screened?.has('philgeps', bid.ref_no) && !bid.lot));
 }
 
 /** PS data ({ notices, analysis }) with archived molecules taken out of notice matches and document items, and

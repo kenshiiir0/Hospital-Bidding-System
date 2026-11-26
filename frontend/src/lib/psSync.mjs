@@ -5,6 +5,7 @@ import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
 import { analyzePending, rememberDownload, withBothAmounts } from './psDocs.mjs';
 import { deadlineMs } from './readAgain.mjs';
+import { removeScreenedLots } from './screenedLots.mjs';
 import { allRows } from './allRows.mjs';
 import { notifyPendingAwards } from './awardNotify.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
@@ -805,6 +806,8 @@ export async function runSync() {
       notices,
       onProgress: (n, total) => setStatus(supabase, { stage: `${first.stage} · reading the documents for our products (${n} of ${total})` }).catch(() => {}),
     }).catch(() => null);
+    // Screened tenders the notices or the documents now give as one lot leave Screened Tenders (lib/screenedLots.mjs)
+    await removeScreenedLots(supabase);
     const { stage } = await summarize(reading);
     await setStatus(supabase, { stage }).catch(() => {});
     return stage;

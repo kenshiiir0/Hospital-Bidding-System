@@ -636,7 +636,9 @@ function BidMatch() {
   const psProductsOf = (row) => [...new Set([...(psNotice(row)?.matched || []), ...(psReading(row)?.result?.items || []).flatMap((i) => i.our_products)])];
   const psKey = (row) => `ps:${psRefOf(row) || row.cells[0]}`;
   // Screened tenders always stay in the list (findable by search) even without our products now
-  const psOurs = (psList?.rows || []).filter((row) => psProductsOf(row).length || screened.has('ps', psRefOf(row)));
+  // (a tender bought as one lot is not listed even while it is still screened: lib/screenedLots.mjs takes it out of
+  // Screened at the next Sync; user 2026-11-26 "remove it from bid match and screened")
+  const psOurs = (psList?.rows || []).filter((row) => psProductsOf(row).length || (screened.has('ps', psRefOf(row)) && !psNotice(row)?.lot));
   // Opening this page reads the new ones: labelled NEW for this visit, gone from the sidebar count
   const psSeenNow = useSeenOnOpen(news.ready ? psOurs.filter((row) => news.isNewPs(psKey(row))).map(psKey) : []);
   // Who started the Sync that fetched the current PS-PhilGEPS list (the status row describes the last run)
