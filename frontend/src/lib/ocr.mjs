@@ -171,11 +171,13 @@ function removeRules(gray, width, height) {
 function toPgm({ data, width, height }) {
   let gray = new Uint8Array(width * height);
   const rowBytes = Math.ceil(width / 8);
-  const oneBit = data.length === rowBytes * height;
+  // (also a 1-bit scan a row or so short of its size: "BDS_273.pdf", 4958 x 8258, came a row short, was taken for a
+  // grey picture and read as noise: no text at all on any page, PS 164901; user 2026-11-26)
+  const oneBit = data.length === rowBytes * height || (data.length < width * height && Math.abs(data.length - rowBytes * height) <= rowBytes * 2);
   if (oneBit) {
     let set = 0;
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-      const bit = (data[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1;
+      const bit = ((data[y * rowBytes + (x >> 3)] ?? 255) >> (7 - (x & 7))) & 1;
       gray[y * width + x] = bit ? 255 : 0;
       set += bit;
     }
