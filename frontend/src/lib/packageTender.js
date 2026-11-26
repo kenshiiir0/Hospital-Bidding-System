@@ -31,4 +31,6 @@ export function isPackageTender(description, documentsPackage) {
  * (user, 2026-11-26: "I told u to not include if it says 1 lot ... Do not include them in bid matches as
  * opportunities") */
 export const LOT_UNIT = /^\s*(?:lots?|packages?|lump[\s-]*sums?)\s*$/i;
-export const noticeOneLot = (notice) => (notice?.matched_items || []).some((i) => Number(i.quantity) === 1 && LOT_UNIT.test(i.unit || ''));
+// ... or whose "Lot Type" field says "Single Lot" (psSync.mjs readLotType; PS 166581)
+export const SINGLE_LOT = /^\s*single\s+lot\s*$/i;
+export const noticeOneLot = (notice) => SINGLE_LOT.test(notice?.lot_type || '') || (notice?.matched_items || []).some((i) => Number(i.quantity) === 1 && LOT_UNIT.test(i.unit || ''));

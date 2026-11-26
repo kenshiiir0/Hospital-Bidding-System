@@ -330,6 +330,20 @@ function readSchedule(root) {
   };
 }
 
+/** The notice's "Lot Type" field (left column: "Lot Type:" / "Single Lot"), as written; null when the page has none.
+ * "Single Lot" = the whole contract goes to one bidder: not an opportunity (packageTender.js noticeOneLot; user
+ * 2026-11-26, PS 166581 "Lot Type: Single Lot" with its items in the description) */
+export function readLotType(text) {
+  const lines = String(text || '').split('\n').map(clean).filter(Boolean);
+  for (const [k, line] of lines.entries()) {
+    const m = /\bLot Type:\s*(.*)$/i.exec(line);
+    if (!m) continue;
+    const value = (m[1] || lines[k + 1] || '').replace(/\s+(?:Approved Budget|Procurement Mode|Classification)\b.*$/i, '').trim();
+    return value && !/:$/.test(value) ? value : null;
+  }
+  return null;
+}
+
 // The agency's address, centered under its name at the top of the notice: the lines between the name and the
 // notice type ("Invitation to Bid", "Request for Quotation"), e.g. "DOH Adela Serra Ty Memorial Medical Center,
 // Tandag, Surigao Del Sur, Caraga". null when the page doesn't give one.
@@ -503,7 +517,7 @@ async function readNotice(session, supabase, ref, matchMolecules, notKept = new 
       errors.push(`${name}: ${e.message}`);
     }
   }
-  return { matched, matched_items: readLineItems(root, matchMolecules), schedule, address: readAgencyAddress(root), documents, errors };
+  return { matched, matched_items: readLineItems(root, matchMolecules), lot_type: readLotType(root.structuredText), schedule, address: readAgencyAddress(root), documents, errors };
 }
 
 async function inBatches(items, size, fn) {
