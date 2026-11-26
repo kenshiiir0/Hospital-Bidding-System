@@ -13,17 +13,23 @@
  */
 export default function PageHeader({ title, status, subtitle, actions }) {
   return (
-    <header className="flex flex-col gap-4 border-b border-[#E2E8F0] pb-5 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <h1 className="text-xl font-semibold tracking-tight text-black">{title}</h1>
-          {[].concat(status || []).map((st) => (
-            <StatusPill key={st.text} {...st} />
-          ))}
-        </div>
+    <header className="flex flex-col gap-4 border-b border-[#E2E8F0] pb-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className="min-w-0 flex-1">
+        <h1 className="text-xl font-semibold tracking-tight text-black">{title}</h1>
+        {/* Status pills on their own line, so long ones (two portals) never squeeze the title or the buttons */}
+        {status && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {[].concat(status).map((st) => (
+              <StatusPill key={st.text} {...st} />
+            ))}
+          </div>
+        )}
         {subtitle && <p className="mt-1 text-xs text-black/62">{subtitle}</p>}
       </div>
-      {actions && <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end [&>*:last-child:nth-child(odd)]:col-span-2">{actions}</div>}
+      {/* Actions: under the title until there is room for one row beside it (xl); never split over two rows there */}
+      {actions && (
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:shrink-0 xl:flex-nowrap xl:justify-end [&>*:last-child:nth-child(odd)]:col-span-2">{actions}</div>
+      )}
     </header>
   );
 }
@@ -48,13 +54,13 @@ export function StatusPill({ tone = 'ok', text }) {
 
 /** Green-tinted secondary action (Export Excel). */
 export const greenAction =
-  'inline-flex items-center justify-center gap-2 rounded-lg border border-[#61A644]/25 bg-[#61A644]/10 px-4 py-2 text-xs font-semibold text-[#3F6F2C] transition hover:bg-[#61A644]/20 disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex whitespace-nowrap items-center justify-center gap-2 rounded-lg border border-[#61A644]/25 bg-[#61A644]/10 px-4 py-2 text-xs font-semibold text-[#3F6F2C] transition hover:bg-[#61A644]/20 disabled:cursor-not-allowed disabled:opacity-50';
 /** Solid blue primary action (Sync). */
 export const blueAction =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#1EA0DA] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#1790C5] disabled:cursor-wait disabled:opacity-70';
+  'inline-flex whitespace-nowrap items-center justify-center gap-2 rounded-lg bg-[#1EA0DA] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#1790C5] disabled:cursor-wait disabled:opacity-70';
 /** Quiet outlined action (Reload). */
 export const plainAction =
-  'inline-flex items-center justify-center gap-2 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs font-medium text-black/62 transition hover:border-[#1EA0DA] hover:text-[#12769F] disabled:cursor-wait disabled:opacity-60';
+  'inline-flex whitespace-nowrap items-center justify-center gap-2 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-xs font-medium text-black/62 transition hover:border-[#1EA0DA] hover:text-[#12769F] disabled:cursor-wait disabled:opacity-60';
 
 /**
  * Summary cards under the header: an icon in a soft circle, a quiet label, the number, one short note.
