@@ -63,7 +63,7 @@ export default function PsBidMatchDetails({ data, row, lastSyncBy, onClose }) {
       <PanelSection title="Our products" count={products.length} plain>
         <ProductPills names={products} />
       </PanelSection>
-      <FromDocuments reading={reading} tenderRef={ref} documents={notice?.documents} noticeItems={notice?.matched_items} />
+      <FromDocuments reading={reading} tenderRef={ref} documents={notice?.documents} noticeItems={notice?.matched_items} lot={Boolean(notice?.lot)} lotType={notice?.lot_type} />
       <PsDocuments ref_={ref} notice={notice} syncedAt={data.syncedAt} />
     </PsDetailsPanel>
   );
@@ -131,7 +131,7 @@ function trackerItems(reading, noticeItems) {
   return { items: [...fromDocs, ...fromNotice], fromNotice: fromNotice.length };
 }
 
-function FromDocuments({ reading, tenderRef, documents, noticeItems }) {
+function FromDocuments({ reading, tenderRef, documents, noticeItems, lot, lotType }) {
   const { items, fromNotice } = trackerItems(reading, noticeItems);
   return (
     <>
@@ -157,7 +157,15 @@ function FromDocuments({ reading, tenderRef, documents, noticeItems }) {
             {fromNotice === items.length ? 'The documents give no item lines for our products; these' : `${fromNotice} of these lines`} come from the notice page&rsquo;s Line Item Details (ABC/Unit worked out as ABC ÷ Qty).
           </p>
         )}
-        {items.length ? null : reading?.status !== 'done' ? (
+        {/* One lot: its lines are not shown as an opportunity (lib/packageTender.js); said so, with where it says it
+            (user 2026-11-26, PS 161025: "No line in the readable documents names our products" on a tender whose
+            rows had been read) */}
+        {items.length ? null : lot ? (
+          <p className="text-sm text-black/62">
+            This tender is bought as <span className="font-medium">one lot</span>
+            {/single\s+lot/i.test(lotType || '') ? ' (the notice says “Lot Type: Single Lot”)' : reading?.result?.package ? ' (its documents say so: one lot, partial bids not allowed)' : ' (its line item is “1 Lot”)'}, so its lines are not listed as an opportunity.
+          </p>
+        ) : reading?.status !== 'done' ? (
           <p className="text-sm text-black/46">
             {reading ? 'The documents could not be read, so no item lines were picked out.' : 'The item lines naming our products show here once the documents are read.'}
           </p>

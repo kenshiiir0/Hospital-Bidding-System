@@ -713,4 +713,11 @@ assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a b
   }
   expect(parseItemRow(CODES('Lump Sum'), 2), { quantity: 10000, unit: 'Vial', total: 1790000 }, 'Heparin row keeps its one-word unit');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7} rows).`);
+// PS 161025's Delivery Schedule pages (rows without amounts): the 8-digit item code between the row's number and its
+// name is never the quantity ("2 51131602 Heparin" was 51,131,602 "Heparin"), so the page's rows are seen as copies
+{
+  const DELIVERY = ['Sr.No. Item', 'Code Lot Name Lot Description Quantity Unit of Measure Delivery Schedule', '2 51131602 Heparin', 'Heparin 1000 IU/mL 5', 'mL vial (IV infusion,', 'SC) (bovine origin)', '5,000 Vial', '7 calendar days or', 'based on approved', 'delivery schedule', '3 51131602 Heparin'];
+  assert.notEqual(parseItemRow(DELIVERY, 2).quantity, 51131602, 'the item code is not the quantity');
+  expect(parseItemLine('3 12000000 pcs Examination gloves'), { quantity: 12000000 }, 'a quantity-first row keeps its large quantity');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7 + 2} rows).`);

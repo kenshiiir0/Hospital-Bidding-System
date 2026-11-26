@@ -467,28 +467,42 @@ const amountOf = (text) => {
 };
 export function readLineItems(root, matchMolecules) {
   const out = [];
+  // (a table inside another is met twice: each row once)
+  const seen = new Set();
   for (const table of root.querySelectorAll('table')) {
-    const headers = table.querySelectorAll('th').map(cellText);
-    const col = (re) => headers.findIndex((h) => re.test(h));
-    const desc = col(/description/i);
-    const qty = col(/quantity/i);
-    if (desc < 0 || qty < 0) continue;
-    const no = col(/item\s*no/i);
-    const unit = col(/unit\s+of\s+measure|^uom$|^unit$/i);
-    const abc = col(/abc|budget/i);
+    // The header: the table's own header cells, or a row naming a Description and a Quantity column. A hospital's own
+    // tables pasted in the notice's Description have plain cells for their header, and one per category ("Sr.No. | Item
+    // Code | Lot Name | Lot Description | Quantity | Unit of Measure | Estimated Budget", PS 161025; user 2026-11-26:
+    // the notice showed every line with its budget, the dashboard none)
+    let columns = null;
+    const columnsOf = (headers) => {
+      const col = (re) => headers.findIndex((h) => re.test(h));
+      const found = { width: headers.length, desc: col(/description/i), qty: col(/quantity|^qty\.?$/i), no: col(/item\s*no|sr\.?\s*no|^no\.?$/i), unit: col(/unit\s+of\s+measure|^uom$|^unit$/i), abc: col(/abc|budget/i) };
+      return found.desc >= 0 && found.qty >= 0 ? found : null;
+    };
+    columns = columnsOf(table.querySelectorAll('th').map(cellText));
     for (const tr of table.querySelectorAll('tr')) {
-      const cells = tr.querySelectorAll('td').map(cellText);
-      if (cells.length < headers.length || !cells[desc]) continue;
-      const line = cells[desc];
-      const unitText = unit >= 0 ? cells[unit] : '';
+      const cells = tr.querySelectorAll('td, th').map(cellText);
+      // A header row (no figures in it) sets the columns for the rows below
+      const header = cells.length >= 3 && !cells.some((c) => /\d[\d,]*\.\d{2}/.test(c)) && columnsOf(cells);
+      if (header) {
+        columns = header;
+        continue;
+      }
+      if (!columns || cells.length < columns.width || !cells[columns.desc]) continue;
+      const line = cells[columns.desc];
+      const unitText = columns.unit >= 0 ? cells[columns.unit] : '';
       // The unit column counts for the form, as in a document's row (products.mjs)
       const products = matchMolecules.line(`${line} ${unitText}`.trim(), []);
       if (!products.length) continue;
-      const quantity = amountOf(cells[qty]);
-      const total = abc >= 0 ? amountOf(cells[abc]) : null;
+      const quantity = amountOf(cells[columns.qty]);
+      const total = columns.abc >= 0 ? amountOf(cells[columns.abc]) : null;
+      const key = `${line}|${quantity}|${total}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       // ABC/Unit = ABC / Qty, except an amount that would make an injectable cost under ₱10 a unit: that is its unit
       // price (psDocs.mjs withBothAmounts)
-      const row = withBothAmounts({ line, products, item_no: no >= 0 ? cells[no] : null, quantity, unit: unitText || null, total });
+      const row = withBothAmounts({ line, products, item_no: columns.no >= 0 ? cells[columns.no] : null, quantity, unit: unitText || null, total });
       out.push({ ...row, unit_price: row.unit_price ?? null, computed: row.computed || 'unit_price' });
     }
   }

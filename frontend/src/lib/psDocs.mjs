@@ -215,9 +215,15 @@ export const withoutTextAfterTotal = (line) => {
   const [quantity, price, total] = [m[2], m[3], m[4]].map((s) => Number(s.replace(/,/g, '')));
   return quantity > 0 && Math.abs(quantity * price - total) <= Math.max(1, total * 0.005) ? m[1] : line;
 };
+/** A row's item code between its number and its name ("2 51131602 Heparin", PS-PhilGEPS's UNSPSC codes: Sr.No. | Item
+ * Code | Lot Name | ...): never the quantity. On a Delivery Schedule page, whose rows carry no amounts, it was read as
+ * one (51,131,602 "Heparin"), so the page's rows were not seen as copies of the priced ones and counted as rows
+ * missing their ABC (PS 161025 read at 55%; user 2026-11-26). Not a quantity-first row ("3 12000000 pcs ..."). */
+const ITEM_CODE_AFTER_NO = new RegExp(String.raw`^(\W{0,2}\d{1,4}[.)]?\s+)\d{7,9}\s+(?=[A-Za-z])(?!${KNOWN_UNIT_RE}\s)`, 'i');
+const withoutItemCode = (line) => line.replace(ITEM_CODE_AFTER_NO, '$1');
 const cleanLines = (rawLines) => {
   let lines = cleanedCache.get(rawLines);
-  if (!lines) cleanedCache.set(rawLines, (lines = joinSplitAmounts(rawLines.map((line) => withCentavos(withoutEmptyCells(withCommaThousands(withoutTextAfterTotal(withoutNextRow(withoutRules(withScannedAmounts(line)))))))))));
+  if (!lines) cleanedCache.set(rawLines, (lines = joinSplitAmounts(rawLines.map((line) => withCentavos(withoutEmptyCells(withCommaThousands(withoutTextAfterTotal(withoutNextRow(withoutItemCode(withoutRules(withScannedAmounts(line))))))))))));
   return lines;
 };
 

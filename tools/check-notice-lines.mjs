@@ -34,4 +34,24 @@ console.log('  ok    our lines read with Qty, unit, ABC and ABC/Unit (ABC ÷ Qty
 console.log('  ok    another pack volume and another form are left out');
 assert.deepEqual(readLineItems(parse('<table><tr><th>Name</th></tr><tr><td>Heparin 1000 IU/ml, 5ml</td></tr></table>'), match), []);
 console.log('  ok    a table without Description and Quantity columns is not read');
-console.log('\nNotice line items check passed (3 checks).');
+// PS 161025 (Western Visayas Medical Center, user 2026-11-26): the hospital's own tables pasted in the notice's
+// Description, one per category, their header a plain row ("Sr.No. | Item Code | Lot Name | Lot Description | Quantity
+// | Unit of Measure | Estimated Budget"); the notice showed every line with its budget, the dashboard none
+{
+  const head = row('Sr.No.', 'Item Code', 'Lot Name', 'Lot Description', 'Quantity', 'Unit of Measure', 'Estimated Budget');
+  const pasted = `<div>Description:</div><table>
+<tr><td colspan="7">Category 4 - Antibacterials</td></tr>${head}
+${row(2, 51284603, 'Ertapenem', 'Ertapenem (as sodium salt) Inj.: 1 g powder, vial (IM/IV)', 500, 'Vial', '750,000.00')}
+${row(3, 51282702, 'Cefoxitin', 'Cefoxitin 1g vial (IM, IV)', '45,000', 'Vial', '2,250,000.00')}
+<tr><td colspan="5"></td><td>Total Approved Budget</td><td>3,000,000.00</td></tr>
+<tr><td colspan="7">Category 11 - Blood products</td></tr>${head}
+${row(2, 51131602, 'Heparin', 'Heparin 1000 IU/mL 5 mL vial (IV infusion, SC) (bovine origin)', '5,000', 'Vial', '340,000.00')}
+</table>`;
+  const lines = readLineItems(parse(pasted), match);
+  assert.deepEqual(lines.map((i) => [i.products[0], i.item_no, i.quantity, i.unit, i.total, i.unit_price]), [['Cefoxitin', '3', 45000, 'Vial', 2250000, 50], ['Heparin', '2', 5000, 'Vial', 340000, 68]], 'our lines of both categories, each with its budget');
+  console.log('  ok    tables pasted in the Description (plain header rows, one per category) are read');
+  // The same table inside a layout table is read once
+  assert.equal(readLineItems(parse(`<table><tr><td>${pasted}</td></tr></table>`), match).length, 2, 'a table inside another: each row once');
+  console.log('  ok    a table inside a layout table gives each row once');
+}
+console.log('\nNotice line items check passed (5 checks).');
