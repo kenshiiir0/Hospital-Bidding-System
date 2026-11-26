@@ -19,6 +19,7 @@ node tools/check-document-text.mjs || { echo "Push blocked: the document text ch
 node tools/check-notice-lines.mjs || { echo "Push blocked: the notice line items check failed."; exit 1; }
 node tools/check-read-again.mjs || { echo "Push blocked: the read-again check (no reading the same tender twice) failed."; exit 1; }
 node tools/check-lot-notices.mjs || { echo "Push blocked: the one-lot notice check failed."; exit 1; }
+node tools/check-open-search.mjs || { echo "Push blocked: the Open Opportunities search check failed."; exit 1; }
 node tools/build-laptop-kit.mjs --check || { echo "Push blocked: the laptop log-in files are out of date."; exit 1; }
 echo "Safety gate: 2/3 code check"
 (cd frontend && npx eslint src) || { echo "Push blocked: the code check (ESLint) failed."; exit 1; }

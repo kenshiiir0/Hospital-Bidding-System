@@ -4,6 +4,7 @@ import { loadMatcher } from './products.mjs';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
 import { analyzePending, rememberDownload, withBothAmounts } from './psDocs.mjs';
+import { deadlineMs } from './readAgain.mjs';
 import { allRows } from './allRows.mjs';
 import { notifyPendingAwards } from './awardNotify.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
@@ -267,27 +268,91 @@ export async function searchByPublishDate(session, word, fromDay, toDay) {
   return [...(await searchByPublishDate(session, word, fromDay, mid)), ...(await searchByPublishDate(session, word, mid + 1, toDay))];
 }
 
-/** Open medicine notices from Open Opportunities, as rows in Bid Match's columns (headers), for refs not in it */
-export async function openMedicineNotices(session, headers, known) {
+// The whole 120 days were searched on every Sync (9 words, each range split while it comes back full). Once every new
+// tender was posted on PS-PhilGEPS (PhilGEPS 1.5 closed, 2026-11) that took the Sync's whole time: on 2026-11-26 the
+// Syncs read 0 to 50 of 672 notice pages each, so new files, bid bulletins and the notices' own fields came days late
+// (user: "Let us just focus first on the fetching"). Now the notices found are kept from Sync to Sync until they close,
+// and each Sync searches:
+// - every word for the notices published in the last RECENT_DAYS (the new ones), then
+// - as many slices of the older days as its time allows (a word x SWEEP_SLICE_DAYS days), in turn: a kept notice the
+//   site no longer lists in its slice (cancelled, closed early) is dropped then.
+// No search starts after `until`, so the notice pages keep most of the Sync's time.
+const RECENT_DAYS = 3;
+const SWEEP_SLICE_DAYS = 30;
+// From the Sync's start, no new Open Opportunities search is started after this
+const SEARCH_UNTIL_MS = 90 * 1000;
+// [{ word, from, to }]: days back from today
+const SWEEP_SLICES = MEDICINE_TITLE_WORDS.flatMap((word) => Array.from({ length: Math.ceil(OPEN_SINCE_DAYS / SWEEP_SLICE_DAYS) }, (_, k) => ({ word, from: (k + 1) * SWEEP_SLICE_DAYS, to: k * SWEEP_SLICE_DAYS })));
+const manilaDay = (ms) => Math.floor((ms + 8 * 60 * 60 * 1000) / DAY_MS);
+
+/** Open medicine notices from Open Opportunities, as rows in Bid Match's columns (headers), for refs not in it.
+ * carried: the rows the last Sync had from here; sweep: where the older days' turn stands ({ next }); until: no
+ * search starts after this time (ms). Returns { rows, sweep, swept, error }: on a failed search the rows kept and
+ * found so far (never fewer than what is still open), with the error. search, now and clock: for the checks. */
+export async function openMedicineNotices(session, headers, known, { carried = [], sweep = {}, until = Infinity, search = searchByPublishDate, now = Date.now(), clock = Date.now } = {}) {
+  const today = manilaDay(now);
+  const column = (name) => headers.findIndex((h) => h.toLowerCase() === name);
+  const cellOf = (row, name) => row.cells?.[column(name)] || '';
   const byRef = new Map();
-  const today = Math.floor((Date.now() + 8 * 60 * 60 * 1000) / DAY_MS);
-  const results = [];
-  for (const word of MEDICINE_TITLE_WORDS) results.push(...(await searchByPublishDate(session, word, today - OPEN_SINCE_DAYS, today)));
-  for (const { headers: found, rows } of results) {
-    const at = (name) => found.findIndex((h) => h.toLowerCase().startsWith(name));
-    for (const row of rows) {
-      const ref = row.cells[at('bid notice reference')] || row.cells[0];
-      const title = row.cells[at('notice title')] || '';
-      if (!/^\d+$/.test(ref) || known.has(ref) || byRef.has(ref) || NOT_MEDICINE.test(title)) continue;
-      const value = { 'notice reference number': ref, 'notice title': title, 'mode of procurement': row.cells[at('mode of procurement')], classification: row.cells[at('classification')], 'publish date': row.cells[at('publish date')], 'closing date': row.cells[at('closing date')], 'agency name': row.cells[at('agency name')], status: 'Active' };
-      byRef.set(ref, {
-        cells: headers.map((h) => value[h.toLowerCase()] ?? ''),
-        links: [{ text: ref, href: `${HOST}/tenders/viewBidNotice/${ref}` }],
-        from: 'open-opportunities',
-      });
-    }
+  // Kept from the last Sync while still open and not in Bid Match itself (the word that finds it: its title's)
+  for (const row of carried) {
+    const ref = refOf(row);
+    const closes = deadlineMs(cellOf(row, 'closing date'));
+    if (!ref || known.has(ref) || (closes != null && closes < now)) continue;
+    byRef.set(ref, { ...row, word: row.word || MEDICINE_TITLE_WORDS.find((w) => cellOf(row, 'notice title').toLowerCase().includes(w)) || null });
   }
-  return [...byRef.values()];
+  // The rows of a search's answers, added; returns the refs the site listed (null when it listed none at all)
+  const add = (word, results) => {
+    const listed = new Set();
+    for (const { headers: found, rows } of results) {
+      const at = (name) => found.findIndex((h) => h.toLowerCase().startsWith(name));
+      for (const row of rows) {
+        const ref = row.cells[at('bid notice reference')] || row.cells[0];
+        const title = row.cells[at('notice title')] || '';
+        if (!/^\d+$/.test(ref)) continue;
+        listed.add(ref);
+        if (known.has(ref) || NOT_MEDICINE.test(title)) continue;
+        const value = { 'notice reference number': ref, 'notice title': title, 'mode of procurement': row.cells[at('mode of procurement')], classification: row.cells[at('classification')], 'publish date': row.cells[at('publish date')], 'closing date': row.cells[at('closing date')], 'agency name': row.cells[at('agency name')], status: 'Active' };
+        byRef.set(ref, {
+          cells: headers.map((h) => value[h.toLowerCase()] ?? ''),
+          links: [{ text: ref, href: `${HOST}/tenders/viewBidNotice/${ref}` }],
+          from: 'open-opportunities',
+          word: byRef.get(ref)?.word || word,
+        });
+      }
+    }
+    return listed.size ? listed : null;
+  };
+  let next = (Number(sweep.next) || 0) % SWEEP_SLICES.length;
+  let swept = 0;
+  let error = null;
+  try {
+    for (const word of MEDICINE_TITLE_WORDS) {
+      if (clock() >= until) break;
+      add(word, await search(session, word, today - RECENT_DAYS, today));
+    }
+    while (clock() < until && swept < SWEEP_SLICES.length) {
+      const slice = SWEEP_SLICES[next];
+      const [from, to] = [today - slice.from, today - slice.to];
+      const listed = add(slice.word, await search(session, slice.word, from, to));
+      // Kept rows of this word published in these days that the site no longer lists. An answer with no rows at all
+      // drops nothing: it may be the site failing, and a kept notice goes at its closing date anyway
+      if (listed) {
+        for (const [ref, row] of byRef) {
+          if (row.word !== slice.word || listed.has(ref)) continue;
+          const published = deadlineMs(cellOf(row, 'publish date'));
+          const day = published == null ? null : manilaDay(published);
+          if (day != null && day >= from && day <= to) byRef.delete(ref);
+        }
+      }
+      next = (next + 1) % SWEEP_SLICES.length;
+      swept++;
+    }
+  } catch (e) {
+    if (e.code === 'NOT_CONNECTED' || e.code === 'CANCELLED') throw e;
+    error = e.message;
+  }
+  return { rows: [...byRef.values()], sweep: { next, at: new Date(now).toISOString() }, swept, error };
 }
 
 // Notice reference number of a list row: its link to the notice page, else a numeric first cell
@@ -621,16 +686,22 @@ export async function runSync() {
     }
     await saveCookies();
 
-    // Open medicine notices Bid Match doesn't list (openMedicineNotices), added to it. A failed search never stops
-    // the Sync: Bid Match is read as before.
+    // Open medicine notices Bid Match doesn't list (openMedicineNotices), added to it: the ones kept from the last
+    // Sync, the new ones, and a turn of the older days. A failed search never stops the Sync nor loses the kept ones.
+    const known = new Set(lists.bidMatch.rows.map(refOf).filter(Boolean));
+    const { data: lastOpen } = await supabase.from('ps_philgeps_snapshot').select('rows:lists->bidMatch->rows, sweep:lists->bidMatch->openSweep').eq('id', 'latest').maybeSingle();
+    const carried = (lastOpen?.rows || []).filter((row) => row?.from === 'open-opportunities');
     try {
       await progress(27, 'Searching Open Opportunities for medicine notices');
-      const known = new Set(lists.bidMatch.rows.map(refOf).filter(Boolean));
-      const extra = await withSession(() => openMedicineNotices(session, lists.bidMatch.headers, known));
-      lists.bidMatch.rows.push(...extra);
-      lists.bidMatch.fromOpenOpportunities = extra.length;
+      const open = await withSession(() => openMedicineNotices(session, lists.bidMatch.headers, known, { carried, sweep: lastOpen?.sweep || {}, until: syncStarted + SEARCH_UNTIL_MS }));
+      lists.bidMatch.rows.push(...open.rows);
+      lists.bidMatch.fromOpenOpportunities = open.rows.length;
+      lists.bidMatch.openSweep = open.sweep;
+      if (open.error) lists.bidMatch.openOpportunitiesError = open.error;
     } catch (e) {
       if (e.code === 'NOT_CONNECTED' || e.code === 'CANCELLED') throw e;
+      lists.bidMatch.rows.push(...carried.filter((row) => !known.has(refOf(row))));
+      lists.bidMatch.openSweep = lastOpen?.sweep || null;
       lists.bidMatch.openOpportunitiesError = e.message;
     }
     await saveCookies();
