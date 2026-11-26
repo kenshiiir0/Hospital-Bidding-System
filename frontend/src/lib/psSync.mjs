@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 import { loadMatcher } from './products.mjs';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
@@ -46,11 +46,11 @@ export class PsSyncError extends Error {
 }
 
 export function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) {
-    throw new PsSyncError('NOT_CONFIGURED', 'SUPABASE_URL and SUPABASE_KEY (secret key) are not set on this server.');
+  const db = serverDb();
+  if (!db) {
+    throw new PsSyncError('NOT_CONFIGURED', 'The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server.');
   }
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  return db;
 }
 
 // ---------- session (cookies) ----------

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 import { parse } from 'node-html-parser';
 
 // Checks hospitals' own procurement pages (table hospitals, procurement_pages) for postings: links whose
@@ -12,9 +12,9 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 const POSTING = /request for quotation|\brfq\b|invitation to bid|\bib no\b|\bitb\b|bid (?:bulletin|supplement)|supplemental|bidding documents|schedule of requirements|technical specifications?|notice of award|price quotation|purchase request/i;
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) throw new Error('SUPABASE_URL and SUPABASE_KEY are not set on this server.');
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  if (!db) throw new Error('The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server.');
+  return db;
 }
 
 const clean = (s) => (s || '').replace(/&#8211;|&ndash;/g, '–').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 
 // Our products: table products (the B2B price list and the PRODUCT LIST, plus the dashboard's Add Molecule), the
 // only source of what tenders are screened for. A tender counts as ours only when it asks for one of our
@@ -479,9 +479,9 @@ function fingerprint(text) {
 }
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) throw new Error('SUPABASE_URL and SUPABASE_KEY are not set on this server.');
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  if (!db) throw new Error('The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server.');
+  return db;
 }
 
 // Every product row, sorted by generic name. Archived products are left out (never screened for) unless

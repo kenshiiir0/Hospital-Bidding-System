@@ -1,7 +1,7 @@
 import { requireUser } from '@/lib/auth';
 import { mailConfigured, sendMail } from '@/lib/awardNotify.mjs';
 import { logActivity } from '@/lib/activityLog.mjs';
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from '@/lib/db/index.mjs';
 import { MESSAGE_TEST_TO } from '@/lib/messageTestMode';
 import { buildHospitalEmail, themeImages, titleCase, SETTINGS, THEMES } from '@/lib/hospitalEmail.mjs';
 import { readFile } from 'node:fs/promises';
@@ -17,8 +17,8 @@ const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 const ALLOWED = /^(image\/(png|jpe?g|gif|webp)|application\/pdf|application\/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)|application\/vnd\.openxmlformats-officedocument\.[a-z.]+|text\/(plain|csv))$/i;
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  return db;
 }
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

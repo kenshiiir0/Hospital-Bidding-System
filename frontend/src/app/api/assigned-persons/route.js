@@ -1,14 +1,14 @@
 import { requireUser } from '@/lib/auth';
 import { defaultRows } from '@/lib/awardRouting.mjs';
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from '@/lib/db/index.mjs';
 
 // Assigned Persons (tables assigned_people, assigned_hospitals): who handles each hospital on the served list. The
 // award notice emails go by the same tables (lib/awardRouting.mjs loadRouting), so an edit here changes who is
 // emailed from the next Sync on. Team members only.
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  return db;
 }
 
 const clean = (v, max = 200) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);

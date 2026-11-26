@@ -1,14 +1,14 @@
 import { requireUser } from '@/lib/auth';
 import { agencyKey } from '@/lib/agencyKey';
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from '@/lib/db/index.mjs';
 
 // The Overall Abstract tracker (Abstract of Bids → Overall Abstract / All Bids; lib/abstractTracker.mjs). Team members
 // only: our prices and the competitors' are not for competitors. Tables abstract_tracker, abstract_tracker_items,
 // abstract_tracker_molecules (schema.sql); written only here, with the service key.
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  return db;
 }
 
 const clean = (v, max = 300) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);

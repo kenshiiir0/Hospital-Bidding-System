@@ -1,10 +1,10 @@
 import { requireUser } from '@/lib/auth';
 import { loadProducts, matchName } from '@/lib/products.mjs';
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from '@/lib/db/index.mjs';
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  return db;
 }
 
 // Our products (table products: the PRODUCT LIST plus Add Molecule). Default: the molecule names tenders are

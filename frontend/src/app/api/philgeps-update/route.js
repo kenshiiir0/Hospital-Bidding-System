@@ -1,7 +1,7 @@
 import { after } from 'next/server';
 import { hasCronSecret } from '@/lib/auth';
 import { runPublicUpdate } from '@/lib/philgepsUpdate.mjs';
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from '@/lib/db/index.mjs';
 
 // The update reads the whole list and the new notices; it stops starting work at 230 s
 export const maxDuration = 300;
@@ -23,8 +23,7 @@ export async function GET(request) {
   if (!hasCronSecret(request)) {
     return Response.json({ ok: false }, { status: 401 });
   }
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabase = createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const supabase = serverDb();
   const { data } = await supabase.from('philgeps_sync_relay').select('job, updated_at').eq('id', 'update').maybeSingle();
   if (data?.job?.status === 'running' && Date.now() - Date.parse(data.updated_at) < STALE_MS) {
     return Response.json({ ok: true, alreadyRunning: true });

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 
 // The PhilGEPS Sync can only run on a team computer (Chrome and the PhilGEPS log-in live there), but it can be
 // asked for from any dashboard, including the deployed one. Supabase table philgeps_sync_relay (schema.sql,
@@ -13,9 +13,9 @@ const PUBLISH_EVERY_MS = 1000;
 let client;
 function db() {
   if (client) return client;
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) throw new Error('SUPABASE_KEY is not set on this server');
-  client = createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  if (!db) throw new Error('The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server');
+  client = db;
   return client;
 }
 

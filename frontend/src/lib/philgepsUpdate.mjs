@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 import { parse } from 'node-html-parser';
 import { Session, getPage, postBack, postbackLinks } from './philgepsSync.mjs';
 import { expandVariants, isVariantParent, loadMatcher, parseItemRow, rowAhead, withBothAmounts } from './psDocs.mjs';
@@ -42,9 +42,9 @@ export function sameRow(row, stored) {
 }
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) throw new Error('SUPABASE_URL and SUPABASE_KEY (secret key) are not set on this server.');
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  if (!db) throw new Error('The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server.');
+  return db;
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };

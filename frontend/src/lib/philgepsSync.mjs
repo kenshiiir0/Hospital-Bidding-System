@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 import { parse } from 'node-html-parser';
 import { checkLogin, recordLogin } from './loginGuard.mjs';
 import { logActivity } from './activityLog.mjs';
@@ -82,9 +82,9 @@ export class PhilgepsSyncError extends Error {
 }
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) throw new PhilgepsSyncError('NOT_CONFIGURED', 'SUPABASE_URL and SUPABASE_KEY (secret key) are not set on this server.');
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  if (!db) throw new PhilgepsSyncError('NOT_CONFIGURED', 'The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server.');
+  return db;
 }
 
 // ---------- HTTP session ----------

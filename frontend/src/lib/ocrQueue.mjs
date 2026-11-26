@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 import { OCR_VERSION } from './ocr.mjs';
 import { wakeDocs } from './docsIdle.mjs';
 import { allRows } from './allRows.mjs';
@@ -10,9 +10,9 @@ import { allRows } from './allRows.mjs';
 // Plain .mjs (no Next imports) so it can also be run directly with node.
 
 export function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) throw new Error('SUPABASE_URL and SUPABASE_KEY are not set.');
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  if (!db) throw new Error('The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set.');
+  return db;
 }
 
 // Scanned documents of a reading: tried = the current OCR (tesseract) already ran and found no readable text.

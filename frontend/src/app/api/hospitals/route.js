@@ -1,11 +1,11 @@
 import { requireUser } from '@/lib/auth';
 import { agencyKey } from '@/lib/agencyKey';
 import { planHospitalImport } from '@/lib/sheetImport.mjs';
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from '@/lib/db/index.mjs';
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  return db;
 }
 
 const FIELDS = 'agency_key, name, status, list_note, contacts, emails, website, sheet_row, source, added_by, created_at, archived_at, archived_by';

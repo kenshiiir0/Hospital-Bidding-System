@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { serverDb } from './db/index.mjs';
 
 // Keeps the system's log-ins to PhilGEPS (site 'philgeps') and PS-PhilGEPS ('ps-philgeps') few and calm, so
 // the accounts are never locked for suspicious activity. Every log-in attempt is recorded in login_attempts
@@ -24,9 +24,9 @@ export class LoginGuardError extends Error {
 }
 
 function admin() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url || !process.env.SUPABASE_KEY) return null;
-  return createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = serverDb();
+  if (!db) return null;
+  return db;
 }
 
 const SITE_NAMES = { philgeps: 'PhilGEPS', 'ps-philgeps': 'PS-PhilGEPS' };
