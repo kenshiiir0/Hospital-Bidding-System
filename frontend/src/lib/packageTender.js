@@ -24,3 +24,11 @@ export function isPackageTender(description, documentsPackage) {
   if (documentsPackage === false) return false;
   return Boolean(documentsPackage) || String(description || '').split('\n').some((line) => PACKAGE_ROW.test(line.trim()) || BDS_ONE_LOT.test(line));
 }
+
+/** A PS-PhilGEPS notice whose Line Item Details give the purchase as ONE lot: our product's line is "1 Lot" (a whole
+ * list of items in one row: "1 150 Pieces Ibuprofen ... 4 150 Pieces Loratadine ...", PS 163216, 164641, 165710).
+ * The tender goes to one bidder for everything: not an opportunity, left out of Bid Match, Screened and the export
+ * (user, 2026-11-26: "I told u to not include if it says 1 lot ... Do not include them in bid matches as
+ * opportunities") */
+export const LOT_UNIT = /^\s*(?:lots?|packages?|lump[\s-]*sums?)\s*$/i;
+export const noticeOneLot = (notice) => (notice?.matched_items || []).some((i) => Number(i.quantity) === 1 && LOT_UNIT.test(i.unit || ''));

@@ -3,7 +3,7 @@
 // show, so every screen keeps only the molecules on today's list (/api/products: active products' names).
 
 import { authFetch } from '@/lib/authFetch';
-import { isPackageTender } from '@/lib/packageTender';
+import { isPackageTender, noticeOneLot } from '@/lib/packageTender';
 
 let cached = null;
 
@@ -38,11 +38,15 @@ export function activeTenders(bids, active, screened) {
  * package or lot tenders left with none. */
 export function activePsData(data, active) {
   if (!data) return data;
-  // Tenders bought as one package or lot, by their documents (lib/packageTender.js); no products
-  const packaged = new Set(Object.entries(data.analysis || {}).filter(([, r]) => isPackageTender('', r?.result?.package)).map(([ref]) => ref));
+  // Tenders bought as one package or lot, by their documents or by the notice's Line Item Details giving "1 Lot"
+  // (lib/packageTender.js); no products, no notice lines
+  const packaged = new Set([
+    ...Object.entries(data.analysis || {}).filter(([, r]) => isPackageTender('', r?.result?.package)).map(([ref]) => ref),
+    ...Object.entries(data.notices || {}).filter(([, n]) => noticeOneLot(n)).map(([ref]) => ref),
+  ]);
   const keep = (ref, name) => !packaged.has(ref) && (!active || active.has(name));
   const notices = Object.fromEntries(
-    Object.entries(data.notices || {}).map(([ref, n]) => [ref, n ? { ...n, ...(n.matched && { matched: n.matched.filter((name) => keep(ref, name)) }), ...(packaged.has(ref) && { lot: true }) } : n])
+    Object.entries(data.notices || {}).map(([ref, n]) => [ref, n ? { ...n, ...(n.matched && { matched: n.matched.filter((name) => keep(ref, name)) }), ...(packaged.has(ref) && { lot: true, matched_items: [] }) } : n])
   );
   const analysis = Object.fromEntries(
     Object.entries(data.analysis || {}).map(([ref, r]) => {

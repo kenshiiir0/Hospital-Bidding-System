@@ -386,6 +386,10 @@ function abcTotalNotUnit(row) {
 // The missing amount worked out as the team's sheet does (user, 2026-10-27): ABC/Unit = ABC Total ÷ Qty, ABC
 // Total = Qty × ABC/Unit. Applied when a row is kept, after the Quantity column check (a worked-out price always
 // "adds up")
+// The least an injectable of ours costs a unit (withBothAmounts; INJECTABLE_FORM below)
+const INJECTABLE_MIN_PRICE = 10;
+// ... and the most (an amount above it is no unit price: a misread row, an item code read as the quantity, PS 161025)
+const INJECTABLE_MAX_PRICE = 50000;
 export function withBothAmounts(row) {
   if (!(row.quantity > 0)) return row;
   // A unit price that doesn't give the total (a scan misreading a digit: "800 ... 1043.00 1,316,480.00" for 1645.60,
@@ -406,6 +410,12 @@ export function withBothAmounts(row) {
       return { ...rest, quantity: joined, unit_price: price, computed: 'unit_price', read_unit_price: row.unit_price, quantity_from: 'total', read_quantity: row.quantity };
     }
     return { ...row, unit_price: Math.round((row.total / row.quantity) * 100) / 100, computed: 'unit_price', read_unit_price: row.unit_price };
+  }
+  // One amount read as the total that would make an injectable cost under ₱10 a unit is its unit price: "13
+  // Atracurium ... Amp 1,000 ampule 327.00" is ₱327 an ampule, not ₱0.33 (PS 160151; "Propofol ... 100 vial 445.00",
+  // PS 166580; user 2026-11-26). No vial, ampule or syringe of ours costs that little
+  if (row.unit_price == null && row.total != null && row.total / row.quantity < INJECTABLE_MIN_PRICE && row.total <= INJECTABLE_MAX_PRICE && (!row.unit || KNOWN_UNIT_WORD.test(row.unit)) && INJECTABLE_FORM.test(`${row.unit || ''} ${row.written || row.description || ''}`)) {
+    return { ...row, unit_price: row.total, total: Math.round(row.quantity * row.total * 100) / 100, computed: 'total', amount_read_as: 'unit_price' };
   }
   // computed: which amount was worked out, not read (shown green: View details, the Excel)
   if (row.unit_price == null && row.total != null) return { ...row, unit_price: Math.round((row.total / row.quantity) * 100) / 100, computed: 'unit_price' };

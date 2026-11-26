@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { loadMatcher } from './products.mjs';
 import { parse } from 'node-html-parser';
 import { logActivity } from './activityLog.mjs';
-import { analyzePending, rememberDownload } from './psDocs.mjs';
+import { analyzePending, rememberDownload, withBothAmounts } from './psDocs.mjs';
 import { allRows } from './allRows.mjs';
 import { notifyPendingAwards } from './awardNotify.mjs';
 import { triggerOcr } from './ocrTrigger.mjs';
@@ -407,16 +407,10 @@ export function readLineItems(root, matchMolecules) {
       if (!products.length) continue;
       const quantity = amountOf(cells[qty]);
       const total = abc >= 0 ? amountOf(cells[abc]) : null;
-      out.push({
-        line,
-        products,
-        item_no: no >= 0 ? cells[no] : null,
-        quantity,
-        unit: unitText || null,
-        total,
-        unit_price: quantity && total != null ? Math.round((total / quantity) * 100) / 100 : null,
-        computed: 'unit_price',
-      });
+      // ABC/Unit = ABC / Qty, except an amount that would make an injectable cost under ₱10 a unit: that is its unit
+      // price (psDocs.mjs withBothAmounts)
+      const row = withBothAmounts({ line, products, item_no: no >= 0 ? cells[no] : null, quantity, unit: unitText || null, total });
+      out.push({ ...row, unit_price: row.unit_price ?? null, computed: row.computed || 'unit_price' });
     }
   }
   return out;

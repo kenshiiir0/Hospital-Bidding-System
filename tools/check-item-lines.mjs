@@ -665,4 +665,19 @@ assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a b
   assert.equal(out.result.items.length, 0, 'the capsule row is not ours');
   assert.equal(out.result.outside_table.filter((x) => x.why).length, 0, 'its copy with no numbers is not a blank row of ours');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5} rows).`);
+// One amount read as the total that would make an injectable cost under ₱10 a unit is its unit price (user 2026-11-26:
+// PS 160151 "13 Atracurium ... Amp 1,000 ampule 327.00" showed ₱0.33 an ampule, PS 166580 Propofol ₱4.45 a vial)
+{
+  const atracurium = withBothAmounts({ quantity: 1000, unit: 'ampule', total: 327, written: '13 Atracurium 10mg/ml, 2.5mL Solution for Injection Amp 1,000 ampule 327.00' });
+  assert.equal(atracurium.unit_price, 327, 'Atracurium: ₱327 an ampule');
+  assert.equal(atracurium.total, 327000, 'Atracurium: total worked out');
+  const propofol = withBothAmounts({ quantity: 100, unit: 'vial', total: 445, written: '7 Propofol 10 mg/mL, 20 mL vial 100 vial 445.00' });
+  assert.equal(propofol.unit_price, 445, 'Propofol: ₱445 a vial');
+  const cetirizine = withBothAmounts({ quantity: 1000, unit: 'Tablet', total: 560, written: 'Cetirizine 10mg/tab' });
+  assert.equal(cetirizine.unit_price, 0.56, 'a cheap tablet keeps its total (₱0.56 each)');
+  const epoetin = withBothAmounts({ quantity: 800, unit: 'vial', total: 312000, written: 'Epoetin Alfa 4000 IU/mL vial' });
+  assert.equal(epoetin.unit_price, 390, 'an injectable total that gives a sensible price stays the total');
+  assert.equal(withBothAmounts({ quantity: 51131508, unit: 'pre-filled syringe', total: 777000, written: '4 51131508 Epoetin alfa 4000 IU/1 mL, pre-filled syringe' }).computed, 'unit_price', 'an item code read as the quantity: no ₱777,000 syringe');
+  assert.equal(withBothAmounts({ quantity: 74, unit: 'Erythromycin', total: 226.6, written: 'Erythropoetin) for injection 569.30' }).computed, 'unit_price', 'a garbled unit: left as read');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7} rows).`);
