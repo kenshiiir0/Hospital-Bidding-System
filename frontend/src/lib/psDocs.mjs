@@ -1312,18 +1312,26 @@ export function keepBestReading(items) {
   const pricedLoose = new Set(items.filter(isPriced).map(loose));
   // and a priced row read twice (the Price Schedule and the delivery schedule) is kept once: the better source's
   const amounts = new Map();
+  // (the same Item No., products, quantity and total is the same row, however two files write its strength: "25 2000
+  // vial CEFEPIME 1G vial ... 98.00 196,000.00" in the Schedule of Prices and "25 2000 vial Cefepime 1Gvial (as HCI)
+  // ..." in the Technical Specifications both stayed and the Excel's total counted the line twice, PS 134843)
+  const numbered = (i) => (itemNoOf(i) != null && i.total != null ? `${[...i.our_products].sort().join('+')}|#${itemNoOf(i)}|${i.quantity}|${i.total}` : null);
   for (let k = 0; k < items.length; k++) {
     const i = items[k];
     const both = `${sameRow(i)}|${i.total}`;
     if (i.quantity != null && i.unit_price == null && i.total == null && (priced.has(sameRow(i)) || (!doseOf(i) && pricedLoose.has(loose(i))))) items.splice(k--, 1);
-    else if (i.quantity != null && i.total != null && amounts.has(both)) {
-      const first = items.indexOf(amounts.get(both));
+    else if (i.quantity != null && i.total != null && (amounts.has(both) || amounts.has(numbered(i)))) {
+      const first = items.indexOf(amounts.get(both) || amounts.get(numbered(i)));
       if (first >= 0 && score(i) > score(items[first])) {
         items[first] = i;
         amounts.set(both, i);
+        if (numbered(i)) amounts.set(numbered(i), i);
       }
       items.splice(k--, 1);
-    } else amounts.set(both, i);
+    } else {
+      amounts.set(both, i);
+      if (numbered(i)) amounts.set(numbered(i), i);
+    }
   }
   return items;
 }

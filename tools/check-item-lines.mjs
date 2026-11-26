@@ -756,4 +756,12 @@ assert.equal(withoutTextAfterTotal('3 Brand: Generic'), '3 Brand: Generic', 'a b
   assert.deepEqual(mixed.items.map((i) => i.our_products[0]), ['Amiodarone'], 'beside priced rows, a row without its ABC is still set aside');
   assert.equal(mixed.outside_table.filter((x) => x.why === 'no ABC').length, 1, 'and counted as a row to check');
 }
-console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7 + 2 + 5 + 4} rows).`);
+// PS 134843: the same numbered row priced in two files, its strength written two ways, is one row (the Excel's total
+// counted it twice); two different rows with the same number in different tables stay
+{
+  const a = { our_products: ['Cefepime'], item_no: '25', quantity: 2000, unit_price: 98, total: 196000, written: '25 2000 vial CEFEPIME 1G vial Intravenous/Intramuscular 98.00 196,000.00', source: 'SCHEDULE_OF_PRICES.pdf, page 1' };
+  const b = { our_products: ['Cefepime'], item_no: '25', quantity: 2000, unit_price: 98, total: 196000, written: '25 2000 vial Cefepime 1Gvial (as HCI) (IM/IV) 98.00 196,000.00', source: 'TECHNICAL_SPECIFICATIONS.pdf, page 2' };
+  assert.equal(keepBestReading([{ ...a }, { ...b }]).length, 1, 'the same numbered priced row in two files once');
+  assert.equal(keepBestReading([{ ...a }, { ...b, quantity: 500, total: 49000 }]).length, 2, 'another quantity and total is another row');
+}
+console.log(`Item line check passed (${LINES.length + ROWS.length + 72 + ONE.length + 3 + 7 + 5 + 2 + 4 + 10 + 5 + 3 + 58 + 17 + 13 + 6 + 4 + 1 + 4 + 3 + 1 + 4 + 4 + 18 + 5 + 5 + 7 + 5 + 4 + 4 + 7 + 2 + 5 + 4 + 2} rows).`);
