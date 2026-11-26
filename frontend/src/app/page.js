@@ -2,13 +2,15 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { CustomSelect, LotPill, NewPill, PublishedTag, DateRangeDropdown, MultiSelectDropdown, ProductChips as Products, SearchPill, SegmentedTabs } from '@/components/FilterControls';
-import PageHeader, { KpiRow, blueAction, pesoTotal, pesoValue, plainAction } from '@/components/PageHeader';
+import PageHeader, { KpiRow, blueAction, greenAction, pesoTotal, pesoValue, plainAction } from '@/components/PageHeader';
+import Link from 'next/link';
+import Modal from '@/components/Modal';
 import { PsPortalProvider, psDateTime, psDay } from '@/components/PsPortal';
 import PsBidMatchDetails from '@/components/PsBidMatchDetails';
 import SourceTag, { SOURCES } from '@/components/SourceTag';
 import { startedByLabel } from '@/components/FetchedSection';
 import { usePsPhilgeps } from '@/lib/psContext';
-import { psRefOf } from '@/lib/opportunityWorkbook';
+import { philgepsTender, psRefOf, psTender } from '@/lib/opportunityWorkbook';
 import { psType } from '@/lib/tenderType';
 import { hospitalMatcher } from '@/lib/agencyKey';
 import { setNavCount } from '@/lib/navCounts';
@@ -24,7 +26,7 @@ import TenderDetails from '@/components/TenderDetails';
 import TypeBadge from '@/components/TypeBadge';
 import { philgepsType } from '@/lib/tenderType';
 import { activeTenders } from '@/lib/activeProducts';
-import { useScreened } from '@/lib/screened';
+import { addManyScreened, useScreened } from '@/lib/screened';
 import { stillReading } from '@/lib/documentsReading';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatInstant, formatPeso, instantDay } from '@/lib/format';
@@ -240,6 +242,8 @@ function BidMatch() {
   // Bid Match side (user, 2026-11-06): 'filtered' = tenders for our products, 'general' = every tender from a hospital
   // on the Hospital List, whatever it asks for
   const [view, setView] = useState('filtered');
+  // Screen All: its confirmation window (open), saving, an error, and how many were screened last (done)
+  const [screening, setScreening] = useState({ open: false, saving: false, error: '', done: 0 });
   // agency_key of the Hospital List's hospitals (not archived); PhilGEPS's tenders not for our products (light
   // columns), loaded the first time General is opened
   const [hospitalKeys, setHospitalKeys] = useState(() => new Set());
@@ -818,6 +822,37 @@ function BidMatch() {
     if (data) setSelectedBid((cur) => (cur?.key === t.key ? { ...t, bid: data } : cur));
   };
 
+  // Screen All (user, 2026-11-26): every tender listed now (all pages, after the tab, search and filters) that isn't
+  // screened yet goes to Screened Tenders, saved as "Add to Screened" in View details saves it. A window first says
+  // how many; nothing is saved before "Screen".
+  // (a PS-PhilGEPS row without a notice number can't be screened in View details either)
+  const toScreen = screened.rows ? filtered.filter((t) => !screened.has(t.source, t.ref) && (t.source !== 'ps' || psRefOf(t.row))) : [];
+  const alreadyScreened = filtered.length - toScreen.length;
+  const screenAll = async () => {
+    setScreening((s) => ({ ...s, saving: true, error: '' }));
+    try {
+      // General PhilGEPS rows hold light columns only: their full rows first (the export needs them)
+      const lightIds = toScreen.filter((t) => t.source === 'philgeps' && t.bid.light).map((t) => t.bid.id);
+      const full = {};
+      for (let i = 0; i < lightIds.length; i += 200) {
+        const { data, error } = await supabase.from('philgeps_opportunities').select('*').in('id', lightIds.slice(i, i + 200));
+        if (error) throw new Error(error.message);
+        for (const bid of data) full[bid.id] = bid;
+      }
+      const items = toScreen.map((t) => {
+        if (t.source === 'philgeps') {
+          const bid = full[t.bid.id] || t.bid;
+          return { source: 'philgeps', ref: bid.ref_no, title: bid.title, tender: philgepsTender(bid), products: bid.matched_molecules || [] };
+        }
+        return { source: 'ps', ref: t.ref, title: psCell(t.row, 'Notice Title'), tender: psTender(t.row, psList.headers, psNotice(t.row), psReading(t.row)), products: t.products };
+      });
+      await addManyScreened(items);
+      setScreening({ open: false, saving: false, error: '', done: items.length });
+    } catch (e) {
+      setScreening((s) => ({ ...s, saving: false, error: e.message }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white text-black antialiased">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
@@ -841,6 +876,18 @@ function BidMatch() {
                 {reloading || ps.portal.reloading ? <>Reloading <WorkingDots /></> : '↻ Reload'}
               </button>
               <button
+                onClick={() => setScreening({ open: true, saving: false, error: '', done: 0 })}
+                disabled={loadingList || !toScreen.length}
+                title={
+                  toScreen.length
+                    ? `Put the ${toScreen.length} listed tender${toScreen.length === 1 ? '' : 's'} not screened yet on Screened Tenders (asks first)`
+                    : 'Every listed tender is screened already'
+                }
+                className={greenAction}
+              >
+                ✓ Screen All{toScreen.length > 0 && ` (${toScreen.length})`}
+              </button>
+              <button
                 onClick={triggerSync}
                 disabled={syncing}
                 title="Log in to PhilGEPS and download the documents of the screened tenders (runs on the team computer). Public data updates by itself every hour, 6 AM to 5 PM."
@@ -860,6 +907,15 @@ function BidMatch() {
         />
 
         {scrapeError && <Notice tone="error">{scrapeError}</Notice>}
+        {screening.done > 0 && (
+          <Notice>
+            {screening.done} tender{screening.done === 1 ? ' was' : 's were'} added to{' '}
+            <Link href="/screened" className="font-semibold underline underline-offset-2 hover:text-[#0E5C7C]">
+              Screened Tenders
+            </Link>
+            .
+          </Notice>
+        )}
         {ps.portal.notices}
         <OcrHealthNotice />
 
@@ -1104,6 +1160,52 @@ function BidMatch() {
           )}
         </section>
       </div>
+
+      {/* Screen All: says how many first; nothing is saved before "Screen" */}
+      {screening.open && (
+        <Modal
+          title={`Screen ${toScreen.length} tender${toScreen.length === 1 ? '' : 's'}?`}
+          subtitle="They go to Screened Tenders, where the Excel export is"
+          busy={screening.saving}
+          onClose={() => !screening.saving && setScreening((s) => ({ ...s, open: false, error: '' }))}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setScreening((s) => ({ ...s, open: false, error: '' }))}
+                disabled={screening.saving}
+                className="rounded-lg border border-[#CBD5E1] px-4 py-2 text-xs font-medium text-black/62 transition hover:bg-[#1EA0DA]/6 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={screenAll}
+                disabled={screening.saving || !toScreen.length}
+                className="rounded-lg bg-[#4A8033] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#3F6F2C] disabled:cursor-wait disabled:opacity-60"
+              >
+                {screening.saving ? <>Screening <WorkingDots /></> : `Screen ${toScreen.length}`}
+              </button>
+            </>
+          }
+        >
+          <section className="rounded-[14px] border border-[#E2E8F0] p-4 text-sm text-black">
+            <p className="font-medium">
+              {toScreen.length} tender{toScreen.length === 1 ? '' : 's'} will be screened:{' '}
+              {toScreen.filter((t) => t.source === 'philgeps').length} PhilGEPS · {toScreen.filter((t) => t.source === 'ps').length} PS-PhilGEPS.
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-black/62">
+              <li>
+                All the tenders listed now on every page of the {view === 'general' ? 'General' : 'Filtered'} tab, with the search and filters you set ({filtered.length} listed).
+              </li>
+              {alreadyScreened > 0 && <li>{alreadyScreened} of them are screened already and stay as they are.</li>}
+              {view === 'general' && <li>General includes tenders that don&rsquo;t ask for our products in our dosages.</li>}
+              <li>Each one can be taken off again on Screened Tenders or with &ldquo;✓ Screened · Remove&rdquo; in View details.</li>
+            </ul>
+          </section>
+          {screening.error && <p className="rounded-xl border border-[#B3312C]/25 bg-[#B3312C]/6 p-3.5 text-xs font-medium text-[#B3312C]">Nothing more was screened: {screening.error}</p>}
+        </Modal>
+      )}
 
       {/* The freshest copy of the open tender (the lists reload while a Sync saves each result) */}
       {selectedBid?.source === 'philgeps' && (

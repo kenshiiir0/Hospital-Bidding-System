@@ -98,6 +98,17 @@ export async function addScreened(source, ref, title, tender, products = []) {
   await loadScreened();
 }
 
+// Screen All on Bid Match: items [{ source, ref, title, tender, products }], saved 200 at a time. A tender someone
+// screened in the meantime is kept as it is (the table's key is source + ref).
+export async function addManyScreened(items) {
+  for (let i = 0; i < items.length; i += 200) {
+    const rows = items.slice(i, i + 200).map(({ source, ref, title, tender, products = [] }) => ({ source, ref, title, tender: { ...tender, products } }));
+    const { error: err } = await supabase.from('screened_tenders').upsert(rows, { onConflict: 'source,ref', ignoreDuplicates: true });
+    if (err) throw new Error(err.message);
+  }
+  await loadScreened();
+}
+
 export async function removeScreened(source, ref) {
   const { error: err } = await supabase.from('screened_tenders').delete().eq('source', source).eq('ref', ref);
   if (err) throw new Error(err.message);
