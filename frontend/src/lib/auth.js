@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { OWN_AUTH, readSessionToken, sameOrigin, sessionUser } from './ownAuth.mjs';
 
 // Server side: is this request from a schedule ("Authorization: Bearer <CRON_SECRET>")? False when
 // CRON_SECRET is not set. Compared in constant time (as hashes, so the lengths match) so the answer
@@ -18,8 +19,18 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-// Returns { user } or { response } (a 401 to send back)
+// Returns { user } or { response } (a 401 to send back). With AUTH_MODE=own the session cookie of our own
+// sign-in (ownAuth.mjs) is used instead, and a change must come from the dashboard's own pages.
 export async function requireUser(request) {
+  if (OWN_AUTH) {
+    const refused = Response.json({ ok: false, error: 'Sign in first.' }, { status: 401 });
+    if (!sameOrigin(request)) return { response: refused };
+    const user = await sessionUser(readSessionToken(request)).catch((e) => {
+      console.error(`[auth] session check failed: ${e.message}`);
+      return null;
+    });
+    return user?.app_metadata.team ? { user } : { response: refused };
+  }
   const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (token) {
     const { data, error } = await supabase.auth.getUser(token);

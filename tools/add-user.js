@@ -9,19 +9,36 @@ const { createClient } = require('@supabase/supabase-js');
 // dashboard's sign-in screen (frontend/src/lib/username.js).
 //   node tools/add-user.js person@company.com            (random password)
 //   node tools/add-user.js someuser "MyPass1!"           (username, chosen password)
+//   node tools/add-user.js someuser --own                (our own sign-in, AUTH_MODE=own: table app_users in
+//                                                         DATABASE_URL; also the default when AUTH_MODE=own)
 
 const TEAM = { team: true };
 const USERNAME_DOMAIN = 'users.opportunity-radar.invalid';
 
 async function main() {
-    const [login, chosen] = process.argv.slice(2);
+    const args = process.argv.slice(2);
+    const own = args.includes('--own') || process.env.AUTH_MODE === 'own';
+    const [login, chosen] = args.filter((a) => a !== '--own');
     if (!login) {
-        console.log('Usage: node tools/add-user.js <email or username> [password]');
+        console.log('Usage: node tools/add-user.js <email or username> [password] [--own]');
         process.exit(2);
     }
     const email = (login.includes('@') ? login : `${login}@${USERNAME_DOMAIN}`).toLowerCase();
     const password = chosen || crypto.randomBytes(9).toString('base64url');
     if (password.length < 8) throw new Error('Use a password of at least 8 characters.');
+
+    if (own) {
+        const { pathToFileURL } = require('node:url');
+        const ownAuth = await import(pathToFileURL(require('node:path').join(__dirname, '..', 'frontend', 'src', 'lib', 'ownAuth.mjs')).href);
+        try {
+            const done = await ownAuth.setPassword(login, password);
+            console.log(done === 'created' ? `Created ${login} (${email}) for our own sign-in` : `${login} already existed; password reset and signed out everywhere.`);
+            if (!chosen) console.log(`Password: ${password}`);
+        } finally {
+            await ownAuth.db().end();
+        }
+        return;
+    }
 
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
         auth: { persistSession: false, autoRefreshToken: false }

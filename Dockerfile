@@ -46,7 +46,7 @@ RUN echo '{"private":true}' > package.json \
 COPY schema.sql ./
 # apply-schema.js: run on start (lib/schema.js). add-user.js: create a dashboard account or reset its password
 # from Coolify's terminal: node ../tools/add-user.js <username or email> [password] (uses SUPABASE_URL/SUPABASE_KEY)
-COPY tools/apply-schema.js tools/add-user.js ./tools/
+COPY tools/apply-schema.js tools/add-user.js tools/import-auth-users.js ./tools/
 COPY --from=build /app/frontend ./frontend
 
 # Next writes its runtime cache under .next; apply-schema writes /app/.schema-applied

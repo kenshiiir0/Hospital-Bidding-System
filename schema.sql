@@ -666,3 +666,48 @@ CREATE TABLE IF NOT EXISTS document_text (
 );
 ALTER TABLE document_text ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON document_text FROM anon, authenticated;
+
+-- Our own dashboard sign-in (frontend/src/lib/ownAuth.mjs, 2026-11-26), for the private server without Supabase
+-- Auth; used only when AUTH_MODE=own. login: lower-case email (a plain username is stored as
+-- <name>@users.opportunity-radar.invalid, lib/username.js). password_hash: scrypt, or bcrypt copied from
+-- Supabase (tools/import-auth-users.js; replaced by scrypt at the next sign-in). A session keeps only the
+-- SHA-256 of its cookie token. Server only: never readable through the Supabase API (password hashes).
+CREATE TABLE IF NOT EXISTS app_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    login TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    team BOOLEAN NOT NULL DEFAULT false,
+    disabled BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    password_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_sign_in_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS app_sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES app_users (id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_agent TEXT,
+    ip TEXT
+);
+CREATE INDEX IF NOT EXISTS app_sessions_user ON app_sessions (user_id);
+CREATE TABLE IF NOT EXISTS app_login_attempts (
+    id BIGSERIAL PRIMARY KEY,
+    login TEXT NOT NULL,
+    ip TEXT NOT NULL DEFAULT '',
+    ok BOOLEAN NOT NULL,
+    at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS app_login_attempts_login ON app_login_attempts (login, at DESC);
+CREATE INDEX IF NOT EXISTS app_login_attempts_ip ON app_login_attempts (ip, at DESC);
+ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_login_attempts ENABLE ROW LEVEL SECURITY;
+-- Supabase's API roles exist only on Supabase; a plain PostgreSQL has nothing to revoke
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        REVOKE ALL ON app_users, app_sessions, app_login_attempts FROM anon, authenticated;
+        REVOKE ALL ON SEQUENCE app_login_attempts_id_seq FROM anon, authenticated;
+    END IF;
+END $$;
