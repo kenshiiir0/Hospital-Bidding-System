@@ -43,11 +43,48 @@ const viaServer = createRemoteClient((body, signal) =>
   authFetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }).then(readAnswer),
 );
 
-// One browser client for every page. Sign-in, Storage and live updates still go to Supabase for now.
-export const supabase = VIA_SERVER
+// NEXT_PUBLIC_DOCUMENTS_ON_SERVER=1 (with STORAGE_BACKEND=disk on that server): the bid documents are on our own
+// server's disk, not in Supabase Storage. supabase.storage.from(bucket) then asks our server (/api/stored-files) for
+// the short-lived links that Storage's createSignedUrl gave, and downloads through them; the pages stay the same.
+const DOCUMENTS_ON_SERVER = process.env.NEXT_PUBLIC_DOCUMENTS_ON_SERVER === '1';
+async function serverLink(bucket, path, seconds, options) {
+  try {
+    const res = await authFetch('/api/stored-files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bucket, path, seconds, download: options?.download }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.data?.signedUrl) return { data: null, error: body?.error || { message: `the server answered ${res.status}` } };
+    // A full address, as Storage gives (Office's ms-word: links need one)
+    return { data: { signedUrl: new URL(body.data.signedUrl, window.location.origin).href }, error: null };
+  } catch (e) {
+    return { data: null, error: { message: e.message } };
+  }
+}
+const serverStorage = {
+  from: (bucket) => ({
+    createSignedUrl: (path, seconds, options) => serverLink(bucket, path, seconds, options),
+    async download(path) {
+      const link = await serverLink(bucket, path, 600);
+      if (link.error) return link;
+      try {
+        const res = await fetch(link.data.signedUrl);
+        if (!res.ok) return { data: null, error: { message: `the server answered ${res.status}` } };
+        return { data: await res.blob(), error: null };
+      } catch (e) {
+        return { data: null, error: { message: e.message } };
+      }
+    },
+  }),
+};
+
+// One browser client for every page. Sign-in and live updates still go to Supabase for now.
+export const supabase = VIA_SERVER || DOCUMENTS_ON_SERVER
   ? new Proxy(real, {
       get(target, prop) {
-        if (prop === 'from' || prop === 'rpc') return viaServer[prop];
+        if (VIA_SERVER && (prop === 'from' || prop === 'rpc')) return viaServer[prop];
+        if (DOCUMENTS_ON_SERVER && prop === 'storage') return serverStorage;
         const value = target[prop];
         return typeof value === 'function' ? value.bind(target) : value;
       },

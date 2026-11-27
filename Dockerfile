@@ -50,8 +50,10 @@ COPY schema.sql ./
 COPY tools/apply-schema.js tools/add-user.js tools/import-auth-users.js tools/copy-to-private-db.mjs ./tools/
 COPY --from=build /app/frontend ./frontend
 
-# Next writes its runtime cache under .next; apply-schema writes /app/.schema-applied
-RUN chown -R node:node /app
+# Next writes its runtime cache under .next; apply-schema writes /app/.schema-applied.
+# /data/documents: the bid documents with STORAGE_BACKEND=disk (Coolify Persistent Storage mounted there). Made here,
+# owned by the app's user, so a new volume mounted on it starts out writable by the app.
+RUN mkdir -p /data/documents && chown -R node:node /app /data
 USER node
 WORKDIR /app/frontend
 

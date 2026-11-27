@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { createPgClient, createPool } from './pgClient.mjs';
+import { createDiskStorage } from './diskStorage.mjs';
 import { createRemoteClient, readAnswer } from './remoteClient.mjs';
 
 // The server's database client, for every part of the code (API routes, Sync, reading, tools).
@@ -15,7 +16,32 @@ export const USES_PG = process.env.DATA_BACKEND === 'pg';
 // One client per server process; kept on globalThis so Next's reloads in development don't open new pools
 const shared = globalThis.__serverDb || (globalThis.__serverDb = {});
 
+// STORAGE_BACKEND=disk: the bid documents are on this server's disk (DOCUMENTS_DIR, diskStorage.mjs) instead of Supabase
+// Storage, whichever database is used; client.storage answers the same way, so callers don't change.
+export const USES_DISK = process.env.STORAGE_BACKEND === 'disk';
+const wrapped = new WeakMap();
+function withStorage(client) {
+  if (!client || !USES_DISK) return client;
+  if (!wrapped.has(client)) {
+    const root = process.env.DOCUMENTS_DIR;
+    const missing = { error: { name: 'StorageError', message: 'DOCUMENTS_DIR is not set (STORAGE_BACKEND=disk).', statusCode: '500' }, data: null };
+    const storage = root ? createDiskStorage(root) : { local: true, from: () => new Proxy({}, { get: () => async () => missing }) };
+    wrapped.set(client, new Proxy(client, {
+      get(target, prop) {
+        if (prop === 'storage') return storage;
+        const value = target[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }));
+  }
+  return wrapped.get(client);
+}
+
 export function serverDb() {
+  return withStorage(pickDb());
+}
+
+function pickDb() {
   if (process.env.DATA_BACKEND === 'dashboard') {
     const base = (process.env.DASHBOARD_URL || '').replace(/\/+$/, '');
     const secret = process.env.CRON_SECRET;

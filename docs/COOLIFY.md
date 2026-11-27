@@ -117,6 +117,26 @@ one moment of Supabase in one transaction (nothing is kept if it fails), moves t
 and ends with a row count and fingerprint per table on both sides. Each copy reads about 50 MB from Supabase.
 Supabase stays in use until switch day: a copy is a snapshot, so it is repeated with `--replace` right before.
 
+## Bid documents on the server's disk (instead of Supabase Storage)
+
+Reading documents out of Supabase Storage uses Supabase's monthly egress, so OCR stops when the month's budget is
+used up (`lib/usageMeter.mjs`). Kept on this server's disk, they cost nothing to read.
+
+1. **Persistent Storage** → add a **Volume**: destination path `/data/documents` (the image makes that folder,
+   owned by the app, so the volume starts out writable). It keeps the files across redeploys.
+2. Settings: `STORAGE_BACKEND=disk`, `DOCUMENTS_DIR=/data/documents`, and the **Build Variable**
+   `NEXT_PUBLIC_DOCUMENTS_ON_SERVER=1` (the pages then open documents through this server). Redeploy.
+
+Then every part that used `supabase.storage` (Sync's downloads, reading, OCR and its cache `_ocr/`, removing
+files that aren't ours, View / Save / Source / ZIP in the pages) uses `/data/documents/<bucket>/<path>`, the same
+paths as in Storage, and the egress budget no longer applies. The pages get short-lived signed links from
+`/api/stored-files` (signed-in team only). Files already in Supabase Storage are not on the disk: they are brought
+over separately. Leave all three off on Vercel.
+
+**Switch it on only together with the Syncs moving to this server.** While Vercel (or the office PC) still runs the
+Syncs, they save new documents in Supabase Storage, and this site would not find them on its disk. Checked with
+`node --env-file=.env tools/check-disk-storage.mjs [site address]`.
+
 ## How this differs from Vercel
 
 - **No PhilGEPS fetching in the container**: like the Vercel copy, the image has no `scraper.js`/Chrome, so
