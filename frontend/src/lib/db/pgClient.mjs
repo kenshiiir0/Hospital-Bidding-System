@@ -31,22 +31,25 @@ class DbError extends Error {
 // A missing table is PGRST205 from Supabase's API (42P01 from the database itself)
 const asError = (e) => ({ message: e.message, code: e.code === '42P01' ? 'PGRST205' : e.code || '', details: e.detail ?? e.details ?? null, hint: e.hint ?? null });
 
-// "details->documents", "job->>id", "items->0" → SQL, and the key PostgREST names it by (the last part)
+// "details->documents", "job->>id", "items->0", 'notices->"12-34"->documents' → SQL, and the key PostgREST names
+// it by (the last part). A key in double quotes is always a key, never a list position. Also safe for names that
+// come from the browser (/api/data): every key goes into the SQL as an escaped literal.
 function columnExpr(expr) {
-  const m = String(expr).trim().match(/^([A-Za-z_][A-Za-z0-9_]*)((?:->>?[A-Za-z0-9_]+)*)$/);
+  const m = String(expr).trim().match(/^([A-Za-z_][A-Za-z0-9_]*)((?:->>?(?:[A-Za-z0-9_]+|"[^"]*"))*)$/);
   if (!m) throw new DbError(`Not a valid column: ${expr}`, '42703');
   let sql = ident(m[1]);
   let key = m[1];
-  for (const [, arrow, part] of m[2].matchAll(/(->>?)([A-Za-z0-9_]+)/g)) {
-    sql += arrow + (/^\d+$/.test(part) ? part : literal(part));
-    key = part;
+  for (const [, arrow, bare, quoted] of m[2].matchAll(/(->>?)(?:([A-Za-z0-9_]+)|"([^"]*)")/g)) {
+    sql += arrow + (bare !== undefined && /^\d+$/.test(bare) ? bare : literal(bare ?? quoted));
+    key = bare ?? quoted;
   }
   return { sql, key };
 }
 
 // select('*'), select('a, b'), select('jid:job->>id, details->documents')
 function selectList(columns) {
-  const items = String(columns || '*').split(',').map((s) => s.trim()).filter(Boolean);
+  // Split on commas outside double quotes (a quoted json key may hold one)
+  const items = (String(columns || '*').match(/(?:[^,"]|"[^"]*")+/g) || []).map((s) => s.trim()).filter(Boolean);
   return items
     .map((item) => {
       if (item === '*') return '*';

@@ -65,6 +65,15 @@ node ../tools/import-auth-users.js --apply    # copy them, same passwords
 node ../tools/add-user.js someuser --own      # new account / password reset in our own sign-in
 ```
 
+## Pages reading through this server (for the private database, testing)
+
+`NEXT_PUBLIC_DATA_VIA_SERVER=1` (a **Build Variable**, so redeploy after setting it) makes the pages send their
+database reads and writes to this server (`/api/data`) instead of straight to Supabase. The server checks the
+sign-in and the same rules as the database (team members read; they may only add/edit hospitals and add/remove
+Screened Tenders) and runs the query with its own database client (`DATA_BACKEND`). Sign-in, bid documents and
+live updates still use Supabase for now. Leave it off on Vercel: every read would use Vercel's computing time.
+Checked with `node --env-file=.env tools/check-data-route.mjs <site address>`.
+
 ## How this differs from Vercel
 
 - **No PhilGEPS fetching in the container**: like the Vercel copy, the image has no `scraper.js`/Chrome, so

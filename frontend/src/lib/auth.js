@@ -19,6 +19,8 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
+const acceptedTokens = new Map();
+
 // Returns { user } or { response } (a 401 to send back). With AUTH_MODE=own the session cookie of our own
 // sign-in (ownAuth.mjs) is used instead, and a change must come from the dashboard's own pages.
 export async function requireUser(request) {
@@ -33,8 +35,17 @@ export async function requireUser(request) {
   }
   const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (token) {
+    // A page sends many requests in a row (all of them, with /api/data): an accepted token is trusted for a minute
+    // instead of asking Supabase each time. A sign-out elsewhere is then noticed within that minute.
+    const key = createHash('sha256').update(token).digest('base64');
+    const known = acceptedTokens.get(key);
+    if (known && known.until > Date.now()) return { user: known.user };
     const { data, error } = await supabase.auth.getUser(token);
-    if (!error && data.user?.app_metadata?.team) return { user: data.user };
+    if (!error && data.user?.app_metadata?.team) {
+      if (acceptedTokens.size >= 500) acceptedTokens.clear();
+      acceptedTokens.set(key, { user: data.user, until: Date.now() + 60_000 });
+      return { user: data.user };
+    }
   }
   return { response: Response.json({ ok: false, error: 'Sign in first.' }, { status: 401 }) };
 }
