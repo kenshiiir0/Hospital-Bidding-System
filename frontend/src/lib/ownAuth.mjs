@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { hashPassword, verifyNothing, verifyPassword, MAX_PASSWORD_LENGTH } from './password.mjs';
 import { toLoginEmail } from './username.js';
+import { connectionOptions } from './db/pgClient.mjs';
 
 // Our own dashboard sign-in, for a database without Supabase Auth (the private Coolify server). It is used
 // only when AUTH_MODE=own; otherwise Supabase Auth stays in charge (auth.js) and none of this runs.
@@ -25,10 +26,8 @@ export function db() {
   if (pool) return pool;
   const url = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
   if (!url) throw new Error('DATABASE_URL is not set: our own sign-in needs the database.');
-  const { hostname, searchParams } = new URL(url);
-  // Coolify's internal database (a host without dots) and localhost speak plain TCP; hosted ones need TLS
-  const local = !hostname.includes('.') || hostname === 'localhost' || hostname === '127.0.0.1' || searchParams.get('sslmode') === 'disable';
-  pool = new pg.Pool({ connectionString: url, ssl: local ? false : { rejectUnauthorized: false }, max: 3, idleTimeoutMillis: 30_000 });
+  // Encryption as the address asks (db/pgClient.mjs connectionOptions)
+  pool = new pg.Pool({ ...connectionOptions(url), max: 3, idleTimeoutMillis: 30_000 });
   return pool;
 }
 

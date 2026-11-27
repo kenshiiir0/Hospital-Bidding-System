@@ -128,11 +128,22 @@ const types = {
   },
 };
 
+// How to connect to a database address: { connectionString, ssl }. The address's own sslmode decides (Coolify adds
+// ?sslmode=require when the database has SSL on). Without one: Coolify's internal database (a host without dots)
+// and localhost speak plain TCP; hosted ones need TLS. Encrypted, but the certificate isn't checked (Coolify makes
+// its own; Supabase's pooler too). sslmode is taken out of the address: pg would otherwise let it override ssl.
+export function connectionOptions(url) {
+  const parsed = new URL(url);
+  const { hostname } = parsed;
+  const mode = parsed.searchParams.get('sslmode');
+  const local = !hostname.includes('.') || hostname === 'localhost' || hostname === '127.0.0.1';
+  const plain = mode ? mode === 'disable' : local;
+  parsed.searchParams.delete('sslmode');
+  return { connectionString: parsed.toString(), ssl: plain ? false : { rejectUnauthorized: false } };
+}
+
 export function createPool(url) {
-  const { hostname, searchParams } = new URL(url);
-  // Coolify's internal database (a host without dots) and localhost speak plain TCP; hosted ones need TLS
-  const local = !hostname.includes('.') || hostname === 'localhost' || hostname === '127.0.0.1' || searchParams.get('sslmode') === 'disable';
-  const pool = new pg.Pool({ connectionString: url, ssl: local ? false : { rejectUnauthorized: false }, max: Number(process.env.DB_POOL_SIZE) || 5, idleTimeoutMillis: 30_000, types });
+  const pool = new pg.Pool({ ...connectionOptions(url), max: Number(process.env.DB_POOL_SIZE) || 5, idleTimeoutMillis: 30_000, types });
   pool.on('error', (e) => console.error(`[db] idle connection: ${e.message}`));
   return pool;
 }
