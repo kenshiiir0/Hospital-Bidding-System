@@ -91,6 +91,32 @@ They then reach only the tables the log-in needs (`app/api/data/route.js`, `PROG
 written but never read back. Until switch day they keep `SUPABASE_URL` + `SUPABASE_KEY`. Don't point them at Vercel
 this way: the log-in laptop asks every 3 seconds, which would use Vercel's computing time.
 
+## Copying the data into the private database
+
+The tables (not the bid documents) are copied from the application's **Terminal**, which reaches both Supabase and
+the private database. The application needs these two settings; redeploy after adding them (a container only sees
+settings it was started with):
+
+| Setting | Value |
+| --- | --- |
+| `SUPABASE_DB_URL` | Supabase → Connect → Session pooler connection string (read only here) |
+| `DATABASE_URL` | The private database's **internal** URL (Coolify → the database → General) |
+
+`DATABASE_URL` changes nothing else while `DATA_BACKEND` and `AUTH_MODE` are not set.
+
+```sh
+node ../tools/copy-to-private-db.mjs             # what would happen; changes nothing
+node ../tools/copy-to-private-db.mjs --apply     # first copy; stops if the private database already has rows
+node ../tools/copy-to-private-db.mjs --check     # compare both sides again, table by table
+node ../tools/copy-to-private-db.mjs --replace   # fresh copy over the old one (switch day)
+```
+
+It adds stand-ins for the Supabase-only parts `schema.sql` mentions (`auth.jwt()`, `realtime`, `storage`, the API
+roles), applies `schema.sql`, stops if any Supabase column is missing or has another type, copies every row from
+one moment of Supabase in one transaction (nothing is kept if it fails), moves the id counters past the copied rows
+and ends with a row count and fingerprint per table on both sides. Each copy reads about 50 MB from Supabase.
+Supabase stays in use until switch day: a copy is a snapshot, so it is repeated with `--replace` right before.
+
 ## How this differs from Vercel
 
 - **No PhilGEPS fetching in the container**: like the Vercel copy, the image has no `scraper.js`/Chrome, so
