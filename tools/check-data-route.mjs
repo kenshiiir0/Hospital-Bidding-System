@@ -92,6 +92,51 @@ try {
   await refused('delete without filter', 'screened_tenders', [['delete']]);
   await refused('unknown step', 'hospitals', [['select', '*'], ['csv']]);
   await anon.auth.signOut({ scope: 'local' });
+
+  // --- programs outside the server (DATA_BACKEND=dashboard, signed with CRON_SECRET): the PS-PhilGEPS log-in ---
+  process.env.DATA_BACKEND = 'dashboard';
+  process.env.DASHBOARD_URL = base;
+  const { serverDb } = await import('../frontend/src/lib/db/index.mjs');
+  const program = serverDb();
+  async function sameAsProgram(name, build) {
+    const [a, b] = await Promise.all([build(admin), build(program)]);
+    const pick = (x) => sortKeys({ data: x.data ?? null, count: x.count ?? null, error: x.error ? x.error.code || 'error' : null });
+    if (JSON.stringify(pick(a)) === JSON.stringify(pick(b))) return passed++;
+    failed++;
+    console.log(`FAIL ${name}\n  supabase: ${JSON.stringify(pick(a)).slice(0, 300)}\n  program:  ${JSON.stringify(pick(b)).slice(0, 300)}`);
+    if (b.error) console.log(`  program error: ${b.error.message}`);
+  }
+  const programRefused = async (name, build) => {
+    const r = await build(program);
+    if (r.error) return passed++;
+    failed++;
+    console.log(`FAIL ${name}: not refused (${JSON.stringify(r).slice(0, 200)})`);
+  };
+  await sameAsProgram('log-in asked (relay status fields)', (db) => db.from('philgeps_sync_relay').select('jid:job->>id, status:job->>status, host:job->>host').eq('id', 'ps-connect').maybeSingle());
+  await sameAsProgram('connected at', (db) => db.from('ps_sync_status').select('connected_at').eq('id', 'latest').maybeSingle());
+  const day = new Date(Date.now() - 86400_000).toISOString();
+  await sameAsProgram('log-in attempts', (db) => db.from('login_attempts').select('at, outcome').eq('site', 'ps-philgeps').gte('at', day).order('at', { ascending: false }).limit(5));
+  // The real log-in rules code, through the dashboard
+  // (a paused log-in is a correct answer too; only a failed database read is not)
+  const { checkLogin, LoginGuardError } = await import('../frontend/src/lib/loginGuard.mjs');
+  await checkLogin('ps-philgeps').then(() => passed++, (e) => (e instanceof LoginGuardError ? passed++ : (failed++, console.log(`FAIL loginGuard: ${e.message}`))));
+  // A write on a test row of the relay table (removed at the end)
+  const testRow = { id: 'zz-relay-test', job: { status: 'test' }, updated_at: new Date().toISOString() };
+  const w = await program.from('philgeps_sync_relay').upsert(testRow);
+  const back = await admin.from('philgeps_sync_relay').select('job').eq('id', 'zz-relay-test').maybeSingle();
+  if (!w.error && back.data?.job?.status === 'test') passed++;
+  else failed++, console.log(`FAIL relay upsert: ${w.error?.message || 'row not written'}`);
+  await admin.from('philgeps_sync_relay').delete().eq('id', 'zz-relay-test');
+
+  await programRefused('read the saved session', (db) => db.from('ps_philgeps_session').select('*'));
+  await programRefused('session upsert with rows back', (db) => db.from('ps_philgeps_session').upsert({ id: 'zz-none' }).select());
+  await programRefused('read a page table (hospitals)', (db) => db.from('hospitals').select('name').limit(1));
+  await programRefused('write hospitals', (db) => db.from('hospitals').insert({ agency_key: 'zz', name: 'zz' }));
+  await programRefused('update status without filter', (db) => db.from('ps_sync_status').update({ connected_at: null }));
+  await programRefused('delete relay rows', (db) => db.from('philgeps_sync_relay').delete().eq('id', 'zz-none'));
+  const wrong = await fetch(`${base}/api/data`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer wrong' }, body: JSON.stringify({ table: 'philgeps_sync_relay', steps: [['select', 'id']] }) });
+  if (wrong.status === 401) passed++;
+  else failed++, console.log(`FAIL wrong secret: answered ${wrong.status}`);
 } finally {
   await admin.auth.admin.deleteUser(made.user.id);
 }

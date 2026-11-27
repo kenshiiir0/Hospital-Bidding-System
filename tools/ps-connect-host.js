@@ -1,7 +1,6 @@
 require('dotenv').config({ quiet: true });
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { createClient } = require('@supabase/supabase-js');
 
 // The office log-in laptop for PS-PhilGEPS Connect (user 2026-11-12): from GitHub's computer Google's captcha
 // kept everyone in a loop of slow picture puzzles (a data-centre address), while on the office laptop's own Chrome
@@ -11,13 +10,15 @@ const { createClient } = require('@supabase/supabase-js');
 // - every POLL_MS it looks at row 'ps-connect' (status fields only, not the picture) and, for a log-in asked of
 //   the host, runs tools/ps-connect-cloud.js <id> here: the same live picture and clicks as the cloud log-in, but
 //   in this laptop's Chrome. Whoever pressed Sync, on any device, ticks the captcha on that picture.
-// Usage: node tools/ps-connect-host.js   (SUPABASE_URL, SUPABASE_KEY, PS_PHILGEPS_* in .env)
+// Usage: node tools/ps-connect-host.js   (PS_PHILGEPS_* in .env, and the database: SUPABASE_URL + SUPABASE_KEY, or
+// after the move to the private server DATA_BACKEND=dashboard + DASHBOARD_URL + CRON_SECRET: frontend/src/lib/db/index.mjs)
 const HEARTBEAT_MS = 30 * 1000;
 const POLL_MS = 3000;
 const ROOT = path.join(__dirname, '..');
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-const table = () => supabase.from('philgeps_sync_relay');
+const DB_SETTINGS = 'The database settings are missing in .env: SUPABASE_URL + SUPABASE_KEY, or DATA_BACKEND=dashboard + DASHBOARD_URL + CRON_SECRET';
+let db = null;
+const table = () => db.from('philgeps_sync_relay');
 const log = (msg) => console.log(`${new Date().toLocaleString()}  ${msg}`);
 
 let busy = false;
@@ -50,7 +51,9 @@ async function poll() {
 }
 
 async function main() {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) throw new Error('SUPABASE_URL and SUPABASE_KEY must be in .env');
+  const { serverDb } = await import('../frontend/src/lib/db/index.mjs');
+  db = serverDb();
+  if (!db) throw new Error(DB_SETTINGS);
   log('PS-PhilGEPS log-in host is running: log-ins asked for on any device open here.');
   await heartbeat();
   setInterval(heartbeat, HEARTBEAT_MS);
@@ -59,7 +62,7 @@ async function main() {
 
 // Say offline at once when stopped, so the next log-in goes to GitHub without waiting for the heartbeat to age
 async function stop() {
-  await table().upsert({ id: 'ps-connect-host', worker_seen_at: null, job: { busy: false, stopped: Date.now() } }).catch(() => {});
+  if (db) await table().upsert({ id: 'ps-connect-host', worker_seen_at: null, job: { busy: false, stopped: Date.now() } }).catch(() => {});
   process.exit(0);
 }
 process.on('SIGINT', stop);

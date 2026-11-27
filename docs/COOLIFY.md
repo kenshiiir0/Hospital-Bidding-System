@@ -74,6 +74,23 @@ Screened Tenders) and runs the query with its own database client (`DATA_BACKEND
 live updates still use Supabase for now. Leave it off on Vercel: every read would use Vercel's computing time.
 Checked with `node --env-file=.env tools/check-data-route.mjs <site address>`.
 
+## Programs outside the server (database stays private)
+
+The private database is not opened to the internet. Programs that run elsewhere and used Supabase's keys (the office
+PS-PhilGEPS log-in laptop `tools/ps-connect-host.js`, the GitHub fallback `tools/ps-connect-cloud.js`, and the
+session save in `ps-philgeps-session.js`) go through the dashboard instead, with these settings in their `.env` /
+GitHub secrets:
+
+| Setting | Value |
+| --- | --- |
+| `DATA_BACKEND` | `dashboard` |
+| `DASHBOARD_URL` | The Coolify site's address |
+| `CRON_SECRET` | Same as the dashboard's |
+
+They then reach only the tables the log-in needs (`app/api/data/route.js`, `PROGRAMS`): the saved session can be
+written but never read back. Until switch day they keep `SUPABASE_URL` + `SUPABASE_KEY`. Don't point them at Vercel
+this way: the log-in laptop asks every 3 seconds, which would use Vercel's computing time.
+
 ## How this differs from Vercel
 
 - **No PhilGEPS fetching in the container**: like the Vercel copy, the image has no `scraper.js`/Chrome, so

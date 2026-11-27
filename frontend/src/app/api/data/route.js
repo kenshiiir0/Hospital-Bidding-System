@@ -1,4 +1,4 @@
-import { requireUser } from '@/lib/auth';
+import { hasCronSecret, requireUser } from '@/lib/auth';
 import { serverDb } from '@/lib/db/index.mjs';
 
 // The pages' database reads and writes, for a server without Supabase's API (the private Coolify database).
@@ -7,13 +7,30 @@ import { serverDb } from '@/lib/db/index.mjs';
 // Here it is checked and run on the server's database client, with the same rules the database gave the
 // browser under Supabase (schema.sql): signed-in team members read these tables, and may only add/edit hospitals
 // and add/remove Screened Tenders. Everything else (Syncs, updates, products, ...) goes through its own API route.
+// Programs outside the server (db/index.mjs DATA_BACKEND=dashboard: the office log-in laptop, GitHub jobs) sign with
+// CRON_SECRET and get their own, separate list: only the tables the PS-PhilGEPS log-in needs.
 
-const READ = new Set([
+const PAGE_READ = new Set([
   'philgeps_opportunities', 'activity_log', 'ps_philgeps_snapshot', 'ps_sync_status', 'ps_tender_analysis', 'hospitals',
   'hospital_postings', 'products', 'award_notifications', 'screened_tenders', 'ocr_status', 'bid_abstracts',
   'abstract_tracker', 'abstract_tracker_items', 'abstract_tracker_molecules',
 ]);
-const WRITE = { hospitals: new Set(['insert', 'update', 'upsert']), screened_tenders: new Set(['insert', 'delete', 'upsert']) };
+const PAGES = {
+  read: PAGE_READ,
+  write: { hospitals: new Set(['insert', 'update', 'upsert']), screened_tenders: new Set(['insert', 'delete', 'upsert']) },
+};
+// The PS-PhilGEPS log-in outside the server: tools/ps-connect-host.js (online / log-in asked), tools/ps-connect-cloud.js
+// (picture, clicks, result), ps-philgeps-session.js (saves the session, marks connected; lib/loginGuard.mjs log-in
+// rules). The saved session can be written but never read back from outside.
+const PROGRAMS = {
+  read: new Set(['philgeps_sync_relay', 'ps_sync_status', 'login_attempts']),
+  write: {
+    philgeps_sync_relay: new Set(['upsert']),
+    ps_philgeps_session: new Set(['upsert']),
+    ps_sync_status: new Set(['update']),
+    login_attempts: new Set(['insert']),
+  },
+};
 
 const ACTIONS = new Set(['select', 'insert', 'upsert', 'update', 'delete']);
 const FILTERS = new Set(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'filter', 'match', 'not', 'or']);
@@ -26,8 +43,10 @@ const plain = (v) => v && typeof v === 'object' && !Array.isArray(v);
 const pick = (o, keys) => (plain(o) ? Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])) : undefined);
 
 // Checks the steps; returns { action, steps } with cleaned arguments, or { error }
-function check(table, steps) {
-  if (!READ.has(table)) return { error: `The table "${table}" can't be read from the pages.` };
+function check(table, steps, rules) {
+  const pages = rules === PAGES;
+  const writes = rules.write[table];
+  if (!rules.read.has(table) && !writes) return { error: `The table "${table}" can't be used from ${pages ? 'the pages' : 'outside'}.` };
   if (!Array.isArray(steps) || !steps.length || steps.length > MAX_STEPS) return { error: 'No query.' };
   let action = null;
   const out = [];
@@ -39,20 +58,22 @@ function check(table, steps) {
       if (name === 'select') {
         // "(" would embed another table (PostgREST resource embedding), which could read past these rules
         if (args[0] !== undefined && (!isText(args[0]) || args[0].includes('('))) return { error: 'Bad column list.' };
+        // Also after a write: select() would send the written rows back (the saved session must never come back out)
+        if (!rules.read.has(table)) return { error: `The table "${table}" can't be read from ${pages ? 'the pages' : 'outside'}.` };
         out.push([name, args[0] ?? '*', action ? undefined : pick(args[1], ['count', 'head'])]);
         action ||= 'select';
         continue;
       }
       if (action) return { error: 'One action per query.' };
       action = name;
-      if (!(WRITE[table] && WRITE[table].has(name))) return { error: `The pages can't ${name} in "${table}".` };
+      if (!writes?.has(name)) return { error: `${pages ? 'The pages' : 'Programs outside the server'} can't ${name} in "${table}".` };
       if (name === 'delete') out.push([name]);
       else {
         const rows = args[0];
         if (!(plain(rows) || (Array.isArray(rows) && rows.length <= 500 && rows.every(plain)))) return { error: 'Bad rows.' };
         const options = name === 'upsert' ? pick(args[1], ['onConflict', 'ignoreDuplicates']) : undefined;
         // Screened Tenders may be added but never changed: an upsert there must skip rows that already exist
-        if (name === 'upsert' && table === 'screened_tenders' && !options?.ignoreDuplicates) return { error: `The pages can't update "${table}".` };
+        if (pages && name === 'upsert' && table === 'screened_tenders' && !options?.ignoreDuplicates) return { error: `The pages can't update "${table}".` };
         if (options?.onConflict !== undefined && !isText(options.onConflict)) return { error: 'Bad onConflict.' };
         out.push(options ? [name, rows, options] : [name, rows]);
       }
@@ -95,11 +116,14 @@ function check(table, steps) {
 const failed = (message, status = 400) => Response.json({ data: null, error: { message, code: 'DATA_ROUTE', details: null, hint: null }, count: null, status }, { status });
 
 export async function POST(request) {
-  const { response } = await requireUser(request);
-  if (response) return response;
+  const program = hasCronSecret(request);
+  if (!program) {
+    const { response } = await requireUser(request);
+    if (response) return response;
+  }
   const body = await request.json().catch(() => null);
   if (!plain(body)) return failed('Bad request.');
-  const checked = check(body.table, body.steps);
+  const checked = check(body.table, body.steps, program ? PROGRAMS : PAGES);
   if (checked.error) return failed(checked.error);
   const db = serverDb();
   if (!db) return failed('The database settings are missing on the server.', 500);

@@ -63,18 +63,18 @@ async function saveCookies(page) {
     fs.writeFileSync(COOKIES_FILE, JSON.stringify({ savedAt: new Date().toISOString(), cookies: ours }, null, 1));
 }
 
-// Copies the saved session to Supabase (table ps_philgeps_session, private: secret key only) so the
-// deployed dashboard's Sync can use it, and marks PS-PhilGEPS as connected for every dashboard
+// Copies the saved session to the database (table ps_philgeps_session, private: server only) so the deployed
+// dashboard's Sync can use it, and marks PS-PhilGEPS as connected for every dashboard. The database settings:
+// SUPABASE_URL + SUPABASE_KEY, or DATA_BACKEND=dashboard + DASHBOARD_URL + CRON_SECRET (frontend/src/lib/db/index.mjs).
 async function shareSession() {
-    const { createClient } = require('@supabase/supabase-js');
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false }
-    });
+    const { serverDb } = await import('./frontend/src/lib/db/index.mjs');
+    const db = serverDb();
+    if (!db) throw new PsPhilgepsSessionError('CONNECT_FAILED', 'Logged in, but the database settings are missing (SUPABASE_URL + SUPABASE_KEY, or DATA_BACKEND=dashboard + DASHBOARD_URL + CRON_SECRET).');
     const { cookies, savedAt } = JSON.parse(fs.readFileSync(COOKIES_FILE, 'utf8'));
-    const { error } = await supabase.from('ps_philgeps_session').upsert({ id: 'current', cookies, saved_at: savedAt });
-    if (error) throw new PsPhilgepsSessionError('CONNECT_FAILED', `Logged in, but the session could not be saved to Supabase: ${error.message}`);
-    await supabase.from('ps_sync_status').update({ connected_at: savedAt }).eq('id', 'latest');
-    sessionLog('Session shared with Supabase');
+    const { error } = await db.from('ps_philgeps_session').upsert({ id: 'current', cookies, saved_at: savedAt });
+    if (error) throw new PsPhilgepsSessionError('CONNECT_FAILED', `Logged in, but the session could not be saved: ${error.message}`);
+    await db.from('ps_sync_status').update({ connected_at: savedAt }).eq('id', 'latest');
+    sessionLog('Session shared with the database');
 }
 
 function forgetSession() {

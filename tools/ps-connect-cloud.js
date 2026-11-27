@@ -1,7 +1,6 @@
 require('dotenv').config({ quiet: true });
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { createClient } = require('@supabase/supabase-js');
 
 // PS-PhilGEPS Connect in the cloud (.github/workflows/ps-connect.yml), so anyone signed in to the dashboard can
 // reconnect from any device: runs `node ps-philgeps-session.js --connect --live` here and relays it.
@@ -11,7 +10,10 @@ const { createClient } = require('@supabase/supabase-js');
 // - Fallback, if the channel can't be used: philgeps_sync_relay row 'ps-connect' (status, and the picture every
 //   few seconds) and row 'ps-connect-input' (the latest click), through the dashboard's server (lib/psCloudConnect.mjs).
 // A person ticks the captcha; the session script saves the session to Supabase itself.
-// Usage: node tools/ps-connect-cloud.js <connect id>   (SUPABASE_URL, SUPABASE_KEY, PS_PHILGEPS_* in the env)
+// Through the dashboard (DATA_BACKEND=dashboard, the private server without Supabase) there is no live channel: the
+// fallback above carries everything.
+// Usage: node tools/ps-connect-cloud.js <connect id>   (PS_PHILGEPS_* and the database settings in the env:
+// SUPABASE_URL + SUPABASE_KEY, or DATA_BACKEND=dashboard + DASHBOARD_URL + CRON_SECRET; frontend/src/lib/db/index.mjs)
 const ID = process.argv[2];
 // Pictures: at most every STREAM_EVERY_MS on the channel, every SAVE_EVERY_MS in the database
 const STREAM_EVERY_MS = 200;
@@ -22,14 +24,17 @@ const INPUT_EVERY_MS = Number(process.env.PS_INPUT_EVERY_MS) || 400;
 // Timestamped lines for the diagnosis (which way the pictures and clicks travel, and how fast)
 const stamp = (msg) => console.log(`${new Date().toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila' })}  ${msg}`);
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-const table = () => supabase.from('philgeps_sync_relay');
+let db = null;
+const table = () => db.from('philgeps_sync_relay');
 
 let job = { id: ID, status: 'connecting', view: 'live', frame: null, error: null };
 const save = () => table().upsert({ id: 'ps-connect', job, updated_at: new Date().toISOString() }).then(({ error }) => error && console.warn(`Saving: ${error.message}`));
 
 async function main() {
   if (!ID) throw new Error('Usage: node tools/ps-connect-cloud.js <connect id>');
+  const { serverDb } = await import('../frontend/src/lib/db/index.mjs');
+  db = serverDb();
+  if (!db) throw new Error('The database settings are missing: SUPABASE_URL + SUPABASE_KEY, or DATA_BACKEND=dashboard + DASHBOARD_URL + CRON_SECRET');
   const { data } = await table().select('job').eq('id', 'ps-connect').maybeSingle();
   // Another connect was started since this one was asked for: leave it alone
   if (data?.job?.id && data.job.id !== ID) return console.log('A newer connect is running; stopping.');
@@ -45,11 +50,11 @@ async function main() {
   // The latest picture of the log-in page
   let frame = null;
 
-  // The live channel
-  const channel = supabase.channel(`ps-connect:${ID}`, { config: { private: true, broadcast: { self: false } } });
+  // The live channel (Supabase only)
+  const channel = typeof db.channel === 'function' ? db.channel(`ps-connect:${ID}`, { config: { private: true, broadcast: { self: false } } }) : null;
   let streaming = false;
   channel
-    .on('broadcast', { event: 'click' }, ({ payload }) => {
+    ?.on('broadcast', { event: 'click' }, ({ payload }) => {
       if (Number.isFinite(payload?.x) && Number.isFinite(payload?.y)) {
         stamp(`Click on the live channel (${Math.round(payload.x)}, ${Math.round(payload.y)})`);
         send(`CLICK ${Math.round(payload.x)} ${Math.round(payload.y)}`);
@@ -112,8 +117,10 @@ async function main() {
   const last = errors.split('\n').map((l) => l.trim()).filter(Boolean).findLast((l) => /^[A-Z_]+: /.test(l)) || '';
   job = { ...job, frame: null, finishedAt: Date.now(), ...(code === 0 ? { status: 'success' } : { status: 'failed', error: last.replace(/^[A-Z_]+:\s*/, '') || `Stopped (exit ${code})` }) };
   await save();
-  await channel.send({ type: 'broadcast', event: 'done', payload: { status: job.status, error: job.error || null } }).catch(() => {});
-  await supabase.removeChannel(channel).catch(() => {});
+  if (channel) {
+    await channel.send({ type: 'broadcast', event: 'done', payload: { status: job.status, error: job.error || null } }).catch(() => {});
+    await db.removeChannel(channel).catch(() => {});
+  }
   console.log(code === 0 ? 'Connected to PS-PhilGEPS.' : `Not connected: ${job.error}`);
   if (code !== 0) process.exitCode = 1;
   process.exit();
@@ -122,6 +129,6 @@ async function main() {
 main().catch(async (e) => {
   console.error(e.message);
   job = { ...job, frame: null, status: 'failed', error: e.message, finishedAt: Date.now() };
-  await save();
+  if (db) await save();
   process.exit(1);
 });
