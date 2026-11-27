@@ -7,6 +7,7 @@ import { sweepSession } from '@/lib/philgepsSync.mjs';
 import { visionBackfill } from '@/lib/ocrVision.mjs';
 import { admin } from '@/lib/ocrQueue.mjs';
 import { triggerOcr } from '@/lib/ocrTrigger.mjs';
+import { USES_DISK } from '@/lib/db/index.mjs';
 
 // Reading documents and hospital pages takes a while; the work below stops well before this limit
 export const maxDuration = 300;
@@ -52,6 +53,9 @@ export async function GET(request) {
         if (r.read) await triggerOcr('ps-documents');
       })
       .catch((e) => console.error(`[ps-docs] ${e.message}`));
+    // Documents on this server's disk: the OCR job runs here, started at most hourly while scanned ones wait
+    // (GitHub's hourly run can't reach them)
+    if (USES_DISK) await triggerOcr('hourly').then((r) => r.started && console.log('[ocr] started on this server'));
     await checkHospitals({ maxMs: 60000 })
       .then((r) => r.checked && console.log(`[hospitals] checked ${r.checked}, new postings ${r.found}`))
       .catch((e) => console.error(`[hospitals] ${e.message}`));

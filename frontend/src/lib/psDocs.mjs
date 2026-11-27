@@ -1635,7 +1635,8 @@ async function downloadWithRetry(supabase, bucket, path) {
     return { data: new Blob([fresh]), error: null };
   }
   // The month's Storage downloads near the free plan's limit: no more until next month (lib/usageMeter.mjs)
-  if (await downloadsOverBudget(supabase)) return { data: null, error: { message: DOWNLOAD_BUDGET_MESSAGE } };
+  // (On the server's disk the storage checks it itself, only for files still fetched from Supabase)
+  if (!supabase.storage?.local && (await downloadsOverBudget(supabase))) return { data: null, error: { message: DOWNLOAD_BUDGET_MESSAGE } };
   let result;
   for (let attempt = 1; attempt <= DOWNLOAD_TRIES; attempt++) {
     result = await supabase.storage.from(bucket).download(path);
@@ -2217,7 +2218,8 @@ export async function analyzePending({ maxMs = 200000, refs: only, notices: give
   const saved = await savedTextPaths(supabase, BUCKET);
   const overBudget = await downloadsOverBudget(supabase);
   const files = (n) => n.documents.filter((d) => d.path && !d.removed);
-  const noDownload = (n) => files(n).every((d) => saved.has(d.path) || justDownloaded.has(`${BUCKET}/${d.path}`));
+  const onDisk = (d) => Boolean(supabase.storage?.local && supabase.storage.exists(BUCKET, d.path));
+  const noDownload = (n) => files(n).every((d) => saved.has(d.path) || justDownloaded.has(`${BUCKET}/${d.path}`) || onDisk(d));
   const queue = Object.entries(notices || {})
     .filter(([ref, n]) => (!only || only.includes(ref)) && n.documents?.some((d) => d.path))
     // Read again only when it can change something (lib/readAgain.mjs): never a closed tender, nor one read to 100%

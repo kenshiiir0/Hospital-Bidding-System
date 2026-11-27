@@ -71,6 +71,40 @@ const late = new URL(signLink(bucket, 'a/b.pdf', 60, ''), 'http://x');
 late.searchParams.set('e', String(Math.floor(Date.now() / 1000) - 5));
 ok('expired link refused', checkLink(late.searchParams) === null);
 
+// --- files from before the move: still in Supabase Storage, fetched once and kept on disk (fallback) ---
+{
+  const oldKey = `${folder}-old/Old Bid.txt`;
+  const oldBytes = Buffer.from('amikacin 250 mg/mL\n');
+  await admin.storage.from(bucket).upload(oldKey, oldBytes, { upsert: true });
+  let counted = 0;
+  let over = false;
+  let fetched = 0;
+  const watched = { from: (b) => ({ ...admin.storage.from(b), download: (k) => (fetched++, admin.storage.from(b).download(k)), list: (...a) => admin.storage.from(b).list(...a), remove: (k) => admin.storage.from(b).remove(k) }) };
+  const both = createDiskStorage(root, { storage: watched, overBudget: async () => over, count: async (n) => (counted += n) });
+  const s = both.from(bucket);
+  const listed = await s.list(`${folder}-old`);
+  ok('fallback: listed while only in Supabase', listed.data?.some((f) => f.name === 'Old Bid.txt' && f.metadata?.size === oldBytes.length), JSON.stringify(listed));
+  ok('fallback: not on disk yet', !both.exists(bucket, oldKey));
+  over = true;
+  const refused = await s.download(oldKey);
+  ok('fallback: readers stopped at the budget', refused.error && /budget/.test(refused.error.message) && fetched === 0, JSON.stringify(refused.error));
+  const forPage = await s.download(oldKey, { forPage: true });
+  ok('fallback: a person opening it is not stopped', forPage.data && Buffer.from(await forPage.data.arrayBuffer()).equals(oldBytes));
+  over = false;
+  ok('fallback: kept on disk after the first fetch', both.exists(bucket, oldKey) && fetched === 1);
+  ok('fallback: counted against the budget', counted === oldBytes.length, String(counted));
+  const again = await s.download(oldKey);
+  ok('fallback: second read from disk, no new fetch', again.data && fetched === 1);
+  const twice = await s.list(`${folder}-old`);
+  ok('fallback: listed once when in both places', twice.data?.filter((f) => f.name === 'Old Bid.txt').length === 1, JSON.stringify(twice.data));
+  const none = await s.download(`${folder}-old/none.pdf`);
+  ok('fallback: missing everywhere is an error', none.error && !none.data);
+  await s.remove([oldKey]);
+  const left = await admin.storage.from(bucket).list(`${folder}-old`);
+  ok('fallback: removed from both', !both.exists(bucket, oldKey) && !left.data?.some((f) => f.name === 'Old Bid.txt'), JSON.stringify(left.data));
+  await admin.storage.from(bucket).remove([oldKey]);
+}
+
 // --- reading a real document from disk (download + text + OCR cache lookup), no Supabase download or meter ---
 const sample = 'documents/13264900/Invitation to Bid.pdf';
 if (fs.existsSync(sample)) {
@@ -119,6 +153,15 @@ if (base) {
     const gone = await (await ask({ bucket, path: `${folder}/none.pdf` })).json();
     ok('missing file: 404 through its link', (await fetch(new URL(gone.data.signedUrl, base))).status === 404);
     await disk.from(bucket).remove([fileKey]);
+    // A file still only in Supabase Storage opens too, and is on this disk afterwards
+    const oldKey = `${folder}-route/Old Schedule.pdf`;
+    await admin.storage.from(bucket).upload(oldKey, content, { upsert: true, contentType: 'application/pdf' });
+    const oldLink = await (await ask({ bucket, path: oldKey })).json();
+    const oldGot = await fetch(new URL(oldLink.data.signedUrl, base));
+    ok('route: file from Supabase Storage served', oldGot.status === 200 && Buffer.from(await oldGot.arrayBuffer()).equals(content), String(oldGot.status));
+    ok('route: and kept on disk', disk.exists(bucket, oldKey));
+    await admin.storage.from(bucket).remove([oldKey]);
+    await disk.from(bucket).remove([oldKey]);
     await anon.auth.signOut({ scope: 'local' });
   } finally {
     await admin.auth.admin.deleteUser(made.user.id);

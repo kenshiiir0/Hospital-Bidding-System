@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { requireUser } from '@/lib/auth';
-import { USES_DISK } from '@/lib/db/index.mjs';
+import { USES_DISK, serverDb } from '@/lib/db/index.mjs';
 import { BUCKETS, checkLink, filePath, signLink, typeOf } from '@/lib/db/diskStorage.mjs';
 
 // The bid documents kept on this server's disk (STORAGE_BACKEND=disk, lib/db/diskStorage.mjs), for the pages
@@ -36,7 +36,12 @@ export async function GET(request) {
   const link = checkLink(new URL(request.url).searchParams);
   if (!link) return new Response('This link is not valid or has expired. Open the document again from the dashboard.', { status: 403 });
   const file = filePath(root, link.bucket, link.key);
-  const stat = file && (await fs.promises.stat(file).catch(() => null));
+  let stat = file && (await fs.promises.stat(file).catch(() => null));
+  // Not moved to this disk yet: fetched once from Supabase Storage and kept here (db/diskStorage.mjs fallback)
+  if (file && !stat) {
+    await serverDb()?.storage.from(link.bucket).download(link.key, { forPage: true });
+    stat = await fs.promises.stat(file).catch(() => null);
+  }
   if (!stat?.isFile()) return new Response('Document not found', { status: 404 });
   const name = link.download || link.key.split('/').pop();
   const disposition = `${link.download ? 'attachment' : 'inline'}; filename="${name.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;

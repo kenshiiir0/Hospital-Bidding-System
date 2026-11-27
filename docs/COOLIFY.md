@@ -129,13 +129,38 @@ used up (`lib/usageMeter.mjs`). Kept on this server's disk, they cost nothing to
 
 Then every part that used `supabase.storage` (Sync's downloads, reading, OCR and its cache `_ocr/`, removing
 files that aren't ours, View / Save / Source / ZIP in the pages) uses `/data/documents/<bucket>/<path>`, the same
-paths as in Storage, and the egress budget no longer applies. The pages get short-lived signed links from
-`/api/stored-files` (signed-in team only). Files already in Supabase Storage are not on the disk: they are brought
-over separately. Leave all three off on Vercel.
+paths as in Storage; reading them uses no egress. The pages get short-lived signed links from
+`/api/stored-files` (signed-in team only). Files from before, still in Supabase Storage, are fetched from there once
+when first needed and kept on disk (within the reading budget for the readers). Leave `STORAGE_BACKEND` off on
+Vercel (with `FORWARD_API_TO` it doesn't need it: its `/api/` runs here).
 
 **Switch it on only together with the Syncs moving to this server.** While Vercel (or the office PC) still runs the
 Syncs, they save new documents in Supabase Storage, and this site would not find them on its disk. Checked with
 `node --env-file=.env tools/check-disk-storage.mjs [site address]`.
+
+## Moving the Syncs, reading and OCR to this server (switch-over)
+
+Before: the Supabase schedules call Vercel (`philgeps-hourly-update`, `ps-philgeps-hourly-sync`,
+`ps-philgeps-keepalive`), documents go to Supabase Storage and OCR runs on GitHub. After: everything runs here, the
+documents are on this disk, and the Vercel site stays usable as a front that passes every `/api/` request on.
+In this order, all on the same day:
+
+1. **This app** (Coolify): the volume and three settings from "Bid documents on the server's disk" above. Redeploy.
+   Files still in Supabase Storage keep working: each is fetched once when opened or read and then kept on disk
+   (readers within the month's budget; a person opening a file always gets it). `STORAGE_FALLBACK=off` once
+   everything is on disk.
+2. **Vercel**: `FORWARD_API_TO=https://<this site>` and `NEXT_PUBLIC_DOCUMENTS_ON_SERVER=1`. Redeploy. Its Sync,
+   Cancel, Read again, Connect, View/Save, Message Hospitals, ... now all run here (`next.config.mjs` rewrites).
+3. **Schedules**, from a team computer: `node tools/setup-schedules.js https://<this site>` and
+   `node tools/setup-keepalive.js https://<this site>`.
+4. **GitHub**: disable the "Read scanned documents (OCR)" workflow (it can't reach this disk). Here the keep-alive
+   starts `scripts/ocr-job.mjs` in the background at most hourly while scanned documents wait, and right after a
+   reading finds new ones (`lib/ocrTrigger.mjs`); its output is in this app's logs.
+5. Check: a Sync from either site, View on a document from before and after the switch, the OCR count going down.
+
+Undo: remove `FORWARD_API_TO` on Vercel and redeploy, point the schedules back at Vercel, enable the GitHub
+workflow, remove `STORAGE_BACKEND` here and redeploy. Documents saved on this disk after the switch are then not in
+Supabase Storage.
 
 ## How this differs from Vercel
 

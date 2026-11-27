@@ -39,9 +39,10 @@ ENV NODE_ENV=production \
     PORT=3000
 WORKDIR /app
 
-# Root packages for the two tools below (pg, dotenv, supabase-js), not the scraper's puppeteer/Chrome
+# Root packages for the tools below (pg, dotenv, supabase-js), not the scraper's puppeteer/Chrome; @napi-rs/canvas lets
+# OCR draw pages without a scanned picture (lib/ocr.mjs, as the GitHub OCR job does), found from /app/frontend too
 RUN echo '{"private":true}' > package.json \
- && npm install --omit=dev --no-audit --no-fund --no-package-lock pg@^8.23.1 dotenv@^18.0.8 @supabase/supabase-js@^2.118.0 \
+ && npm install --omit=dev --no-audit --no-fund --no-package-lock pg@^8.23.1 dotenv@^18.0.8 @supabase/supabase-js@^2.118.0 @napi-rs/canvas@0.1.80 \
  && npm cache clean --force
 COPY schema.sql ./
 # apply-schema.js: run on start (lib/schema.js). add-user.js: create a dashboard account or reset its password

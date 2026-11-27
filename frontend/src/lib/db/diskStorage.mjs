@@ -1,6 +1,8 @@
 import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { DOWNLOAD_BUDGET_MESSAGE } from '../usageMeter.mjs';
 
 // Bid documents on the server's own disk instead of Supabase Storage (STORAGE_BACKEND=disk + DOCUMENTS_DIR, the private
 // server: Coolify Persistent Storage). Answers like supabase.storage.from(bucket) for what the code uses
@@ -87,7 +89,13 @@ export function checkLink(params) {
   return { bucket, key, download };
 }
 
-export function createDiskStorage(root) {
+// fallback (optional): the files still in Supabase Storage from before the move. { storage: Supabase's storage,
+// overBudget(): the month's reading budget is used up (lib/usageMeter.mjs), count(bytes): adds to it }.
+// A file not on disk yet is fetched from there once and kept on disk (only what is opened or read moves, the rest
+// stays put); folder lists show both; a removed file goes from both. The readers stop at the budget as before; a
+// person opening a file (forPage) is never stopped.
+export function createDiskStorage(root, fallback = null) {
+  const keep = (bucket, key, bytes) => from(bucket).upload(key, bytes, { upsert: true });
   const from = (bucket) => ({
     async upload(key, body, options = {}) {
       const file = filePath(root, bucket, key);
@@ -109,15 +117,23 @@ export function createDiskStorage(root) {
       }
     },
 
-    async download(key) {
+    async download(key, options = {}) {
       const file = filePath(root, bucket, key);
       if (!file) return fail('Invalid key');
       try {
         const bytes = await fs.readFile(file);
         return { data: new Blob([bytes], { type: typeOf(key) }), error: null };
       } catch (e) {
-        return e.code === 'ENOENT' || e.code === 'EISDIR' ? fail('Object not found', '404') : fail(e.message, '500');
+        if (e.code !== 'ENOENT' && e.code !== 'EISDIR') return fail(e.message, '500');
       }
+      if (!fallback) return fail('Object not found', '404');
+      if (!options.forPage && (await fallback.overBudget())) return fail(DOWNLOAD_BUDGET_MESSAGE, '429');
+      const old = await fallback.storage.from(bucket).download(key);
+      if (old.error || !old.data) return old.error ? old : fail('Object not found', '404');
+      const bytes = Buffer.from(await old.data.arrayBuffer());
+      await fallback.count(bytes.length);
+      await keep(bucket, key, bytes);
+      return { data: new Blob([bytes], { type: typeOf(key) }), error: null };
     },
 
     // The files and folders directly in a folder, as Storage lists them (folders: id null, no metadata)
@@ -128,8 +144,8 @@ export function createDiskStorage(root) {
       try {
         entries = await fs.readdir(dir, { withFileTypes: true });
       } catch (e) {
-        if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return { data: [], error: null };
-        return fail(e.message, '500');
+        if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') return fail(e.message, '500');
+        entries = [];
       }
       const out = [];
       for (const entry of entries) {
@@ -151,6 +167,13 @@ export function createDiskStorage(root) {
           metadata: { size: stat.size, mimetype: typeOf(entry.name), lastModified: at },
         });
       }
+      // Still in Supabase Storage only: listed too (a Sync then knows the file is kept and doesn't download it again)
+      if (fallback) {
+        const old = await fallback.storage.from(bucket).list(prefix, { limit: 10000, search: options.search });
+        if (old.error) return old;
+        const here = new Set(out.map((f) => f.name));
+        for (const f of old.data || []) if (!here.has(f.name) && f.name !== '.emptyFolderPlaceholder') out.push(f);
+      }
       const by = options.sortBy?.column || 'name';
       const desc = options.sortBy?.order === 'desc';
       out.sort((a, b) => (a[by] ?? '').localeCompare(b[by] ?? '') * (desc ? -1 : 1));
@@ -166,6 +189,11 @@ export function createDiskStorage(root) {
         const gone = await fs.unlink(file).then(() => true, (e) => (e.code === 'ENOENT' ? false : Promise.reject(e))).catch(() => false);
         if (gone) removed.push({ name: key, bucket_id: bucket });
       }
+      if (fallback && keys?.length) {
+        const old = await fallback.storage.from(bucket).remove(keys.filter((k) => filePath(root, bucket, k)));
+        if (old.error) return old;
+        for (const f of old.data || []) if (!removed.some((r) => r.name === f.name)) removed.push({ name: f.name, bucket_id: bucket });
+      }
       return { data: removed, error: null };
     },
 
@@ -179,5 +207,10 @@ export function createDiskStorage(root) {
       }
     },
   });
-  return { local: true, root, from };
+  // Already on this disk (no download needed to read it)
+  const exists = (bucket, key) => {
+    const file = filePath(root, bucket, key);
+    return Boolean(file) && existsSync(file);
+  };
+  return { local: true, root, from, exists, fallback: Boolean(fallback) };
 }

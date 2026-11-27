@@ -41,6 +41,15 @@ const nextConfig = {
     // Message Hospitals puts the e-mail design's pictures inside every e-mail it sends
     "/api/hospitals/message": ["./public/email/*"],
   },
+  // FORWARD_API_TO=https://<server> (set on Vercel, read when the site is built): every /api/ request of this copy is
+  // passed on to that server, which does the work: the Syncs, reading, OCR, the PS-PhilGEPS log-in and the documents
+  // on its disk stay in one place, and this copy keeps working for the team as a front. Requests keep their sign-in
+  // header. Never set on the server it points to (it would pass requests to itself).
+  async rewrites() {
+    const target = (process.env.FORWARD_API_TO || "").replace(/\/+$/, "");
+    if (!/^https:\/\/[^/]+$/.test(target)) return [];
+    return { beforeFiles: [{ source: "/api/:path*", destination: `${target}/api/:path*` }], afterFiles: [], fallback: [] };
+  },
   // PS-PhilGEPS Bid Match is part of the merged Bid Match at / (user, 2026-11-06): old links and bookmarks go there
   async redirects() {
     return [{ source: "/ps-philgeps", destination: "/", permanent: false }];

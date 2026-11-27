@@ -1,3 +1,7 @@
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { USES_DISK } from './db/index.mjs';
 import { admin, scannedWaiting } from './ocrQueue.mjs';
 
 // Starts the GitHub OCR job (.github/workflows/ocr.yml) right after a Sync, so the scanned documents it brought
@@ -13,20 +17,41 @@ const WORKFLOW = 'ocr.yml';
 // A request made this recently, or a run going, already covers this Sync (the job reads everything waiting)
 const RECENT_MS = 10 * 60 * 1000;
 
+// With the documents on this server's disk (STORAGE_BACKEND=disk) GitHub can't reach them: the same job
+// (scripts/ocr-job.mjs) is started here instead, in the background, with its output in the server's log.
+function startHere() {
+  const script = path.join(process.cwd(), 'scripts', 'ocr-job.mjs');
+  if (!existsSync(script)) return { started: false, why: `${script} is not on this server` };
+  const child = spawn(process.execPath, [script], { cwd: process.cwd(), env: process.env, detached: true, stdio: 'inherit' });
+  child.on('error', (e) => console.error(`[ocr] could not start: ${e.message}`));
+  child.unref();
+  return { started: true, here: true };
+}
+
 export async function triggerOcr(reason) {
   try {
     const token = process.env.GITHUB_OCR_TOKEN;
-    if (!token) return { started: false, why: 'GITHUB_OCR_TOKEN is not set' };
+    if (!token && !USES_DISK) return { started: false, why: 'GITHUB_OCR_TOKEN is not set' };
     const supabase = admin();
-    const { data: status } = await supabase.from('ocr_status').select('github_requested_at, github_running_since').eq('id', 'latest').single();
+    const { data: status } = await supabase.from('ocr_status').select('github_requested_at, github_running_since, waiting').eq('id', 'latest').single();
     const within = (at, ms) => at && Date.now() - new Date(at).getTime() < ms;
     // A "running" mark older than the job's 60-minute limit is left over from a run GitHub stopped
     if (within(status?.github_requested_at, RECENT_MS) || within(status?.github_running_since, 70 * 60 * 1000)) {
       return { started: false, why: 'already requested or running' };
     }
+    // The hourly start on this server (keep-alive, like GitHub's hourly run): only when the saved count says scanned
+    // documents wait, at most once an hour (the full list below is a larger read)
+    if (reason === 'hourly' && (!status?.waiting || within(status?.github_requested_at, 60 * 60 * 1000))) {
+      return { started: false, why: 'nothing waiting, or started within the hour' };
+    }
     // Only when scanned documents wait (GitHub's monthly minutes are limited on a private repository)
     const waiting = await scannedWaiting(supabase);
     if (!waiting.length) return { started: false, why: 'nothing scanned is waiting' };
+    if (USES_DISK) {
+      const here = startHere();
+      if (here.started) await supabase.from('ocr_status').update({ github_requested_at: new Date().toISOString() }).eq('id', 'latest');
+      return here;
+    }
 
     const res = await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/dispatches`, {
       method: 'POST',

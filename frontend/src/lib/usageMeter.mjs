@@ -13,7 +13,8 @@ const month = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Manila'
 const CHECK_MS = 5 * 60 * 1000;
 let checked = { at: 0, over: false };
 
-// Files on the server's own disk (STORAGE_BACKEND=disk, db/diskStorage.mjs) cost no Supabase egress: not counted, never stopped
+// Files on the server's own disk (STORAGE_BACKEND=disk, db/diskStorage.mjs) cost no Supabase egress: not counted here.
+// Those still in Supabase Storage are fetched by the disk storage's fallback, which counts and stops them itself.
 const onDisk = (supabase) => Boolean(supabase?.storage?.local);
 
 export async function countDownload(supabase, bytes) {
@@ -27,7 +28,7 @@ export async function countDownload(supabase, bytes) {
 }
 
 export async function downloadsOverBudget(supabase) {
-  if (onDisk(supabase)) return false;
+  if (onDisk(supabase) && !supabase.storage.fallback) return false;
   if (Date.now() - checked.at < CHECK_MS) return checked.over;
   try {
     const { data, error } = await supabase.from('usage_meter').select('read_bytes').eq('month', month()).maybeSingle();

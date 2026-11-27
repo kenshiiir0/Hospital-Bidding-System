@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createPgClient, createPool } from './pgClient.mjs';
 import { createDiskStorage } from './diskStorage.mjs';
 import { createRemoteClient, readAnswer } from './remoteClient.mjs';
+import { countDownload, downloadsOverBudget } from '../usageMeter.mjs';
 
 // The server's database client, for every part of the code (API routes, Sync, reading, tools).
 // DATA_BACKEND=pg: our own PostgreSQL client (pgClient.mjs) on DATABASE_URL, for the private server without
@@ -17,7 +18,9 @@ export const USES_PG = process.env.DATA_BACKEND === 'pg';
 const shared = globalThis.__serverDb || (globalThis.__serverDb = {});
 
 // STORAGE_BACKEND=disk: the bid documents are on this server's disk (DOCUMENTS_DIR, diskStorage.mjs) instead of Supabase
-// Storage, whichever database is used; client.storage answers the same way, so callers don't change.
+// Storage, whichever database is used; client.storage answers the same way, so callers don't change. Files from before
+// the move are fetched from Supabase Storage the first time they are needed and kept on disk (diskStorage.mjs
+// fallback), within the month's reading budget; STORAGE_FALLBACK=off once everything is on disk.
 export const USES_DISK = process.env.STORAGE_BACKEND === 'disk';
 const wrapped = new WeakMap();
 function withStorage(client) {
@@ -25,7 +28,13 @@ function withStorage(client) {
   if (!wrapped.has(client)) {
     const root = process.env.DOCUMENTS_DIR;
     const missing = { error: { name: 'StorageError', message: 'DOCUMENTS_DIR is not set (STORAGE_BACKEND=disk).', statusCode: '500' }, data: null };
-    const storage = root ? createDiskStorage(root) : { local: true, from: () => new Proxy({}, { get: () => async () => missing }) };
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const old = process.env.STORAGE_FALLBACK !== 'off' && url && process.env.SUPABASE_KEY
+      ? (shared.storageFallback ||= createClient(url, process.env.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } }))
+      : null;
+    // The budget is kept in this database's usage_meter, as before
+    const fallback = old && { storage: old.storage, overBudget: () => downloadsOverBudget(client), count: (bytes) => countDownload(client, bytes) };
+    const storage = root ? createDiskStorage(root, fallback) : { local: true, from: () => new Proxy({}, { get: () => async () => missing }) };
     wrapped.set(client, new Proxy(client, {
       get(target, prop) {
         if (prop === 'storage') return storage;
