@@ -3,10 +3,22 @@ import { agencyKey } from '@/lib/agencyKey';
 import { planHospitalImport } from '@/lib/sheetImport.mjs';
 import { serverDb } from '@/lib/db/index.mjs';
 
+// The database client. Without its settings (SUPABASE_URL + SUPABASE_KEY, or DATA_BACKEND=pg + DATABASE_URL) it
+// throws NoDatabase, and the handlers answer with that message instead of crashing with an empty reply.
+class NoDatabase extends Error {}
 function admin() {
   const db = serverDb();
+  if (!db) throw new NoDatabase('The database settings (SUPABASE_URL + SUPABASE_KEY, or DATABASE_URL) are not set on this server.');
   return db;
 }
+const handled = (handler) => async (request) => {
+  try {
+    return await handler(request);
+  } catch (e) {
+    if (e instanceof NoDatabase) return Response.json({ ok: false, error: e.message }, { status: 503 });
+    throw e;
+  }
+};
 
 const FIELDS = 'agency_key, name, status, list_note, contacts, emails, website, sheet_row, source, added_by, created_at, archived_at, archived_by';
 const STATUSES = ['active', 'rfq', 'prospect'];
@@ -14,7 +26,7 @@ const clean = (v, max = 200) => String(v ?? '').replace(/\s+/g, ' ').trim().slic
 
 // The Hospital List (table hospitals, rows with a status; archived ones too). Team members only: who we bid for
 // and their contacts are not for competitors.
-export async function GET(request) {
+async function handleGET(request) {
   const { response } = await requireUser(request);
   if (response) return response;
   const { data, error } = await admin()
@@ -29,7 +41,7 @@ export async function GET(request) {
 
 // Add Hospital: { name (required), status, contact_name, contact_phone, email, note }. A hospital already saved
 // only for its website (View details) joins the list; one already on the list is refused.
-export async function POST(request) {
+async function handlePOST(request) {
   const { user, response } = await requireUser(request);
   if (response) return response;
   const body = await request.json().catch(() => ({}));
@@ -98,7 +110,7 @@ function editChange(edit) {
 
 // Archive / Restore: { agency_key, archived: true | false }. An archived hospital stays in the table.
 // Edit: { agency_key, edit: { status?, list_note?, emails?, contacts? } }.
-export async function PATCH(request) {
+async function handlePATCH(request) {
   const { user, response } = await requireUser(request);
   if (response) return response;
   const body = await request.json().catch(() => ({}));
@@ -123,7 +135,7 @@ export async function PATCH(request) {
 // Import Excel: { hospitals: [...] } as read in the browser from the "Active Hospital" sheet (lib/sheetImport.mjs
 // readHospitalSheet). Same rules as tools/import-hospitals.mjs: matched by name, websites and archive state kept,
 // contacts added outside the sheet kept, hospitals not on the sheet left alone.
-export async function PUT(request) {
+async function handlePUT(request) {
   const { user, response } = await requireUser(request);
   if (response) return response;
   const body = await request.json().catch(() => ({}));
@@ -157,3 +169,8 @@ export async function PUT(request) {
   }
   return Response.json({ ok: true, added: inserts.length, updated: updates.length });
 }
+
+export const GET = handled(handleGET);
+export const POST = handled(handlePOST);
+export const PATCH = handled(handlePATCH);
+export const PUT = handled(handlePUT);
