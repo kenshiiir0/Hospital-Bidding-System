@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { authFetch } from '@/lib/authFetch';
 import { createRemoteClient, readAnswer } from '@/lib/db/remoteClient.mjs';
+import { ownAuth } from '@/lib/ownAuthClient';
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -79,12 +80,17 @@ const serverStorage = {
   }),
 };
 
-// One browser client for every page. Sign-in and live updates still go to Supabase for now.
-export const supabase = VIA_SERVER || DOCUMENTS_ON_SERVER
+// NEXT_PUBLIC_AUTH_MODE=own (with AUTH_MODE=own on the server): signing in is our own (lib/ownAuthClient.js), not
+// Supabase Auth; supabase.auth answers the same calls
+const OWN_SIGN_IN = process.env.NEXT_PUBLIC_AUTH_MODE === 'own';
+
+// One browser client for every page
+export const supabase = VIA_SERVER || DOCUMENTS_ON_SERVER || OWN_SIGN_IN
   ? new Proxy(real, {
       get(target, prop) {
         if (VIA_SERVER && (prop === 'from' || prop === 'rpc')) return viaServer[prop];
         if (DOCUMENTS_ON_SERVER && prop === 'storage') return serverStorage;
+        if (OWN_SIGN_IN && prop === 'auth') return ownAuth;
         const value = target[prop];
         return typeof value === 'function' ? value.bind(target) : value;
       },

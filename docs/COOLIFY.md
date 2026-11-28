@@ -51,19 +51,29 @@ node ../tools/add-user.js someuser "Password123"       # username account with a
 
 Running it for an existing account resets its password. It uses the container's `SUPABASE_URL` and `SUPABASE_KEY`.
 
-## Our own sign-in (for the private database, not live yet)
+## Our own sign-in
 
 `frontend/src/lib/ownAuth.mjs` signs people in without Supabase Auth: accounts in `app_users`, sessions in an
 httpOnly cookie (`app_sessions` keeps only its hash), 5 wrong passwords pause an account for 15 minutes. It is
 off unless `AUTH_MODE=own` is set; until then Supabase Auth stays in charge. It needs `DATABASE_URL` (falls back
-to `SUPABASE_DB_URL`). Do not switch it on alone: the pages still read Supabase directly, which needs a
-Supabase sign-in.
+to `SUPABASE_DB_URL`) and goes with the pages reading through this server (`NEXT_PUBLIC_DATA_VIA_SERVER=1`).
+The pages' half is `lib/ownAuthClient.js` (stands in for `supabase.auth` with `NEXT_PUBLIC_AUTH_MODE=own`).
+
+Switching on, in this order (nobody is locked out):
 
 ```sh
-node ../tools/import-auth-users.js            # list the Supabase accounts that would be copied
-node ../tools/import-auth-users.js --apply    # copy them, same passwords
+node ../tools/import-auth-users.js            # 1. list the Supabase accounts that would be copied
+node ../tools/import-auth-users.js --apply    # 2. copy them, same passwords
+node ../tools/check-own-login.mjs             # 3. test your own account (asks; the password isn't shown)
 node ../tools/add-user.js someuser --own      # new account / password reset in our own sign-in
 ```
+
+4. Settings here: `AUTH_MODE=own`, `NEXT_PUBLIC_AUTH_MODE=own` (Build Variable), and
+   `ALLOWED_ORIGINS=https://<vercel address>,...` (the other addresses that pass requests on with `FORWARD_API_TO`:
+   a sign-in or change from there comes with that address as its origin). On Vercel: `NEXT_PUBLIC_AUTH_MODE=own`.
+   Redeploy both. Everyone signs in once more, with the same password.
+5. Undo: remove those settings and redeploy (Supabase Auth again).
+Checked with `node tools/check-own-signin.mjs <site>` (a dashboard with these settings).
 
 ## Pages reading through this server (for the private database, testing)
 

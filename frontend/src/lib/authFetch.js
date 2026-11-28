@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase';
 export async function authFetch(url, options = {}) {
   const send = (session) => {
     const headers = new Headers(options.headers);
-    if (session) headers.set('Authorization', `Bearer ${session.access_token}`);
+    // (our own sign-in has no token: its cookie goes with the request by itself)
+    if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`);
     return fetch(url, { ...options, headers });
   };
   const { data } = await supabase.auth.getSession();

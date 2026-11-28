@@ -117,14 +117,23 @@ const failed = (message, status = 400) => Response.json({ data: null, error: { m
 
 export async function POST(request) {
   const program = hasCronSecret(request);
+  let user = null;
   if (!program) {
-    const { response } = await requireUser(request);
-    if (response) return response;
+    const signedIn = await requireUser(request);
+    if (signedIn.response) return signedIn.response;
+    user = signedIn.user;
   }
   const body = await request.json().catch(() => null);
   if (!plain(body)) return failed('Bad request.');
   const checked = check(body.table, body.steps, program ? PROGRAMS : PAGES);
   if (checked.error) return failed(checked.error);
+  // Screened Tenders' added_by came from the Supabase sign-in in the database (schema.sql DEFAULT auth.jwt()); here
+  // the server's database client writes, so the signed-in person is filled in when the page didn't give one
+  if (user?.email && body.table === 'screened_tenders' && (checked.action === 'insert' || checked.action === 'upsert')) {
+    const step = checked.steps.find(([n]) => n === checked.action);
+    const withName = (row) => (row.added_by ? row : { ...row, added_by: user.email });
+    step[1] = Array.isArray(step[1]) ? step[1].map(withName) : withName(step[1]);
+  }
   const db = serverDb();
   if (!db) return failed('The database settings are missing on the server.', 500);
 

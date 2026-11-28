@@ -150,8 +150,12 @@ export function sameOrigin(request) {
   const origin = request.headers.get('origin');
   if (!origin) return false;
   const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  // Other addresses of the same dashboard that pass their requests on to this server (Vercel's FORWARD_API_TO):
+  // ALLOWED_ORIGINS=https://hospital-bidding-system.vercel.app,https://other.vercel.app
+  const allowed = (process.env.ALLOWED_ORIGINS || '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean);
   try {
-    return new URL(origin).host === host;
+    const from = new URL(origin);
+    return from.host === host || allowed.includes(from.origin);
   } catch {
     return false;
   }

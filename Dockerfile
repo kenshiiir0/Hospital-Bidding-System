@@ -48,7 +48,8 @@ COPY schema.sql ./
 # apply-schema.js: run on start (lib/schema.js). add-user.js: create a dashboard account or reset its password
 # from Coolify's terminal: node ../tools/add-user.js <username or email> [password] (uses SUPABASE_URL/SUPABASE_KEY)
 # copy-to-private-db.mjs: copies the tables from Supabase into the private database (docs/COOLIFY.md)
-COPY tools/apply-schema.js tools/add-user.js tools/import-auth-users.js tools/copy-to-private-db.mjs ./tools/
+# check-own-login.mjs: tests an account with our own sign-in before it is switched on (docs/COOLIFY.md)
+COPY tools/apply-schema.js tools/add-user.js tools/import-auth-users.js tools/copy-to-private-db.mjs tools/check-own-login.mjs ./tools/
 COPY --from=build /app/frontend ./frontend
 
 # Next writes its runtime cache under .next; apply-schema writes /app/.schema-applied.
