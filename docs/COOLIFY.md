@@ -165,6 +165,20 @@ Undo: remove `FORWARD_API_TO` on Vercel and redeploy, point the schedules back a
 workflow, remove `STORAGE_BACKEND` here and redeploy. Documents saved on this disk after the switch are then not in
 Supabase Storage.
 
+## Schedules (Coolify Scheduled Tasks, since 2026-11-28)
+
+The hourly jobs are Coolify Scheduled Tasks of this app (not Supabase's pg_cron any more: `tools/setup-schedules.js`
+and `tools/setup-keepalive.js` are only for going back). Container empty (the app's), "Run in a shell" ticked, times
+in UTC (= Manila − 8 h). Each calls the app in its own container with its `CRON_SECRET`:
+
+| Name | Schedule | Command |
+| --- | --- | --- |
+| `ps-keepalive` | `*/5 * * * *` | `node -e "fetch('http://127.0.0.1:3000/api/ps-keepalive',{headers:{authorization:'Bearer '+process.env.CRON_SECRET}}).then(async r=>console.log(r.status,await r.text()))"` |
+| `ps-sync` | `15 22,23,0-9 * * *` | `node -e "fetch('http://127.0.0.1:3000/api/ps-sync',{method:'POST',headers:{authorization:'Bearer '+process.env.CRON_SECRET}}).then(async r=>console.log(r.status,await r.text()))"` |
+| `philgeps-update` | `0 22,23,0-9 * * *` | `node -e "fetch('http://127.0.0.1:3000/api/philgeps-update',{headers:{authorization:'Bearer '+process.env.CRON_SECRET}}).then(async r=>console.log(r.status,await r.text()))"` |
+
+A task's Executions show the answer: `200 {"ok":true,"connected":true}`, `202 {"ok":true}`, ...
+
 ## How this differs from Vercel
 
 - **No PhilGEPS fetching in the container**: like the Vercel copy, the image has no `scraper.js`/Chrome, so
