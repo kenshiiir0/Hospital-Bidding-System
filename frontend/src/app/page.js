@@ -31,6 +31,7 @@ import { stillReading } from '@/lib/documentsReading';
 import WorkingDots from '@/components/WorkingDots';
 import { formatDate, formatDateTime, formatInstant, formatPeso, instantDay } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import { LIVE_BY_ASKING, watchTables } from '@/lib/live';
 import { authFetch } from '@/lib/authFetch';
 import { ReadingAlertTag } from '@/components/ReadingAlert';
 
@@ -569,46 +570,41 @@ function BidMatch() {
       })
       .catch((err) => console.error('Error loading products:', err.message));
 
-    // Listen for new inserts in philgeps_opportunities in real-time
-    const channel = supabase
-      .channel('philgeps_changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'philgeps_opportunities' },
-        (payload) => {
-          // Ignore tenders that don't mention our products
-          if (!(payload.new.matched_molecules || []).length) return;
-          console.log('New tender added:', payload.new);
-          // Skip rows already loaded (e.g. by fetchBids after a manual scrape)
-          setBids((prevBids) =>
-            prevBids.some((bid) => bid.id === payload.new.id)
-              ? prevBids
-              : [payload.new, ...prevBids]
-          );
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'philgeps_opportunities' },
-        (payload) => {
-          // A Sync saving a tender's documents: swap in the new row so its circle and details update at once.
-          // A tender that no longer asks for our products in our dosages (products.mjs) leaves the list, and one
-          // that newly does (e.g. found in its documents once OCR has read them) joins it.
-          const ours = (payload.new.matched_molecules || []).length > 0;
-          const place = (keep) => (prev) => {
-            const listed = prev.some((bid) => bid.id === payload.new.id);
-            if (!keep) return listed ? prev.filter((bid) => bid.id !== payload.new.id) : prev;
-            return listed ? prev.map((bid) => (bid.id === payload.new.id ? payload.new : bid)) : [payload.new, ...prev];
-          };
-          setBids(place(ours));
-        }
-      )
-      .subscribe();
+    // New and changed tenders in philgeps_opportunities as they happen (lib/live.js: Supabase Realtime, or asking
+    // our server for rows with a newer updated_at on the private database)
+    const added = (payload) => {
+      // Ignore tenders that don't mention our products
+      if (!(payload.new.matched_molecules || []).length) return;
+      // Skip rows already loaded (e.g. by fetchBids after a manual scrape)
+      setBids((prevBids) => (prevBids.some((bid) => bid.id === payload.new.id) ? prevBids : [payload.new, ...prevBids]));
+    };
+    // A Sync saving a tender's documents: swap in the new row so its circle and details update at once.
+    // A tender that no longer asks for our products in our dosages (products.mjs) leaves the list, and one
+    // that newly does (e.g. found in its documents once OCR has read them) joins it. Also used for new rows when
+    // asking (it can't tell them apart; a new row of ours joins the list here too).
+    const changed = (payload) => {
+      const ours = (payload.new.matched_molecules || []).length > 0;
+      const place = (keep) => (prev) => {
+        const listed = prev.some((bid) => bid.id === payload.new.id);
+        if (!keep) return listed ? prev.filter((bid) => bid.id !== payload.new.id) : prev;
+        return listed ? prev.map((bid) => (bid.id === payload.new.id ? payload.new : bid)) : [payload.new, ...prev];
+      };
+      setBids(place(ours));
+    };
+    const stopWatching = watchTables(
+      'philgeps_changes',
+      LIVE_BY_ASKING
+        ? [{ table: 'philgeps_opportunities', event: '*', since: 'updated_at', everyMs: 15_000, onChange: changed }]
+        : [
+            { table: 'philgeps_opportunities', event: 'INSERT', onChange: added },
+            { table: 'philgeps_opportunities', event: 'UPDATE', onChange: changed },
+          ]
+    );
 
     return () => {
       stopped = true;
       wakePoll.current?.();
-      supabase.removeChannel(channel);
+      stopWatching();
     };
   }, []);
 

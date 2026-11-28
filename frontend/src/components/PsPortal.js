@@ -7,6 +7,7 @@ import WorkingDots from '@/components/WorkingDots';
 import { blueAction, plainAction } from '@/components/PageHeader';
 import { PsContext } from '@/lib/psContext';
 import { supabase } from '@/lib/supabase';
+import { watchTables } from '@/lib/live';
 import { clearSync, failSync, followSync, pressedSync, psRun, useSyncAlert } from '@/lib/syncAlerts';
 import { activePsData, loadActiveNames } from '@/lib/activeProducts';
 import { mergePsReading, psReadings, psSnapshot } from '@/lib/psData';
@@ -164,14 +165,13 @@ export function PsPortalProvider({ children }) {
       mergePsReading(reading);
       setData((prev) => (prev ? activePsData({ ...prev, analysis: { ...prev.analysis, [ref]: reading } }, activeNames.current) : prev));
     };
-    const channel = supabase
-      .channel('ps_philgeps_live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_sync_status' }, (payload) => payload.new?.id && setSync(payload.new))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ps_tender_analysis' }, mergeReading)
-      .subscribe();
+    const stop = watchTables('ps_philgeps_live', [
+      { table: 'ps_sync_status', event: '*', filter: (q) => q.eq('id', 'latest'), everyMs: 5_000, onChange: (payload) => payload.new?.id && setSync(payload.new) },
+      { table: 'ps_tender_analysis', event: '*', since: 'analyzed_at', select: 'ref, status, result, documents_read, error, analyzed_at', everyMs: 10_000, onChange: mergeReading },
+    ]);
     return () => {
       clearTimeout(reloadTimer);
-      supabase.removeChannel(channel);
+      stop();
     };
   }, [loadData]);
 

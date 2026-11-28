@@ -7,6 +7,7 @@ import TenderDetails from '@/components/TenderDetails';
 import PageHeader, { KpiRow, plainAction } from '@/components/PageHeader';
 import { formatDate, formatInstant, instantDay } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import { watchTables } from '@/lib/live';
 import { displayName } from '@/lib/username';
 
 // One History page per site (app/history and app/history/ps-philgeps); the runs come from activity_log:
@@ -255,17 +256,20 @@ export default function HistoryView({ site = 'philgeps' }) {
     Promise.resolve().then(reload);
 
     // New runs appear without reloading the page
-    const channel = supabase
-      .channel(`activity_changes_${site}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, (payload) => {
-        if (!config.events.includes(payload.new.event)) return;
-        setActivity((prev) => (prev.some((e) => e.id === payload.new.id) ? prev : [payload.new, ...prev]));
-      })
-      .subscribe();
+    const stop = watchTables(`activity_changes_${site}`, [
+      {
+        table: 'activity_log',
+        event: 'INSERT',
+        since: 'id',
+        everyMs: 15_000,
+        onChange: (payload) => {
+          if (!config.events.includes(payload.new.event)) return;
+          setActivity((prev) => (prev.some((e) => e.id === payload.new.id) ? prev : [payload.new, ...prev]));
+        },
+      },
+    ]);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return stop;
     // reload only reads state setters
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

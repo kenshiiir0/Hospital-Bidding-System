@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { watchTables } from '@/lib/live';
 import { formatInstant } from '@/lib/format';
 import WorkingDots from '@/components/WorkingDots';
 
@@ -37,14 +38,13 @@ function useOcrStatus() {
     load();
     // Live: changes the moment an OCR run starts or ends (Supabase Realtime); the timer also turns
     // "reading" into the 6-hour warning as time passes
-    const channel = supabase
-      .channel(`ocr_status_live_${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ocr_status' }, load)
-      .subscribe();
+    const stop = watchTables(`ocr_status_live_${Math.random().toString(36).slice(2)}`, [
+      { table: 'ocr_status', event: '*', select: 'waiting, github_running_since, github_last_run_at, updated_at', everyMs: 30_000, onChange: load },
+    ]);
     const timer = setInterval(load, 60 * 1000);
     return () => {
       clearInterval(timer);
-      supabase.removeChannel(channel);
+      stop();
     };
   }, []);
 
