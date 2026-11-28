@@ -23,12 +23,21 @@ async function main() {
         console.log('schema.sql unchanged; nothing to apply.');
         return;
     }
-    if (!process.env.SUPABASE_DB_URL) {
-        console.log('SUPABASE_DB_URL is not set in .env; schema.sql not applied.');
+    // The database the app uses: the private one with DATA_BACKEND=pg (it has the stand-ins for Supabase's own parts,
+    // tools/copy-to-private-db.mjs), else Supabase
+    const url = process.env.DATA_BACKEND === 'pg' ? process.env.DATABASE_URL : process.env.SUPABASE_DB_URL;
+    if (!url) {
+        console.log(`${process.env.DATA_BACKEND === 'pg' ? 'DATABASE_URL' : 'SUPABASE_DB_URL'} is not set; schema.sql not applied.`);
         process.exit(ifChanged ? 0 : 1);
     }
 
-    const client = new Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });
+    // sslmode in the address decides (Coolify's internal one: sslmode=require with SSL on); without it a dotless host or
+    // localhost is plain, anything else encrypted (same rule as frontend/src/lib/db/pgClient.mjs connectionOptions)
+    const parsed = new URL(url);
+    const mode = parsed.searchParams.get('sslmode');
+    const local = !parsed.hostname.includes('.') || parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    parsed.searchParams.delete('sslmode');
+    const client = new Client({ connectionString: parsed.toString(), ssl: (mode ? mode === 'disable' : local) ? false : { rejectUnauthorized: false } });
     await client.connect();
     try {
         // One multi-statement query runs as a single transaction: all of schema.sql or none of it
