@@ -120,6 +120,19 @@ async function get(session, url, { ajax = false } = {}) {
   }
 }
 
+// One bid document's bytes, with the session (lib/sourceFetch.mjs: files fetched again from PS-PhilGEPS).
+// The log-in page in place of the file means the session ended: NOT_CONNECTED, nothing to save.
+export async function fetchFile(session, url) {
+  const res = await get(session, url);
+  // (5xx: get() already threw HTTP_ERROR, the site is down; this is one file the site doesn't give)
+  if (!res.ok) throw new PsSyncError('FILE_MISSING', `PS-PhilGEPS answered HTTP ${res.status} for this file`);
+  const body = Buffer.from(await res.arrayBuffer());
+  if (/text\/html/i.test(res.headers.get('content-type') || '') && isLoginPage(res, body.toString('utf8', 0, 200_000))) {
+    throw new PsSyncError('NOT_CONNECTED', 'PS-PhilGEPS answered with its log-in page instead of the file (session ended).');
+  }
+  return body;
+}
+
 // A members-only page that comes back as the log-in form means PhilGEPS ended the session
 export function isLoginPage(res, html) {
   return /\/(Indexes|users)\/login/i.test(res.url) || /form[^>]+action="[^"]*users\/login/i.test(html) || /session has been expired/i.test(html);

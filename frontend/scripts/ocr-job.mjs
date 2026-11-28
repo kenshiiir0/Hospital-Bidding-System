@@ -6,9 +6,13 @@
 // - PhilGEPS: philgepsSync.readTenderDocuments → philgeps_opportunities.details.
 // The OCR text is cached in Storage (_ocr/...), so a run cut short continues where it stopped.
 // Needs SUPABASE_URL and SUPABASE_KEY (GitHub repository secrets). Run from frontend/: node scripts/ocr-job.mjs
+// On the private server (documents on its disk, STORAGE_BACKEND=disk; lib/ocrTrigger.mjs starts it there) it first
+// fetches the waiting scanned files that are not on the disk yet from PS-PhilGEPS (lib/sourceFetch.mjs), so they are
+// read without downloading them out of Supabase Storage. By hand: scripts/fetch-waiting.mjs.
 import { analyzePending, loadMatcher } from '../src/lib/psDocs.mjs';
 import { readTenderDocuments, screenedFirst, tendersToRead } from '../src/lib/philgepsSync.mjs';
 import { admin, saveOcrStatus } from '../src/lib/ocrQueue.mjs';
+import { fetchWaitingFromSource } from '../src/lib/sourceFetch.mjs';
 
 const RUN_MS = Number(process.env.OCR_RUN_MINUTES || 45) * 60 * 1000; // the workflow allows 60 minutes; OCR_RUN_MINUTES for a short test
 const started = Date.now();
@@ -18,8 +22,16 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 async function main() {
   // The dashboard shows "Reading scanned documents" while this is set (cleared below when the run ends)
   await supabase.from('ocr_status').update({ github_running_since: new Date().toISOString() }).eq('id', 'latest');
+  // Documents on this server's disk: the waiting ones not here yet are fetched from PS-PhilGEPS first (a quarter of
+  // the time at most; the next run continues)
+  let notices;
+  if (supabase.storage?.local) {
+    notices = (await supabase.from('ps_philgeps_snapshot').select('notices').eq('id', 'latest').maybeSingle()).data?.notices || {};
+    const got = await fetchWaitingFromSource(supabase, notices, { maxMs: RUN_MS / 4, log });
+    log('From PS-PhilGEPS:', JSON.stringify(got));
+  }
   // PS-PhilGEPS: at most half the time, so PhilGEPS gets its turn too
-  const ps = await analyzePending({ maxMs: RUN_MS / 2, onProgress: (done, total) => log(`PS-PhilGEPS tender ${done} of ${total}`) });
+  const ps = await analyzePending({ maxMs: RUN_MS / 2, notices, onProgress: (done, total) => log(`PS-PhilGEPS tender ${done} of ${total}`) });
   log('PS-PhilGEPS:', JSON.stringify(ps));
 
   // PhilGEPS: downloaded documents not read yet, or scanned and not read with OCR yet

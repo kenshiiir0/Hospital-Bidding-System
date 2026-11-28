@@ -155,7 +155,10 @@ In this order, all on the same day:
    `node tools/setup-keepalive.js https://<this site>`.
 4. **GitHub**: disable the "Read scanned documents (OCR)" workflow (it can't reach this disk). Here the keep-alive
    starts `scripts/ocr-job.mjs` in the background at most hourly while scanned documents wait, and right after a
-   reading finds new ones (`lib/ocrTrigger.mjs`); its output is in this app's logs.
+   reading finds new ones (`lib/ocrTrigger.mjs`); its output is in this app's logs. Before reading, it fetches the
+   waiting scanned files of open tenders that are not on the disk yet from PS-PhilGEPS itself, with the saved session
+   (`lib/sourceFetch.mjs`: right size only, never the log-in page, never during a Sync), so they need no Supabase
+   download. By hand from the Terminal: `node scripts/fetch-waiting.mjs --dry-run`, then without `--dry-run`.
 5. Check: a Sync from either site, View on a document from before and after the switch, the OCR count going down.
 
 Undo: remove `FORWARD_API_TO` on Vercel and redeploy, point the schedules back at Vercel, enable the GitHub
