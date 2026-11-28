@@ -50,6 +50,15 @@ async function poll() {
   });
 }
 
+// PS_HOST_DASHBOARD_URL=https://<server> in .env: this host (and the log-in it opens, which inherits these settings)
+// reaches the database through that dashboard (DATA_BACKEND=dashboard, signed with CRON_SECRET), while everything
+// else on this computer that reads the same .env (the local dashboard, tools) keeps its own database settings.
+const HOST_DASHBOARD = (process.env.PS_HOST_DASHBOARD_URL || '').trim();
+if (HOST_DASHBOARD) {
+  process.env.DATA_BACKEND = 'dashboard';
+  process.env.DASHBOARD_URL = HOST_DASHBOARD;
+}
+
 async function main() {
   const { serverDb } = await import('../frontend/src/lib/db/index.mjs');
   db = serverDb();
